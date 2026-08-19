@@ -1,0 +1,32 @@
+# Release packages
+*.zip
+
+# .NET / C#
+**/bin/
+**/obj/
+**/.vs/
+*.user
+*.suo
+
+# Build outputs
+**/dist/
+**/artifacts/
+
+# Unity generated folders
+**/Library/
+**/Temp/
+**/Logs/
+**/UserSettings/
+
+# Logs
+*.log
+
+# Local Valheim / modding libraries
+assembly_valheim.dll
+BepInEx.dll
+Jotunn.dll
+0Harmony.dll
+
+# OS junk
+Thumbs.db
+.DS_Store
