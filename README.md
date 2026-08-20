@@ -6,7 +6,10 @@
 - Thunderstore package name: `LightMyFire_Coal_Resin`
 - Public title: **LightMyFire - Coal&Resin**
 - Plugin GUID: `r4v9n1.lightmyfire`
-- Publish-ready version: `0.5.0`
+- Publish-ready version: `0.5.1`
+- `0.5.0` was the original code release.
+- `0.5.1` is the corrected republish of `0.5.0`; the gameplay and plugin code are unchanged.
+- The only difference in `0.5.1` is the fixed Thunderstore package contents.
 - Creator/team: `R4V9N1`
 
 The Thunderstore package identity was changed after earlier package-name/version submission collisions. The internal plugin identity remains `LightMyFire`.
@@ -175,7 +178,7 @@ The build pipeline should:
 Expected current artifact name:
 
 ```text
-artifacts\R4V9N1-LightMyFire_Coal_Resin-0.5.0.zip
+artifacts\R4V9N1-LightMyFire_Coal_Resin-0.5.1.zip
 ```
 
 Upload that generated artifact unchanged.
@@ -200,7 +203,7 @@ Important:
 - ZIP paths must use `/`
 - avoid Windows-style `plugins\LightMyFire\...` entries
 - icon should be valid 256×256 PNG
-- version should use three-part semantic versioning, e.g. `0.5.0`
+- version should use three-part semantic versioning, e.g. `0.5.1`
 - do not reuse an existing package/version pair
 
 The package script was updated to explicitly generate forward-slash ZIP paths and validate the archive.
