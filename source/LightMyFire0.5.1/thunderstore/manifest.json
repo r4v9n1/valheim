@@ -1,0 +1,10 @@
+{
+  "name": "LightMyFire_Coal_Resin",
+  "version_number": "0.5.1",
+  "website_url": "",
+  "description": "LightMyFire - Coal&Resin: dedicated Coal and Resin barrels that automatically top up nearby compatible lights.",
+  "dependencies": [
+    "denikson-BepInExPack_Valheim-5.4.2333",
+    "ValheimModding-Jotunn-2.29.2"
+  ]
+}
