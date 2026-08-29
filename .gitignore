@@ -7,6 +7,9 @@
 *.log.*
 **/Diagnostics/
 **/Logs/
+/LogOutput.log
+/assembly_valheim.dll
+/E3-LIVE-FIELD-PROBE*
 
 # Temporary diagnostic exports
 *.csv.tmp
@@ -15,6 +18,8 @@
 
 # Packaged releases / archives
 *.zip
+*.sha256
+*.manifest
 
 # Root screenshots / temporary images
 /Screenshot *.png
@@ -31,6 +36,7 @@
 **/Builds/
 **/dist/
 **/out/
+**/package/
 
 *.pdb
 *.mdb
@@ -79,6 +85,8 @@
 *.bak
 *.old
 *.orig
+*.PATCHED*
+*QUALITY-FIRST*
 *~
 *.swp
 
@@ -89,3 +97,6 @@
 desktop.ini
 Thumbs.db
 .DS_Store
+
+# Historical patched/source snapshots
+*.fixed
