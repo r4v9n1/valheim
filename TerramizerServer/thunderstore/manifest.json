@@ -1,0 +1,9 @@
+{
+  "name": "TerramizerServer",
+  "version_number": "0.6.8",
+  "website_url": "",
+  "description": "Dedicated-server Valheim ownership/cache experiment. Human-directed, with AI-assisted code analysis and verification support.",
+  "dependencies": [
+    "denikson-BepInExPack_Valheim-5.4.2333"
+  ]
+}

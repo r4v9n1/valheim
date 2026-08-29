@@ -1,0 +1,9 @@
+{
+  "name": "Terramizer",
+  "version_number": "0.9.5",
+  "website_url": "",
+  "description": "Client performance smoothing for dense Valheim bases. Human-directed, with AI-assisted code analysis and verification support.",
+  "dependencies": [
+    "denikson-BepInExPack_Valheim-5.4.2333"
+  ]
+}

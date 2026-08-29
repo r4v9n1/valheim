@@ -1,0 +1,9 @@
+{
+  "name": "InventoryLink",
+  "version_number": "0.2.8",
+  "website_url": "",
+  "description": "Build/craft from nearby containers and sort inventories. Human-directed, with AI-assisted code analysis and verification support.",
+  "dependencies": [
+    "denikson-BepInExPack_Valheim-5.4.2333"
+  ]
+}

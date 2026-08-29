@@ -1,0 +1,91 @@
+﻿# ============================================================
+# Valheim development source repository
+# ============================================================
+
+# Runtime logs / diagnostics
+*.log
+*.log.*
+**/Diagnostics/
+**/Logs/
+
+# Temporary diagnostic exports
+*.csv.tmp
+*.trace
+*.dump
+
+# Packaged releases / archives
+*.zip
+
+# Root screenshots / temporary images
+/Screenshot *.png
+/valtest1.png
+
+# ============================================================
+# Build output
+# ============================================================
+
+**/bin/
+**/obj/
+**/Build/
+**/build/
+**/Builds/
+**/dist/
+**/out/
+
+*.pdb
+*.mdb
+
+# ============================================================
+# Local dependency / reference caches
+# ============================================================
+
+**/.refs/
+**/.packages/
+**/packages/
+*.nupkg
+
+# ============================================================
+# Unity generated folders
+# Keep Assets, Packages and ProjectSettings tracked
+# ============================================================
+
+**/Library/
+**/Temp/
+**/UserSettings/
+**/MemoryCaptures/
+**/Recordings/
+
+# Unity transient/generated junk
+*.csproj.user
+
+# ============================================================
+# IDE / editor
+# ============================================================
+
+.vs/
+.idea/
+.vscode/
+
+*.user
+*.suo
+*.userprefs
+
+# ============================================================
+# Temporary / backup files
+# ============================================================
+
+*.tmp
+*.temp
+*.bak
+*.old
+*.orig
+*~
+*.swp
+
+# ============================================================
+# Windows / macOS junk
+# ============================================================
+
+desktop.ini
+Thumbs.db
+.DS_Store

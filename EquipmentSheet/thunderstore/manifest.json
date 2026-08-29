@@ -1,0 +1,9 @@
+{
+  "name": "EquipmentSheet",
+  "version_number": "0.9.3",
+  "website_url": "",
+  "description": "Persistent equipment/food panel for Valheim. Human-directed, with AI-assisted code analysis, optimization review, and verification support.",
+  "dependencies": [
+    "denikson-BepInExPack_Valheim-5.4.2333"
+  ]
+}

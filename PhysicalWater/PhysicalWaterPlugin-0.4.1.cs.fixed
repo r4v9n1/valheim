@@ -1,0 +1,284 @@
+using System;
+using System.Reflection;
+using BepInEx;
+using BepInEx.Configuration;
+using BepInEx.Logging;
+using HarmonyLib;
+using UnityEngine;
+
+[assembly: AssemblyTitle(PhysicalWater.PhysicalWaterPlugin.PluginName)]
+[assembly: AssemblyVersion(PhysicalWater.PhysicalWaterPlugin.PluginVersion)]
+[assembly: AssemblyFileVersion(PhysicalWater.PhysicalWaterPlugin.PluginVersion)]
+[assembly: AssemblyCompany("R4V9N1")]
+[assembly: AssemblyProduct(PhysicalWater.PhysicalWaterPlugin.PluginName)]
+[assembly: AssemblyDescription("Authoritative physics-based water replacement for Valheim.")]
+[assembly: AssemblyMetadata("Creator", PhysicalWater.PhysicalWaterPlugin.CreatorCredit)]
+
+namespace PhysicalWater
+{
+    [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
+    public sealed class PhysicalWaterPlugin : BaseUnityPlugin
+    {
+        public const string PluginGuid = "r4v9n1.physicalwater";
+        public const string PluginName = "PhysicalWater";
+        public const string PluginVersion = "0.4.1";
+        public const string CreatorCredit = "Created by R4V9N1";
+
+        internal static ManualLogSource Log;
+        internal static PhysicalWaterSettings Settings;
+
+        private Harmony _harmony;
+        private GameObject _systemObject;
+
+        private void Awake()
+        {
+            Log = Logger;
+            Settings = new PhysicalWaterSettings(Config);
+
+            _harmony = new Harmony(PluginGuid);
+            PatchSafely(typeof(FloatingGetLiquidLevelPatch), "Floating.GetLiquidLevel water-height override");
+            PatchSafely(typeof(FloatingGetWaterLevelPatch), "Floating.GetWaterLevel water-height override");
+            PatchSafely(typeof(FloatingIsUnderWaterPatch), "Floating.IsUnderWater override");
+            PatchSafely(typeof(FloatingCustomFixedUpdatePatch), "Floating object water disturbance");
+            PatchSafely(typeof(ShipCustomFixedUpdatePatch), "Ship dry-baseline water-force suppression");
+            PatchSafely(typeof(CharacterCustomFixedUpdatePatch), "Character liquid-level feed");
+            PatchSafely(typeof(GameCameraGetCameraPositionPatch), "underwater camera clamp bypass");
+            PatchSafely(typeof(WaterVolumeGetWaterSurfacePatch), "WaterVolume.GetWaterSurface dry-baseline override");
+            PatchSafely(typeof(WaterVolumeAwakePatch), "vanilla WaterVolume visual suppression hook");
+            PatchSafely(typeof(WaterVolumeStartPatch), "vanilla WaterVolume startup visual suppression hook");
+            PatchSafely(typeof(WaterVolumeOnEnablePatch), "vanilla WaterVolume enable visual suppression hook");
+            PatchSafely(typeof(WaterVolumeOnTriggerEnterPatch), "vanilla WaterVolume trigger-enter suppression hook");
+            PatchSafely(typeof(WaterVolumeOnTriggerExitPatch), "vanilla WaterVolume trigger-exit suppression hook");
+            PatchSafely(typeof(WaterVolumeUpdateFloatersPatch), "vanilla WaterVolume floater suppression hook");
+            PatchSafely(typeof(LiquidSurfaceAwakePatch), "vanilla LiquidSurface visual suppression hook");
+            PatchSafely(typeof(LiquidSurfaceGetSurfacePatch), "LiquidSurface.GetSurface dry-baseline override");
+            PatchSafely(typeof(LiquidSurfaceOnTriggerEnterPatch), "vanilla LiquidSurface trigger-enter suppression hook");
+            PatchSafely(typeof(LiquidSurfaceOnTriggerExitPatch), "vanilla LiquidSurface trigger-exit suppression hook");
+            PatchSafely(typeof(LiquidSurfaceFixedUpdatePatch), "vanilla LiquidSurface floater suppression hook");
+
+            _systemObject = new GameObject("R4V9N1_PhysicalWaterSystem");
+            DontDestroyOnLoad(_systemObject);
+            _systemObject.AddComponent<PhysicalWaterSystem>();
+
+            Logger.LogInfo(PluginName + " " + PluginVersion + " loaded in " +
+                           (Settings.Enabled.Value ? "enabled" : "disabled") +
+                           " mode. Vanilla ocean replacement is " +
+                           (Settings.HideVanillaWaterRenderers.Value ? "requested" : "not requested") + ".");
+            Logger.LogInfo("PhysicalWater 0.4.1 Ocean Core Rewrite active: concentric LOD ocean, shared deep-water spectrum, local interaction field, and authoritative PhysicalWater buoyancy.");
+        }
+
+        private void OnDestroy()
+        {
+            if (_harmony != null)
+            {
+                try
+                {
+                    _harmony.UnpatchSelf();
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning("Could not unpatch PhysicalWater cleanly: " + ex.Message);
+                }
+
+                _harmony = null;
+            }
+
+            if (_systemObject != null)
+            {
+                Destroy(_systemObject);
+                _systemObject = null;
+            }
+        }
+
+        private void PatchSafely(Type patchType, string label)
+        {
+            try
+            {
+                _harmony.CreateClassProcessor(patchType).Patch();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning("Could not install " + label + "; continuing without that hook: " + ex.Message);
+            }
+        }
+    }
+
+    internal sealed class PhysicalWaterSettings
+    {
+        internal readonly ConfigEntry<bool> Enabled;
+        internal readonly ConfigEntry<bool> DryOceanFloorBaseline;
+        internal readonly ConfigEntry<bool> RenderPreviewSurface;
+        internal readonly ConfigEntry<bool> OverrideWaterQueries;
+        internal readonly ConfigEntry<bool> PhysicalWaterInteractionEnabled;
+        internal readonly ConfigEntry<bool> FeedFloatingLiquidLevel;
+        internal readonly ConfigEntry<bool> FeedCharactersLiquidLevel;
+        internal readonly ConfigEntry<bool> HideVanillaWaterRenderers;
+        internal readonly ConfigEntry<bool> SuppressVanillaWaterVolumeFloaters;
+        internal readonly ConfigEntry<bool> ReactToFloatingObjects;
+        internal readonly ConfigEntry<bool> DisableUnderwaterCameraClamp;
+        internal readonly ConfigEntry<float> UnderwaterCameraFreeDepth;
+        internal readonly ConfigEntry<float> SeaLevel;
+        internal readonly ConfigEntry<float> FollowRadius;
+        internal readonly ConfigEntry<float> OriginSnapMeters;
+        internal readonly ConfigEntry<bool> TerrainMaskEnabled;
+        internal readonly ConfigEntry<bool> RequireOceanConnection;
+        internal readonly ConfigEntry<float> ShorelineDryMargin;
+        internal readonly ConfigEntry<float> ShorelineVisualBand;
+        internal readonly ConfigEntry<float> VisualBoundarySinkMeters;
+        internal readonly ConfigEntry<float> VisualBoundarySinkDepth;
+        internal readonly ConfigEntry<bool> FarOceanEnabled;
+        internal readonly ConfigEntry<float> FarOceanRadius;
+        internal readonly ConfigEntry<float> FarOceanInnerRadius;
+        internal readonly ConfigEntry<int> FarOceanResolution;
+        internal readonly ConfigEntry<bool> UseVanillaWaterMaterial;
+        internal readonly ConfigEntry<bool> DebugOpaqueWater;
+        internal readonly ConfigEntry<bool> ShorelineEffectsEnabled;
+        internal readonly ConfigEntry<float> ShorelineEffectsInterval;
+        internal readonly ConfigEntry<int> ShorelineEffectsBudget;
+        internal readonly ConfigEntry<int> GridResolution;
+        internal readonly ConfigEntry<float> WaveSpeed;
+        internal readonly ConfigEntry<float> Damping;
+        internal readonly ConfigEntry<float> WindWaveAmplitude;
+        internal readonly ConfigEntry<float> WindWaveLength;
+        internal readonly ConfigEntry<float> MaxSimulatedDisplacement;
+        internal readonly ConfigEntry<float> ObjectDisturbanceScale;
+        internal readonly ConfigEntry<float> CharacterDisturbanceScale;
+        internal readonly ConfigEntry<bool> ShipBuoyancyAssist;
+        internal readonly ConfigEntry<float> ShipBuoyancyAcceleration;
+        internal readonly ConfigEntry<float> ShipSurfaceLift;
+        internal readonly ConfigEntry<float> ShipMaxLiftDepth;
+        internal readonly ConfigEntry<float> ShipVerticalDamping;
+        internal readonly ConfigEntry<float> ShipWaterDrag;
+        internal readonly ConfigEntry<float> ShipWakeStrength;
+        internal readonly ConfigEntry<bool> ShipUprightAssist;
+        internal readonly ConfigEntry<float> ShipUprightTorque;
+        internal readonly ConfigEntry<float> ShipAngularDamping;
+        internal readonly ConfigEntry<float> ShipMaxAngularVelocity;
+        internal readonly ConfigEntry<bool> SmallCreatureSwimAssist;
+        internal readonly ConfigEntry<float> SmallCreatureMaxHeight;
+        internal readonly ConfigEntry<float> SmallCreatureSwimDepthFactor;
+        internal readonly ConfigEntry<float> BuoyancyProbeRadius;
+        internal readonly ConfigEntry<float> FloatingProbeFallbackRadius;
+        internal readonly ConfigEntry<float> CharacterWaterFeedInterval;
+        internal readonly ConfigEntry<bool> Diagnostics;
+
+        internal PhysicalWaterSettings(ConfigFile config)
+        {
+            Enabled = config.Bind("General", "Enabled", true,
+                "Master switch for the PhysicalWater prototype.");
+            DryOceanFloorBaseline = config.Bind("General", "DryOceanFloorBaseline", false,
+                "Hard baseline mode: remove vanilla water influence and report all water as dry so the ocean floor is walkable. Use this to prove vanilla water is gone before rebuilding PhysicalWater.");
+            RenderPreviewSurface = config.Bind("General", "RenderPreviewSurface", true,
+                "Render the prototype physical water mesh around the local player.");
+            OverrideWaterQueries = config.Bind("Integration", "OverrideWaterQueries", true,
+                "Route all water-height queries to PhysicalWater while the replacement is enabled. Vanilla water never supplies the active water height.");
+            PhysicalWaterInteractionEnabled = config.Bind("Integration", "PhysicalWaterInteractionEnabled", true,
+                "Let PhysicalWater affect player, creature, ship, and floating-object water physics. Keep false while validating the visual fill surface.");
+            FeedFloatingLiquidLevel = config.Bind("Integration", "FeedFloatingLiquidLevel", true,
+                "Feed floating objects from the PhysicalWater surface. Vanilla WaterVolume flotation is suppressed while PhysicalWater is enabled.");
+            FeedCharactersLiquidLevel = config.Bind("Integration", "FeedCharactersLiquidLevel", true,
+                "Replacement test mode: actively feed player/creature liquid level from the PhysicalWater surface.");
+            HideVanillaWaterRenderers = config.Bind("Integration", "HideVanillaWaterRenderers", true,
+                "Replacement test mode: hide renderer components on vanilla WaterVolume objects. This does not delete world data.");
+            SuppressVanillaWaterVolumeFloaters = config.Bind("Integration", "SuppressVanillaWaterVolumeFloaters", true,
+                "Replacement test mode: stop vanilla WaterVolume.UpdateFloaters from feeding liquid levels so PhysicalWater is the active water source.");
+            ReactToFloatingObjects = config.Bind("Integration", "ReactToFloatingObjects", true,
+                "Let vanilla Floating objects disturb the prototype water heightfield when they are near the physical surface.");
+            DisableUnderwaterCameraClamp = config.Bind("Camera", "DisableUnderwaterCameraClamp", true,
+                "Let the camera follow the player below the PhysicalWater surface instead of being pinned above the waterline by Valheim's vanilla camera clamp.");
+            UnderwaterCameraFreeDepth = config.Bind("Camera", "UnderwaterCameraFreeDepth", 0.65f,
+                "Meters the local player eye must be below the PhysicalWater surface before the underwater camera clamp is bypassed.");
+            SeaLevel = config.Bind("WaterShape", "SeaLevel", 30f,
+                "Base water surface height. Valheim's ocean is roughly around Y=30.");
+            FollowRadius = config.Bind("WaterShape", "FollowRadius", 120f,
+                "Half-size of the LOCAL physics/interaction field. 0.4.1 renders the long-range ocean through separate concentric LOD geometry.");
+            OriginSnapMeters = config.Bind("WaterShape", "OriginSnapMeters", 48f,
+                "Meters the local physics/interaction field snaps by when following the player.");
+            TerrainMaskEnabled = config.Bind("WaterShape", "TerrainMaskEnabled", true,
+                "Treat the world as a sea-level fill: water only exists where terrain is below the calm sea level.");
+            RequireOceanConnection = config.Bind("WaterShape", "RequireOceanConnection", false,
+                "Only allow water where below-sea-level terrain is connected to ocean water through the sampled local grid. This prevents isolated dug holes from magically filling.");
+            ShorelineDryMargin = config.Bind("WaterShape", "ShorelineDryMargin", 0.04f,
+                "Meters below calm sea level that terrain must be before PhysicalWater considers that point ocean. Raise if water creeps onto shore.");
+            ShorelineVisualBand = config.Bind("WaterShape", "ShorelineVisualBand", 2.25f,
+                "Extra meters above sea level used only to draw shoreline transition triangles. This is visual overlap, not physics water.");
+            VisualBoundarySinkMeters = config.Bind("WaterShape", "VisualBoundarySinkMeters", 96f,
+                "Outer meters of the preview grid that are pushed below terrain to hide the prototype's finite square edge.");
+            VisualBoundarySinkDepth = config.Bind("WaterShape", "VisualBoundarySinkDepth", 18f,
+                "Meters below sampled terrain used at the outer edge of the preview grid.");
+            FarOceanEnabled = config.Bind("WaterShape", "FarOceanEnabled", true,
+                "Render an ultra-cheap far-ocean visual impostor beyond the near PhysicalWater tile. This is visual only and has no physics.");
+            FarOceanRadius = config.Bind("WaterShape", "FarOceanRadius", 2200f,
+                "Half-size in meters of the cheap far-ocean visual impostor around the local client.");
+            FarOceanInnerRadius = config.Bind("WaterShape", "FarOceanInnerRadius", 300f,
+                "Inner half-size in meters cut out of the far-ocean impostor so the near PhysicalWater tile owns the close water.");
+            FarOceanResolution = config.Bind("WaterShape", "FarOceanResolution", 65,
+                new ConfigDescription("Vertex count per side for the cheap far-ocean impostor.",
+                    new AcceptableValueRange<int>(9, 65)));
+            UseVanillaWaterMaterial = config.Bind("Visuals", "UseVanillaWaterMaterial", false,
+                "Legacy option retained for config compatibility only. 0.4.1 never adopts or renders a Valheim water material.");
+            DebugOpaqueWater = config.Bind("Visuals", "DebugOpaqueWater", false,
+                "Render PhysicalWater with a deliberately obvious opaque blue test material so visibility problems are easy to diagnose.");
+            ShorelineEffectsEnabled = config.Bind("Visuals", "ShorelineEffectsEnabled", true,
+                "Emit lightweight foam shimmer particles along nearby water/shore boundaries.");
+            ShorelineEffectsInterval = config.Bind("Visuals", "ShorelineEffectsInterval", 0.22f,
+                "Seconds between shoreline foam emission passes. Higher values cost less CPU.");
+            ShorelineEffectsBudget = config.Bind("Visuals", "ShorelineEffectsBudget", 160,
+                new ConfigDescription("Maximum shoreline foam particles emitted per shoreline pass.",
+                    new AcceptableValueRange<int>(0, 320)));
+            GridResolution = config.Bind("WaterShape", "GridResolution", 161,
+                new ConfigDescription("Vertex count per side for the local water grid. Odd numbers keep the player centered on a vertex.",
+                    new AcceptableValueRange<int>(17, 257)));
+            WaveSpeed = config.Bind("Simulation", "WaveSpeed", 8.5f,
+                "Speed used by the heightfield wave equation.");
+            Damping = config.Bind("Simulation", "Damping", 0.965f,
+                "Wave damping per simulation step. Lower values settle faster.");
+            WindWaveAmplitude = config.Bind("Simulation", "WindWaveAmplitude", 0.72f,
+                "Procedural wind-wave height added to the simulated water.");
+            WindWaveLength = config.Bind("Simulation", "WindWaveLength", 38f,
+                "Approximate wavelength for procedural wind waves.");
+            MaxSimulatedDisplacement = config.Bind("Simulation", "MaxSimulatedDisplacement", 0.16f,
+                "Maximum positive/negative heightfield displacement before procedural waves are added.");
+            ObjectDisturbanceScale = config.Bind("Simulation", "ObjectDisturbanceScale", 0.16f,
+                "Multiplier for floating-object visual disturbance energy. In the non-jelly ocean pass this drives foam/splash feedback, not gameplay surface height.");
+            CharacterDisturbanceScale = config.Bind("Simulation", "CharacterDisturbanceScale", 0.18f,
+                "Multiplier for character/player visual disturbance energy. In the non-jelly ocean pass this drives foam/splash feedback, not gameplay surface height.");
+            ShipBuoyancyAssist = config.Bind("ShipPhysics", "ShipBuoyancyAssist", true,
+                "Enable authoritative PhysicalWater hydrostatic hull-probe buoyancy. 0.4.1 suppresses vanilla ship/floater water forces and applies one bounded PhysicalWater solver.");
+            ShipBuoyancyAcceleration = config.Bind("ShipPhysics", "ShipBuoyancyAcceleration", 48.0f,
+                "Vertical correction strength for stable ship flotation when the boat center is below its target PhysicalWater ride height.");
+            ShipSurfaceLift = config.Bind("ShipPhysics", "ShipSurfaceLift", 0.15f,
+                "Meters added to the sampled PhysicalWater surface for ship buoyancy probes so hulls ride on the surface instead of half-sinking.");
+            ShipMaxLiftDepth = config.Bind("ShipPhysics", "ShipMaxLiftDepth", 4.0f,
+                "Maximum ride-height error considered by the stable ship flotation controller.");
+            ShipVerticalDamping = config.Bind("ShipPhysics", "ShipVerticalDamping", 18.0f,
+                "Damping against vertical ship velocity while the stable PhysicalWater flotation assist is active.");
+            ShipWaterDrag = config.Bind("ShipPhysics", "ShipWaterDrag", 0.16f,
+                "Small horizontal drag applied to ships by the PhysicalWater flotation assist.");
+            ShipWakeStrength = config.Bind("ShipPhysics", "ShipWakeStrength", 0.028f,
+                "Wake/ripple strength emitted by moving ships into the shared PhysicalWater ripple field and visible foam/splash layer.");
+            ShipUprightAssist = config.Bind("ShipPhysics", "ShipUprightAssist", false,
+                "Apply a gentle upright torque and angular damping after native ship physics so boats do not roll onto their side while PhysicalWater replaces vanilla water.");
+            ShipUprightTorque = config.Bind("ShipPhysics", "ShipUprightTorque", 8.0f,
+                "Strength of the upright torque applied to ships by PhysicalWater.");
+            ShipAngularDamping = config.Bind("ShipPhysics", "ShipAngularDamping", 1.5f,
+                "Angular damping applied to ships by PhysicalWater while the upright assist is active.");
+            ShipMaxAngularVelocity = config.Bind("ShipPhysics", "ShipMaxAngularVelocity", 1.8f,
+                "Maximum angular velocity magnitude allowed by the PhysicalWater ship stabilizer.");
+            SmallCreatureSwimAssist = config.Bind("CreatureWater", "SmallCreatureSwimAssist", true,
+                "Help small non-player creatures enter swim mode in PhysicalWater instead of walking along the seabed near shore.");
+            SmallCreatureMaxHeight = config.Bind("CreatureWater", "SmallCreatureMaxHeight", 1.8f,
+                "Only non-player characters at or below this height receive swim-depth assistance.");
+            SmallCreatureSwimDepthFactor = config.Bind("CreatureWater", "SmallCreatureSwimDepthFactor", 0.45f,
+                "Assisted swim depth as a fraction of creature height. Lower values make small creatures float/swim in shallower water.");
+            BuoyancyProbeRadius = config.Bind("Physics", "BuoyancyProbeRadius", 0.75f,
+                "Radius used when disturbance/buoyancy callers query local water height.");
+            FloatingProbeFallbackRadius = config.Bind("Physics", "FloatingProbeFallbackRadius", 8.0f,
+                "Meters around a Floating.GetWaterLevel probe searched for connected ocean water. This keeps ship corner probes from averaging dry shoreline cells into no-water while still preserving dry isolated holes inside the active grid.");
+            CharacterWaterFeedInterval = config.Bind("Integration", "CharacterWaterFeedInterval", 0.2f,
+                "Seconds between experimental Character.SetLiquidLevel feeds.");
+            Diagnostics = config.Bind("Diagnostics", "Diagnostics", true,
+                "Log compact startup and periodic diagnostics.");
+        }
+    }
+}
