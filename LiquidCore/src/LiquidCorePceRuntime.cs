@@ -37,10 +37,12 @@ namespace PhysicalWater
         private void Update()
         {
             PhysicalWaterValheimWorldGeometryAdapter current = PhysicalWaterValheimWorldGeometryAdapter.Instance;
-            if (current == _adapter) return;
-            if (_adapter != null) _adapter.PceGeometryChanged -= OnGeometryChanged;
-            _adapter = current;
-            if (_adapter != null) _adapter.PceGeometryChanged += OnGeometryChanged;
+            if (current != _adapter)
+            {
+                if (_adapter != null) _adapter.PceGeometryChanged -= OnGeometryChanged;
+                _adapter = current;
+                if (_adapter != null) _adapter.PceGeometryChanged += OnGeometryChanged;
+            }
             _queue.Drain();
         }
 
