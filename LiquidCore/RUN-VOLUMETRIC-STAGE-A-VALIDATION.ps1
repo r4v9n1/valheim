@@ -9,7 +9,7 @@ $UnityExe = "C:\Program Files\Unity\Hub\Editor\6000.0.61f1\Editor\Unity.exe"
 $UnityProject = Join-Path $WorkspaceRoot "UnityPhysicalOceanValidation"
 $UnityPackage = Join-Path $WorkspaceRoot "UnityPhysicalOcean"
 
-$LocalBuildRoot = Join-Path $env:LOCALAPPDATA "R4V9N1\PhysicalWaterUnityBuild"
+$LocalBuildRoot = Join-Path $env:LOCALAPPDATA "R4V9N1\LiquidCoreUnityBuild"
 $LocalUnityProject = Join-Path $LocalBuildRoot "UnityPhysicalOceanValidation"
 $LocalUnityPackage = Join-Path $LocalBuildRoot "UnityPhysicalOcean"
 $LocalUnityLog = Join-Path $LocalUnityProject "VolumetricStageAValidationUnity.log"

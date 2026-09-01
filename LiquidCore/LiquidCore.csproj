@@ -1,0 +1,90 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>LiquidCore</AssemblyName>
+    <RootNamespace>PhysicalWater</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <ValheimDir Condition="'$(ValheimDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Valheim</ValheimDir>
+    <GameManagedDir Condition="'$(GameManagedDir)' == ''">$(ValheimDir)\valheim_Data\Managed</GameManagedDir>
+    <BepInExCoreDir Condition="'$(BepInExCoreDir)' == ''">$(ValheimDir)\BepInEx\core</BepInExCoreDir>
+    <LiquidCoreCoreDir Condition="'$(LiquidCoreCoreDir)' == '' and '$(PhysicalWaterCoreDir)' != ''">$(PhysicalWaterCoreDir)</LiquidCoreCoreDir>
+    <LiquidCoreCoreDir Condition="'$(LiquidCoreCoreDir)' == ''">$(MSBuildThisFileDirectory)..\..\..\workspace\LiquidCore\UnityPhysicalOcean</LiquidCoreCoreDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="src\**\*.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricWaterSettings.cs" Link="Volumetric\VolumetricWaterSettings.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricWaterDiagnostics.cs" Link="Volumetric\VolumetricWaterDiagnostics.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricWaterDomain.cs" Link="Volumetric\VolumetricWaterDomain.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricCutCellProjection.cs" Link="Volumetric\VolumetricCutCellProjection.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricFlipDiagnostics.cs" Link="Volumetric\VolumetricFlipDiagnostics.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricFlipDensityDiagnostics.cs" Link="Volumetric\VolumetricFlipDensityDiagnostics.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricFlipSettings.cs" Link="Volumetric\VolumetricFlipSettings.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricFlipDomain.cs" Link="Volumetric\VolumetricFlipDomain.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricSolidGeometrySdf.cs" Link="Volumetric\VolumetricSolidGeometrySdf.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricTerrainFixture.cs" Link="Volumetric\VolumetricTerrainFixture.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricFiniteDomain.cs" Link="Volumetric\VolumetricFiniteDomain.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricStreamingDomain.cs" Link="Volumetric\VolumetricStreamingDomain.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricFluidStateSnapshot.cs" Link="Volumetric\VolumetricFluidStateSnapshot.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricWorldGeometryAdapter.cs" Link="Volumetric\VolumetricWorldGeometryAdapter.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyContract.cs" Link="Probes\ProbeColonyContract.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyGeometryBridge.cs" Link="Probes\ProbeColonyGeometryBridge.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyChangeQueue.cs" Link="Probes\ProbeColonyChangeQueue.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyEventBridge.cs" Link="Probes\ProbeColonyEventBridge.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyRuntime.cs" Link="Probes\ProbeColonyRuntime.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="BepInEx">
+      <HintPath>$(BepInExCoreDir)\BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(BepInExCoreDir)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="assembly_valheim">
+      <HintPath>$(GameManagedDir)\assembly_valheim.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(GameManagedDir)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GameManagedDir)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(GameManagedDir)\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AssetBundleModule">
+      <HintPath>$(GameManagedDir)\UnityEngine.AssetBundleModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ParticleSystemModule">
+      <HintPath>$(GameManagedDir)\UnityEngine.ParticleSystemModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AnimationModule">
+      <HintPath>$(GameManagedDir)\UnityEngine.AnimationModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.DirectorModule">
+      <HintPath>$(GameManagedDir)\UnityEngine.DirectorModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(GameManagedDir)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.JSONSerializeModule">
+      <HintPath>$(GameManagedDir)\UnityEngine.JSONSerializeModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

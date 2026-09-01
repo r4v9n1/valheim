@@ -9,8 +9,13 @@ namespace PhysicalWater
 {
     internal sealed class PhysicalWaterDevE1Runtime : MonoBehaviour
     {
+        internal static PhysicalWaterDevE1Runtime Instance { get; private set; }
+
         private readonly List<GameObject> _geometryRoots = new List<GameObject>();
         private readonly List<GameObject> _activeGeometryRoots = new List<GameObject>();
+        private readonly List<GameObject> _changedGeometryRoots = new List<GameObject>();
+        private readonly Dictionary<int, int> _coverageGeometryRevisions = new Dictionary<int, int>();
+        private readonly Dictionary<int, int> _appliedGeometryRevisions = new Dictionary<int, int>();
         private AssetBundle _bundle;
         private ComputeShader _macShader;
         private ComputeShader _flipShader;
@@ -36,16 +41,22 @@ namespace PhysicalWater
 
         private void Awake()
         {
+            Instance = this;
             RegisterCommands();
             LoadAssets();
             PhysicalWaterPlugin.Log.LogInfo(
                 "PhysicalWater devE3 finite streaming test mode active. Global ocean replacement OFF. " +
                 "Vanilla-water suppression OFF. Swimming/buoyancy/ships/fish OFF. Explicit finite fluid only.");
-            PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devE3 explicit test controls: console pw_e3_* (pw_e1_* aliases retained); F6=create domain, F7=fill 6m cube, F8=clear, F9=status, F10=pause, F11=raw/live field probe.");
+            PhysicalWaterPlugin.Log.LogInfo(
+                "PhysicalWater devE3 explicit test controls: console pw_e3_* (pw_e1_* aliases retained); " +
+                "F6=create domain, F7=fill 6m cube, F8=clear, F9=status, F10=pause, F11=raw/live field probe, F12=capture terrain fixture; " +
+                "Ctrl+Shift+D/W/X/S/P/B/C mirror those actions, Ctrl+Shift+G enables safe terrain-test flight, " +
+                "and Ctrl+Shift+J/K apply deterministic native terrain lower/raise operations.");
         }
 
         private void OnDestroy()
         {
+            if (Instance == this) Instance = null;
             DestroyDomain();
             if (_surfaceMaterial != null) Destroy(_surfaceMaterial);
             _surfaceMaterial = null;
@@ -61,6 +72,17 @@ namespace PhysicalWater
             if (Input.GetKeyDown(KeyCode.F9)) StatusCommand(null);
             if (Input.GetKeyDown(KeyCode.F10)) PauseCommand(null);
             if (Input.GetKeyDown(KeyCode.F11)) ProbeCommand(null);
+            if (Input.GetKeyDown(KeyCode.F12)) CaptureTerrainCommand(null);
+            if (TestChordDown(KeyCode.D)) CreateDomainCommand(null);
+            if (TestChordDown(KeyCode.W)) FillBoxCommand(null);
+            if (TestChordDown(KeyCode.X)) ClearCommand(null);
+            if (TestChordDown(KeyCode.S)) StatusCommand(null);
+            if (TestChordDown(KeyCode.P)) PauseCommand(null);
+            if (TestChordDown(KeyCode.B)) ProbeCommand(null);
+            if (TestChordDown(KeyCode.C)) CaptureTerrainCommand(null);
+            if (TestChordDown(KeyCode.G)) EnableSafeTerrainTestFlight();
+            if (TestChordDown(KeyCode.J)) ApplyTerrainTestDelta(-1f, "lower");
+            if (TestChordDown(KeyCode.K)) ApplyTerrainTestDelta(1f, "raise");
             if (_streaming == null || _domain == null || !_domain.Initialized) return;
 
             SynchronizeGeometryIfReady();
@@ -87,6 +109,83 @@ namespace PhysicalWater
             }
 
             MaybeCaptureLiveFieldProbe();
+        }
+
+        private static bool TestChordDown(KeyCode key)
+        {
+            bool control = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+            bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+            return control && shift && Input.GetKeyDown(key);
+        }
+
+        private static void EnableSafeTerrainTestFlight()
+        {
+            Player player = Player.m_localPlayer;
+            if (player == null)
+            {
+                PhysicalWaterPlugin.Log.LogWarning("PhysicalWater terrain-test flight requires a local player.");
+                return;
+            }
+
+            Player.m_debugMode = true;
+            player.SetGodMode(true);
+            player.SetNoPlacementCost(true);
+            if (!player.IsDebugFlying()) player.ToggleDebugFly();
+            PhysicalWaterPlugin.Log.LogInfo(
+                "PhysicalWater terrain-test flight enabled: debugMode=True, god=True, noPlacementCost=True, debugFly=True.");
+        }
+
+        private static void ApplyTerrainTestDelta(float delta, string operation)
+        {
+            Player player = Player.m_localPlayer;
+            if (player == null)
+            {
+                PhysicalWaterPlugin.Log.LogWarning("PhysicalWater terrain test operation requires a local player.");
+                return;
+            }
+
+            Vector3 point = player.transform.position + player.transform.forward * 2f;
+            if (!Heightmap.GetHeight(point, out float groundHeight))
+            {
+                PhysicalWaterPlugin.Log.LogWarning(
+                    $"PhysicalWater terrain test {operation} found no loaded heightmap at ({point.x:F2}, {point.z:F2}).");
+                return;
+            }
+
+            point.y = groundHeight;
+            Heightmap heightmap = Heightmap.FindHeightmap(point);
+            if (heightmap == null)
+            {
+                PhysicalWaterPlugin.Log.LogWarning(
+                    $"PhysicalWater terrain test {operation} could not resolve the loaded heightmap at {point}.");
+                return;
+            }
+
+            TerrainComp compiler = heightmap.GetAndCreateTerrainCompiler();
+            if (compiler == null)
+            {
+                PhysicalWaterPlugin.Log.LogWarning(
+                    $"PhysicalWater terrain test {operation} could not create the native terrain compiler at {point}.");
+                return;
+            }
+
+            GameObject operationObject = new GameObject($"PhysicalWater terrain test {operation}");
+            operationObject.SetActive(false);
+            operationObject.transform.position = point;
+            TerrainOp terrainOperation = operationObject.AddComponent<TerrainOp>();
+            terrainOperation.m_settings.m_level = false;
+            terrainOperation.m_settings.m_raise = true;
+            terrainOperation.m_settings.m_raiseRadius = 2f;
+            terrainOperation.m_settings.m_raisePower = 1f;
+            terrainOperation.m_settings.m_raiseDelta = delta;
+            terrainOperation.m_settings.m_smooth = false;
+            terrainOperation.m_settings.m_paintCleared = false;
+            compiler.ApplyOperation(terrainOperation);
+            Destroy(operationObject);
+
+            PhysicalWaterPlugin.Log.LogInfo(
+                $"PhysicalWater deterministic native terrain {operation} requested: point=({point.x:F2}, {point.y:F2}, {point.z:F2}), " +
+                $"radius=2.00m, delta={delta:F2}m, compilerOwner={compiler.IsOwner()}.");
         }
 
         private void LateUpdate()
@@ -120,6 +219,8 @@ namespace PhysicalWater
             new Terminal.ConsoleCommand("pw_e3_step", "advance paused E3 simulation by one 1/30 second step", StepCommand, false, false, false, false, true);
             new Terminal.ConsoleCommand("pw_e3_probe", "capture one blocking raw/fraction/presentation field probe", ProbeCommand, false, false, false, false, true);
             new Terminal.ConsoleCommand("pw_e3_snapshot", "save a replayable finite-fluid snapshot", SnapshotCommand, false, false, false, false, true);
+            new Terminal.ConsoleCommand("pw_e3_capture_terrain", "capture replayable Valheim terrain: [width] [depth] [spacing] [label]", CaptureTerrainCommand, false, false, false, false, true);
+            new Terminal.ConsoleCommand("pw_terrain_capture", "capture replayable Valheim terrain: [width] [depth] [spacing] [label]", CaptureTerrainCommand, false, false, false, false, true);
         }
 
         private void CreateDomainCommand(Terminal.ConsoleEventArgs args)
@@ -155,7 +256,11 @@ namespace PhysicalWater
                     RegionCellsX = 32,
                     RegionCellsZ = 32,
                     WindowRegionsX = 3,
-                    WindowRegionsZ = 2,
+                    // The live finite-water probe can spread across three 32-cell
+                    // Z regions before settling. Keep one additional row in the
+                    // compact window so that normal transport does not hit an
+                    // artificial boundary while the safety gate remains strict.
+                    WindowRegionsZ = 3,
                     PrefetchCells = 4,
                     OwnershipScanIntervalSteps = 4,
                     AutoRebaseWindow = true,
@@ -168,11 +273,18 @@ namespace PhysicalWater
             _nextLiveFieldProbeCheckpoint = 0;
             _observedGeometryGeneration = -1;
             _appliedGeometryStateRevision = int.MinValue;
+            _appliedGeometryRevisions.Clear();
             _coverageWindowOrigin = new Vector3(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
             _domain.Paused = true;
+            PhysicalWaterPersistenceRuntime.TryRestore(_streaming);
             EnsureGeometryCoverage();
             SynchronizeGeometryIfReady();
-            string message = "E3 streaming window created: origin=" + Format(_domain.WorldOrigin) + ", logicalRegion=24x24m, resolution=96x24x64, cell=0.75m, size=72x18x48m, particles=0. No sea-level or vanilla-water fill was performed.";
+            VolumetricWaterSettings macSettings = _domain.MacDomain.Settings;
+            string message = "E3 streaming window created: origin=" + Format(_domain.WorldOrigin) +
+                             ", logicalRegion=" + (macSettings.CellSize * 32f).ToString("F0") + "x" + (macSettings.CellSize * 32f).ToString("F0") + "m" +
+                             ", resolution=" + macSettings.ResolutionX + "x" + macSettings.ResolutionY + "x" + macSettings.ResolutionZ +
+                             ", cell=" + macSettings.CellSize.ToString("F2") + "m, size=" + Format(_domain.WorldSize) +
+                             ", particles=0. No sea-level or vanilla-water fill was performed.";
             PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devE3 " + message);
             Reply(args, message);
         }
@@ -292,6 +404,53 @@ namespace PhysicalWater
                 PhysicalWaterPlugin.Log.LogError("PW_E3_SNAPSHOT failed: " + exception);
                 Reply(args, "E3 fluid-state snapshot failed; see BepInEx log.");
             }
+        }
+
+        private void CaptureTerrainCommand(Terminal.ConsoleEventArgs args)
+        {
+            if (!PhysicalWaterPlugin.Settings.StageE1Enabled.Value || Player.m_localPlayer == null)
+            {
+                Reply(args, "Terrain capture requires Stage E finite mode and a local player.");
+                return;
+            }
+            PhysicalWaterValheimWorldGeometryAdapter adapter = PhysicalWaterValheimWorldGeometryAdapter.Instance;
+            if (adapter == null)
+            {
+                Reply(args, "Valheim terrain adapter is not available.");
+                return;
+            }
+
+            float width = Mathf.Clamp(Parse(args, 1, 48f), 3f, 128f);
+            float depth = Mathf.Clamp(Parse(args, 2, 48f), 3f, 128f);
+            float spacing = Mathf.Clamp(Parse(args, 3, 1f), 0.25f, 4f);
+            string label = args != null && args.Length > 4 ? SanitizeFileName(args[4]) : "terrain";
+            Vector3 player = Player.m_localPlayer.transform.position;
+            Bounds bounds = new Bounds(
+                new Vector3(player.x, player.y, player.z),
+                new Vector3(width, 512f, depth));
+            if (!adapter.TryCaptureTerrainFixture(bounds, spacing, label, out VolumetricTerrainFixture fixture, out string error))
+            {
+                PhysicalWaterPlugin.Log.LogError("PW_TERRAIN_CAPTURE failed: " + error);
+                Reply(args, "Terrain capture failed: " + error);
+                return;
+            }
+
+            string directory = Path.Combine(
+                Path.GetDirectoryName(typeof(PhysicalWaterPlugin).Assembly.Location),
+                "Diagnostics",
+                "TerrainFixtures");
+            Directory.CreateDirectory(directory);
+            string path = Path.Combine(
+                directory,
+                label + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".pwterrain.json");
+            File.WriteAllText(path, fixture.ToJson(true));
+            string message = "Terrain fixture captured: path=" + path +
+                             ", samples=" + fixture.SamplesX + "x" + fixture.SamplesZ +
+                             ", spacing=" + fixture.SampleSpacing.ToString("F3", CultureInfo.InvariantCulture) +
+                             "m, sources=" + fixture.SourceIds.Length +
+                             ", bounds=" + fixture.WorldBounds + ".";
+            PhysicalWaterPlugin.Log.LogInfo("PW_TERRAIN_CAPTURE " + message);
+            Reply(args, message);
         }
 
         private void MaybeCaptureLiveFieldProbe()
@@ -649,15 +808,17 @@ namespace PhysicalWater
             if (_streaming == null || _domain == null) return;
             PhysicalWaterValheimWorldGeometryAdapter adapter = PhysicalWaterValheimWorldGeometryAdapter.Instance;
             if (adapter == null) return;
+            LiquidCorePceRuntime pce = LiquidCorePceRuntime.Instance;
+            if (pce == null) return;
             EnsureGeometryCoverage();
             if (!adapter.CausalGeometryCoverageReady) return;
             long generation;
             int coverageStateRevision;
-            if (!adapter.TryGetCausalGeometrySnapshot(_geometryCoverageBounds, _observedGeometryGeneration, _geometryRoots, out generation, out coverageStateRevision)) return;
+            if (!pce.TryGetCausalGeometrySnapshot(_geometryCoverageBounds, _observedGeometryGeneration, _geometryRoots, _coverageGeometryRevisions, out generation, out coverageStateRevision)) return;
 
             long activeGeneration;
             int stateRevision;
-            if (!adapter.TryGetCausalGeometrySnapshot(_domain.WorldBounds, -1, _activeGeometryRoots, out activeGeneration, out stateRevision) ||
+            if (!pce.TryGetCausalGeometrySnapshot(_domain.WorldBounds, -1, _activeGeometryRoots, null, out activeGeneration, out stateRevision) ||
                 activeGeneration != generation) return;
             _observedGeometryGeneration = generation;
             if (!ShouldApplyCausalGeometry(generation, activeGeneration, stateRevision, _appliedGeometryStateRevision))
@@ -671,8 +832,30 @@ namespace PhysicalWater
                 return;
             }
 
-            VolumetricFiniteSolidUpdateDiagnostics update = _streaming.SynchronizeGeometry(generation, _geometryRoots);
+            _changedGeometryRoots.Clear();
+            for (int i = 0; i < _geometryRoots.Count; i++)
+            {
+                GameObject root = _geometryRoots[i];
+                if (root == null) continue;
+                int rootId = root.GetInstanceID();
+                if (!_coverageGeometryRevisions.TryGetValue(rootId, out int revision)) continue;
+                if (!_appliedGeometryRevisions.TryGetValue(rootId, out int appliedRevision) || appliedRevision != revision)
+                    _changedGeometryRoots.Add(root);
+            }
+            Bounds dirtyWorldBounds;
+            Bounds? localizedDirtyWorldBounds = adapter.TryGetReadyDirtyWorldBounds(generation, out dirtyWorldBounds)
+                ? dirtyWorldBounds
+                : (Bounds?)null;
+            pce.ApplyMappedColliderOccupancy(_domain.WorldBounds, _domain.WorldOrigin, _domain.MacDomain.Settings.CellSize);
+            VolumetricFiniteSolidUpdateDiagnostics update = _streaming.SynchronizeGeometry(
+                generation,
+                _geometryRoots,
+                _changedGeometryRoots,
+                localizedDirtyWorldBounds);
             _appliedGeometryStateRevision = stateRevision;
+            _appliedGeometryRevisions.Clear();
+            foreach (KeyValuePair<int, int> pair in _coverageGeometryRevisions)
+                _appliedGeometryRevisions.Add(pair.Key, pair.Value);
             _domain.Paused = false;
             adapter.ReleaseCausalGeometryCoverage();
             PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devE3 causal solid synchronization: " + update + ".");
@@ -696,6 +879,10 @@ namespace PhysicalWater
         {
             if (_domain == null || _domain.WorldOrigin == _coverageWindowOrigin) return;
             _coverageWindowOrigin = _domain.WorldOrigin;
+            // A window rebase changes which cached sources are active even when
+            // no Valheim object changed revision. Re-open the generation gate so
+            // the new world/local mapping is compared and synchronized.
+            _observedGeometryGeneration = -1;
             _geometryCoverageBounds = _domain.WorldBounds;
             Vector3 coverageSize = _geometryCoverageBounds.size;
             coverageSize.x += 48f;
@@ -785,8 +972,11 @@ namespace PhysicalWater
             _domainObject = null;
             _observedGeometryGeneration = -1;
             _appliedGeometryStateRevision = int.MinValue;
+            _appliedGeometryRevisions.Clear();
             _coverageWindowOrigin = new Vector3(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
         }
+
+        internal VolumetricStreamingDomainController Streaming => _streaming;
 
         private static float ParsePositive(Terminal.ConsoleEventArgs args, int index, float fallback)
         {
@@ -801,6 +991,14 @@ namespace PhysicalWater
         }
 
         private static float Snap(float value, float spacing) => Mathf.Round(value / spacing) * spacing;
+        private static string SanitizeFileName(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return "terrain";
+            char[] invalid = Path.GetInvalidFileNameChars();
+            var result = value.Trim();
+            for (int i = 0; i < invalid.Length; i++) result = result.Replace(invalid[i], '_');
+            return string.IsNullOrWhiteSpace(result) ? "terrain" : result;
+        }
         private static string Format(Vector3 value) => "(" + value.x.ToString("F2") + "," + value.y.ToString("F2") + "," + value.z.ToString("F2") + ")";
         private static void Reply(Terminal.ConsoleEventArgs args, string message)
         {

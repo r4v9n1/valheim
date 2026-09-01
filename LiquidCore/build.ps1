@@ -6,10 +6,12 @@ param(
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$LocalProjectRoot = Join-Path $env:LOCALAPPDATA "R4V9N1\LiquidCore"
+$ObjDir = Join-Path $LocalProjectRoot "obj"
+$DistDir = Join-Path $LocalProjectRoot "dist"
 $ManagedDir = Join-Path $ValheimDir "valheim_Data\Managed"
 $BepInExCoreDir = Join-Path $ValheimDir "BepInEx\core"
-$DistDir = Join-Path $ProjectRoot "dist"
-$DllPath = Join-Path $DistDir "PhysicalWater.dll"
+$DllPath = Join-Path $DistDir "LiquidCore.dll"
 
 foreach ($path in @(
     (Join-Path $ManagedDir "assembly_valheim.dll"),
@@ -21,6 +23,7 @@ foreach ($path in @(
     (Join-Path $ManagedDir "UnityEngine.AudioModule.dll"),
     (Join-Path $ManagedDir "UnityEngine.AnimationModule.dll"),
     (Join-Path $ManagedDir "UnityEngine.InputLegacyModule.dll"),
+    (Join-Path $ManagedDir "UnityEngine.JSONSerializeModule.dll"),
     (Join-Path $BepInExCoreDir "BepInEx.dll"),
     (Join-Path $BepInExCoreDir "0Harmony.dll")
 )) {
@@ -34,12 +37,14 @@ if (Test-Path -LiteralPath $DllPath -PathType Leaf) {
     Remove-Item -LiteralPath $DllPath -Force
 }
 
-dotnet build (Join-Path $ProjectRoot "PhysicalWater.csproj") `
+dotnet build (Join-Path $ProjectRoot "LiquidCore.csproj") `
     -c $Configuration `
     --no-incremental `
     -p:ValheimDir="$ValheimDir" `
     -p:GameManagedDir="$ManagedDir" `
     -p:BepInExCoreDir="$BepInExCoreDir" `
+    -p:BaseIntermediateOutputPath="$ObjDir\" `
+    -p:GenerateTargetFrameworkAttribute=false `
     -p:OutputPath="$DistDir\"
 
 if ($LASTEXITCODE -ne 0) {
@@ -55,7 +60,7 @@ if ($dllVersion -ne "0.6.0.17") {
     throw "Fresh DLL version is $dllVersion, expected 0.6.0.17."
 }
 
-Write-Host "Built fresh PhysicalWater.dll" -ForegroundColor Green
+Write-Host "Built fresh LiquidCore.dll" -ForegroundColor Green
 Write-Host "DLL version: $dllVersion"
 Get-FileHash -Algorithm SHA256 -LiteralPath $DllPath | ForEach-Object {
     Write-Host "DLL SHA256: $($_.Hash)"

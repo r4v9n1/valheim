@@ -3,8 +3,8 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$Root = "G:\My Drive\dev\water"
-$ProjectRoot = Join-Path $Root "Valheim\source\PhysicalWater"
+$Root = "G:\My Drive\build"
+$ProjectRoot = Join-Path $Root "Valheim\repos\valheim\LiquidCore"
 $AdapterPath = Join-Path $ProjectRoot "src\PhysicalWaterValheimWorldGeometryAdapter.cs"
 $RuntimePath = Join-Path $ProjectRoot "src\PhysicalWaterDevE1Runtime.cs"
 $PluginPath = Join-Path $ProjectRoot "src\PhysicalWaterPlugin.cs"
@@ -56,13 +56,6 @@ function Replace-ExactOnce(
     [string]$Description,
     [string]$AlreadyMarker = ""
 ) {
-    # The project source is normalized to LF before patching. PowerShell here-strings
-    # loaded from this Windows .ps1 retain CRLF, so normalize the patch literals too.
-    # Without this, visually identical multi-line blocks can never compare equal.
-    $Old = $Old.Replace("`r`n", "`n")
-    $New = $New.Replace("`r`n", "`n")
-    $AlreadyMarker = $AlreadyMarker.Replace("`r`n", "`n")
-
     if ($AlreadyMarker -and $Text.Contains($AlreadyMarker)) {
         Write-Host "Already patched: $Description" -ForegroundColor DarkYellow
         return $Text
@@ -90,7 +83,7 @@ if (Get-Process -Name "valheim" -ErrorAction SilentlyContinue) {
 }
 
 Write-Host ""
-Write-Host "PhysicalWater E3 live handshake repair V2" -ForegroundColor Green
+Write-Host "PhysicalWater E3 live handshake repair" -ForegroundColor Green
 Write-Host "Project: $ProjectRoot"
 Write-Host "Reports: $ReportDir"
 Write-Host ""
@@ -429,7 +422,7 @@ catch {
     Stop-WithMessage "Compilation failed. Original source was restored. Failed patched source was preserved at $failed. $($_.Exception.Message)"
 }
 
-$Dll = Join-Path $ProjectRoot "dist\PhysicalWater.dll"
+$Dll = Join-Path $ProjectRoot "dist\LiquidCore.dll"
 Require-File $Dll
 $dllVersion = ([Reflection.AssemblyName]::GetAssemblyName($Dll)).Version.ToString()
 $dllHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Dll).Hash

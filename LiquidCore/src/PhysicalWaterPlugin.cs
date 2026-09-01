@@ -21,7 +21,7 @@ namespace PhysicalWater
     public sealed class PhysicalWaterPlugin : BaseUnityPlugin
     {
         public const string PluginGuid = "r4v9n1.physicalwater";
-        public const string PluginName = "PhysicalWater";
+        public const string PluginName = "LiquidCore";
         public const string PluginVersion = "0.6.0-devE3.2-probe1";
         public const string PluginBepInExVersion = "0.6.0.17";
         public const string PluginAssemblyVersion = "0.6.0.17";
@@ -33,7 +33,9 @@ namespace PhysicalWater
         private Harmony _harmony;
         private GameObject _systemObject;
         private GameObject _worldGeometryAdapterObject;
+        private GameObject _pceRuntimeObject;
         private GameObject _devE1RuntimeObject;
+        private GameObject _persistenceRuntimeObject;
 
         private void Awake()
         {
@@ -42,7 +44,7 @@ namespace PhysicalWater
             bool legacyReplacementEnabled = Settings.Enabled.Value && !Settings.StageE1Enabled.Value;
             if (Settings.Enabled.Value && Settings.StageE1Enabled.Value)
             {
-                Logger.LogWarning("PhysicalWater devE3 forced the legacy/global replacement OFF despite General.Enabled=true. E3 permits only explicitly seeded finite streaming fluid.");
+                Logger.LogWarning("LiquidCore devE3 forced the legacy/global replacement OFF despite General.Enabled=true. E3 permits only explicitly seeded finite streaming fluid.");
             }
 
             _harmony = new Harmony(PluginGuid);
@@ -93,13 +95,20 @@ namespace PhysicalWater
                 _worldGeometryAdapterObject = new GameObject("R4V9N1_PhysicalWaterDevD6WorldGeometryAdapter");
                 DontDestroyOnLoad(_worldGeometryAdapterObject);
                 _worldGeometryAdapterObject.AddComponent<PhysicalWaterValheimWorldGeometryAdapter>();
+                _pceRuntimeObject = new GameObject("R4V9N1_LiquidCorePceRuntime");
+                DontDestroyOnLoad(_pceRuntimeObject);
+                _pceRuntimeObject.AddComponent<LiquidCorePceRuntime>();
             }
 
             if (Settings.StageE1Enabled.Value)
             {
+                PatchSafely(typeof(PhysicalWaterPersistenceWorldSetupPatch), "Valheim world-load persistence boundary");
                 _devE1RuntimeObject = new GameObject("R4V9N1_PhysicalWaterDevE1Runtime");
                 DontDestroyOnLoad(_devE1RuntimeObject);
                 _devE1RuntimeObject.AddComponent<PhysicalWaterDevE1Runtime>();
+                _persistenceRuntimeObject = new GameObject("R4V9N1_LiquidCorePersistenceRuntime");
+                DontDestroyOnLoad(_persistenceRuntimeObject);
+                _persistenceRuntimeObject.AddComponent<PhysicalWaterPersistenceRuntime>();
             }
 
             Logger.LogInfo(PluginName + " " + PluginVersion + " loaded in " +
@@ -107,7 +116,7 @@ namespace PhysicalWater
                            " mode. devD6 Valheim geometry diagnostics are " +
                            (geometryAdapterRequired ? "enabled" : "disabled") +
                            ". While the legacy replacement is enabled, vanilla water rendering/queries/floaters are unconditionally suppressed.");
-            Logger.LogInfo("PhysicalWater 0.6.0-devE3 adds conservative logical-region streaming around the frozen E1 solver/math and E2.1.2 presentation. FiniteStreaming=" + Settings.StageE1Enabled.Value + ", legacyReplacement=" + legacyReplacementEnabled + ".");
+            Logger.LogInfo("LiquidCore 0.6.0-devE3 adds conservative logical-region streaming around the frozen E1 solver/math and E2.1.2 presentation. FiniteStreaming=" + Settings.StageE1Enabled.Value + ", legacyReplacement=" + legacyReplacementEnabled + ".");
         }
 
         private void OnDestroy()
@@ -142,6 +151,12 @@ namespace PhysicalWater
             {
                 Destroy(_devE1RuntimeObject);
                 _devE1RuntimeObject = null;
+            }
+
+            if (_persistenceRuntimeObject != null)
+            {
+                Destroy(_persistenceRuntimeObject);
+                _persistenceRuntimeObject = null;
             }
         }
 

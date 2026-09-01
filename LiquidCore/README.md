@@ -1,6 +1,6 @@
-# PhysicalWater
+# LiquidCore
 
-`PhysicalWater` is a physical water replacement test for Valheim.
+`LiquidCore` is a finite, physically simulated liquid system being developed first for Valheim.
 
 Version `0.6.0-devE3.2` adds conservative logical-region streaming around the
 frozen live-passing E1 APIC/FLIP solver and E2.1.2 surface presentation. One
@@ -156,14 +156,14 @@ moving the water plane itself:
 ## Build
 
 ```powershell
-cd C:\Users\ingva\OneDrive\Desktop\Dev\Valheim\source\PhysicalWater
+cd "G:\My Drive\build\Valheim\repos\valheim\LiquidCore"
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
 The DLL is written to:
 
 ```text
-dist\PhysicalWater.dll
+%LOCALAPPDATA%\R4V9N1\LiquidCore\dist\LiquidCore.dll
 ```
 
 ## Optional local install
@@ -175,7 +175,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 This copies the DLL to:
 
 ```text
-C:\Program Files (x86)\Steam\steamapps\common\Valheim\BepInEx\plugins\PhysicalWater\PhysicalWater.dll
+C:\Program Files (x86)\Steam\steamapps\common\Valheim\BepInEx\plugins\LiquidCore\LiquidCore.dll
 ```
 
 ## Replacement test config
@@ -185,6 +185,10 @@ After first launch, BepInEx will create:
 ```text
 BepInEx\config\r4v9n1.physicalwater.cfg
 ```
+
+The legacy BepInEx GUID and config filename are intentionally preserved so
+existing installations retain their settings. The installer removes obsolete
+`PhysicalWater.dll` copies before launch to prevent double plugin loading.
 
 Important switches:
 

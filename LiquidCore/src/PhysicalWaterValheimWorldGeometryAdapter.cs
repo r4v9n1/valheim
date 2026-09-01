@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
+using R4V9N1.PhysicalOcean.Volumetric;
 using UnityEngine;
 
 namespace PhysicalWater
@@ -41,8 +42,26 @@ namespace PhysicalWater
         MovedOrChanged
     }
 
+    internal struct ValheimPceGeometryChange
+    {
+        internal string SourceId;
+        internal ValheimWorldGeometryCategory Category;
+        internal ValheimWorldGeometryChangeKind ChangeKind;
+        internal Bounds OldWorldBounds;
+        internal Bounds NewWorldBounds;
+        internal Vector3Int DirtyMin;
+        internal Vector3Int DirtyMax;
+        internal uint Revision;
+        internal GameObject Root;
+        internal ValheimWorldGeometryKind Kind;
+        internal string HierarchyPath;
+        internal string RootType;
+        internal bool CanFeedSdf;
+    }
+
     internal sealed class PhysicalWaterValheimWorldGeometryAdapter : MonoBehaviour
     {
+        internal event Action<ValheimPceGeometryChange> PceGeometryChanged;
         private sealed class Source
         {
             internal string Id;
@@ -226,6 +245,13 @@ namespace PhysicalWater
         private double _lastQueueActiveCpuMs;
         private long _geometryGeneration;
         private long _readyGeometryGeneration;
+        private Bounds _pendingDirtyWorldBounds;
+        private bool _hasPendingDirtyWorldBounds;
+        private Bounds _readyDirtyWorldBounds;
+        private bool _hasReadyDirtyWorldBounds;
+        private long _readyDirtyBoundsGeneration = -1;
+        private Bounds _recentTerrainOperationBounds;
+        private float _recentTerrainOperationTime = float.NegativeInfinity;
 
         // devE3.1: explicit causal-coverage requests may extend beyond the normal
         // player-centered D6 discovery window. While such a request is pending,
@@ -267,10 +293,103 @@ namespace PhysicalWater
 
         internal static PhysicalWaterValheimWorldGeometryAdapter Instance { get; private set; }
 
+        internal bool TryCaptureTerrainFixture(
+            Bounds worldBounds,
+            float requestedSpacing,
+            string captureId,
+            out VolumetricTerrainFixture fixture,
+            out string error)
+        {
+            fixture = null;
+            error = string.Empty;
+            float spacing = Mathf.Clamp(requestedSpacing, 0.25f, 4f);
+            int samplesX = Mathf.Clamp(Mathf.CeilToInt(worldBounds.size.x / spacing) + 1, 2, 513);
+            int samplesZ = Mathf.Clamp(Mathf.CeilToInt(worldBounds.size.z / spacing) + 1, 2, 513);
+            Vector3 origin = new Vector3(worldBounds.min.x, 0f, worldBounds.min.z);
+            var heights = new float[samplesX * samplesZ];
+            var sourceIds = new HashSet<string>();
+
+            _heightmapsScratch.Clear();
+            try
+            {
+                Heightmap.FindHeightmap(worldBounds.center, Mathf.Max(worldBounds.extents.x, worldBounds.extents.z) + spacing, _heightmapsScratch);
+            }
+            catch
+            {
+                List<Heightmap> all = Heightmap.GetAllHeightmaps();
+                if (all != null) _heightmapsScratch.AddRange(all);
+            }
+
+            int missing = 0;
+            for (int z = 0; z < samplesZ; z++)
+            for (int x = 0; x < samplesX; x++)
+            {
+                float worldX = origin.x + x * spacing;
+                float worldZ = origin.z + z * spacing;
+                float selectedHeight = float.NegativeInfinity;
+                bool found = false;
+                for (int i = 0; i < _heightmapsScratch.Count; i++)
+                {
+                    Heightmap heightmap = _heightmapsScratch[i];
+                    if (heightmap == null || !heightmap.gameObject.activeInHierarchy) continue;
+                    Bounds heightmapBounds = GetHeightmapWorldBounds(heightmap);
+                    if (worldX < heightmapBounds.min.x - 0.01f || worldX > heightmapBounds.max.x + 0.01f ||
+                        worldZ < heightmapBounds.min.z - 0.01f || worldZ > heightmapBounds.max.z + 0.01f) continue;
+                    if (!TryGetHeightmapWorldHeight(heightmap, new Vector3(worldX, worldBounds.center.y, worldZ), out float candidate)) continue;
+                    if (!found || candidate > selectedHeight) selectedHeight = candidate;
+                    found = true;
+                    sourceIds.Add(BuildSourceId(heightmap.gameObject));
+                }
+                if (!found && Heightmap.GetHeight(new Vector3(worldX, worldBounds.center.y, worldZ), out float fallback))
+                {
+                    selectedHeight = fallback;
+                    found = true;
+                }
+                if (!found)
+                {
+                    missing++;
+                    selectedHeight = worldBounds.min.y;
+                }
+                heights[x + samplesX * z] = selectedHeight;
+            }
+
+            if (missing != 0)
+            {
+                error = "Terrain capture has " + missing + " uncovered samples out of " + heights.Length + ".";
+                return false;
+            }
+
+            fixture = new VolumetricTerrainFixture
+            {
+                CaptureId = string.IsNullOrWhiteSpace(captureId) ? "valheim-terrain" : captureId.Trim(),
+                Source = "Valheim Heightmap.GetWorldHeight",
+                CapturedUtc = DateTime.UtcNow.ToString("O"),
+                WorldOrigin = origin,
+                SampleSpacing = spacing,
+                SamplesX = samplesX,
+                SamplesZ = samplesZ,
+                Heights = heights,
+                SourceIds = new List<string>(sourceIds).ToArray()
+            };
+            fixture.RebuildNormals();
+            return fixture.Validate(out error);
+        }
+
         internal bool TryGetCausalGeometrySnapshot(
             Bounds worldBounds,
             long generationAfter,
             List<GameObject> roots,
+            out long generation,
+            out int stateRevision)
+        {
+            return TryGetCausalGeometrySnapshot(worldBounds, generationAfter, roots, null, out generation, out stateRevision);
+        }
+
+        internal bool TryGetCausalGeometrySnapshot(
+            Bounds worldBounds,
+            long generationAfter,
+            List<GameObject> roots,
+            Dictionary<int, int> rootRevisions,
             out long generation,
             out int stateRevision)
         {
@@ -279,6 +398,7 @@ namespace PhysicalWater
             if (roots == null || _workQueue.Count != 0 || generation <= generationAfter) return false;
 
             roots.Clear();
+            rootRevisions?.Clear();
             var seen = new HashSet<int>();
             int sourceCount = 0;
             foreach (var kv in _cache)
@@ -291,7 +411,13 @@ namespace PhysicalWater
                     stateRevision ^= (source.Id.GetHashCode() * 397) ^ source.Revision;
                     sourceCount++;
                 }
-                if (seen.Add(source.Root.GetInstanceID())) roots.Add(source.Root);
+                int rootId = source.Root.GetInstanceID();
+                if (seen.Add(rootId)) roots.Add(source.Root);
+                if (rootRevisions != null)
+                {
+                    if (rootRevisions.TryGetValue(rootId, out int previous)) rootRevisions[rootId] = previous ^ source.Revision;
+                    else rootRevisions.Add(rootId, source.Revision);
+                }
             }
             unchecked { stateRevision ^= sourceCount * 486187739; }
             return true;
@@ -327,12 +453,20 @@ namespace PhysicalWater
             _priorityDiscoveryChunks.Clear();
         }
 
+        internal bool TryGetReadyDirtyWorldBounds(long generation, out Bounds dirtyWorldBounds)
+        {
+            dirtyWorldBounds = _readyDirtyWorldBounds;
+            return _hasReadyDirtyWorldBounds && _readyDirtyBoundsGeneration == generation;
+        }
+
         private void Awake()
         {
             Instance = this;
+            LiquidCorePceRuntime existingPce = LiquidCorePceRuntime.Instance;
+            if (existingPce != null) existingPce.Attach(this);
             _nextScanTime = 0f;
             _nextConsistencyScanTime = 0f;
-            PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devD6 Valheim geometry adapter created in diagnostics-only mode. It reuses cached discovery chunks, profiles scan stages, and preserves the causal SDF queue without enabling gameplay water.");
+            PhysicalWaterPlugin.Log.LogInfo("PhysicalWater Valheim geometry adapter created. It reuses cached discovery chunks, profiles scan stages, preserves the causal geometry queue, and supplies Stage E finite domains when explicitly enabled.");
         }
 
         private void OnDestroy()
@@ -381,18 +515,37 @@ namespace PhysicalWater
 
         internal void MarkDirtyFromValheimEvent(string label, Component source)
         {
-            MarkDirtyFromValheimEvent(label, source, true);
+            MarkDirtyFromValheimEvent(label, source, true, null);
         }
 
-        private void MarkDirtyFromValheimEvent(string label, Component source, bool scheduleDoorFollowup)
+        internal void MarkDirtyFromValheimEvent(string label, Component source, Bounds explicitDirtyWorldBounds)
+        {
+            _recentTerrainOperationBounds = explicitDirtyWorldBounds;
+            _recentTerrainOperationTime = Time.realtimeSinceStartup;
+            MarkDirtyFromValheimEvent(label, source, true, explicitDirtyWorldBounds);
+        }
+
+        private void MarkDirtyFromValheimEvent(string label, Component source, bool scheduleDoorFollowup, Bounds? explicitDirtyWorldBounds)
         {
             if (_applicationQuitting) return;
 
             Stopwatch eventWatch = Stopwatch.StartNew();
             EventRecord record = CaptureEvent(label, source);
+            if (!explicitDirtyWorldBounds.HasValue && label.StartsWith("heightmap", StringComparison.OrdinalIgnoreCase) &&
+                Time.realtimeSinceStartup - _recentTerrainOperationTime <= 2f)
+                explicitDirtyWorldBounds = _recentTerrainOperationBounds;
+            if (explicitDirtyWorldBounds.HasValue)
+            {
+                record.OldBounds = explicitDirtyWorldBounds.Value;
+                record.NewBounds = explicitDirtyWorldBounds.Value;
+                record.HasOldBounds = true;
+                record.HasNewBounds = true;
+            }
             bool destructive = IsDestructiveEvent(record.Reason);
             bool hadCachedSource = !string.IsNullOrEmpty(record.SourceId) && _cache.ContainsKey(record.SourceId);
             if (!CanFeedSdf(record.Category)) return;
+            if (record.HasOldBounds) AccumulatePendingDirtyWorldBounds(record.OldBounds);
+            if (record.HasNewBounds) AccumulatePendingDirtyWorldBounds(record.NewBounds);
             _events.Add(record);
             if (!string.IsNullOrEmpty(record.SourceId))
             {
@@ -491,7 +644,7 @@ namespace PhysicalWater
                 DeferredEvent deferred;
                 if (!_deferredEvents.TryGetValue(sourceId, out deferred)) continue;
                 _deferredEvents.Remove(sourceId);
-                if (deferred.Source != null) MarkDirtyFromValheimEvent("door/gate settled", deferred.Source, false);
+                if (deferred.Source != null) MarkDirtyFromValheimEvent("door/gate settled", deferred.Source, false, null);
             }
         }
 
@@ -932,6 +1085,7 @@ namespace PhysicalWater
             {
                 _lastQueueActiveCpuMs = 0.0;
                 _readyGeometryGeneration = _geometryGeneration;
+                PublishReadyDirtyWorldBounds();
                 return;
             }
 
@@ -1007,8 +1161,28 @@ namespace PhysicalWater
             if (batchComplete)
             {
                 _readyGeometryGeneration = _geometryGeneration;
+                PublishReadyDirtyWorldBounds();
                 ResetQueueBatch();
             }
+        }
+
+        private void AccumulatePendingDirtyWorldBounds(Bounds bounds)
+        {
+            if (!_hasPendingDirtyWorldBounds)
+            {
+                _pendingDirtyWorldBounds = bounds;
+                _hasPendingDirtyWorldBounds = true;
+            }
+            else _pendingDirtyWorldBounds.Encapsulate(bounds);
+        }
+
+        private void PublishReadyDirtyWorldBounds()
+        {
+            if (_readyDirtyBoundsGeneration == _geometryGeneration) return;
+            _readyDirtyBoundsGeneration = _geometryGeneration;
+            _hasReadyDirtyWorldBounds = _hasPendingDirtyWorldBounds;
+            if (_hasPendingDirtyWorldBounds) _readyDirtyWorldBounds = _pendingDirtyWorldBounds;
+            _hasPendingDirtyWorldBounds = false;
         }
 
         private int LogChangeAndQueue(
@@ -1028,6 +1202,25 @@ namespace PhysicalWater
             string reason = record != null ? record.Reason : changeKind.ToString();
             int queued = EnqueueDirtyChunks(dirtyRegion, reason, source, changeKind, sourceChunkCount, chunkSize, cellSize);
             if (dirtyRegion.Valid) _geometryGeneration++;
+            if (dirtyRegion.Valid && source != null)
+            {
+                PceGeometryChanged?.Invoke(new ValheimPceGeometryChange
+                {
+                    SourceId = source.Id,
+                    Category = source.Category,
+                    ChangeKind = changeKind,
+                    OldWorldBounds = oldBounds,
+                    NewWorldBounds = newBounds,
+                    DirtyMin = dirtyRegion.Min,
+                    DirtyMax = dirtyRegion.Max,
+                    Revision = (uint)Mathf.Max(0, source.Revision),
+                    Root = source.Root,
+                    Kind = source.Kind,
+                    HierarchyPath = source.Path,
+                    RootType = source.RootType,
+                    CanFeedSdf = source.CanFeedSdf
+                });
+            }
 
             bool eventDetail = record != null || changeKind != ValheimWorldGeometryChangeKind.Added;
             if (eventDetail && PhysicalWaterPlugin.Settings.Diagnostics.Value)

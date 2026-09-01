@@ -11,13 +11,27 @@ namespace PhysicalWater
         internal static void Mark(string label, Component source)
         {
             if (PhysicalWaterPlugin.Settings == null ||
-                !PhysicalWaterPlugin.Settings.ValheimGeometryDiagnosticsEnabled.Value ||
+                (!PhysicalWaterPlugin.Settings.ValheimGeometryDiagnosticsEnabled.Value &&
+                 !PhysicalWaterPlugin.Settings.StageE1Enabled.Value) ||
                 PhysicalWaterValheimWorldGeometryAdapter.Instance == null)
             {
                 return;
             }
 
             PhysicalWaterValheimWorldGeometryAdapter.Instance.MarkDirtyFromValheimEvent(label, source);
+        }
+
+        internal static void Mark(string label, Component source, Bounds dirtyWorldBounds)
+        {
+            if (PhysicalWaterPlugin.Settings == null ||
+                (!PhysicalWaterPlugin.Settings.ValheimGeometryDiagnosticsEnabled.Value &&
+                 !PhysicalWaterPlugin.Settings.StageE1Enabled.Value) ||
+                PhysicalWaterValheimWorldGeometryAdapter.Instance == null)
+            {
+                return;
+            }
+
+            PhysicalWaterValheimWorldGeometryAdapter.Instance.MarkDirtyFromValheimEvent(label, source, dirtyWorldBounds);
         }
     }
 
@@ -41,9 +55,18 @@ namespace PhysicalWater
             return AccessTools.Method(typeof(TerrainComp), "InternalDoOperation");
         }
 
-        private static void Postfix(TerrainComp __instance)
+        private static void Postfix(TerrainComp __instance, Vector3 pos, TerrainOp.Settings modifier)
         {
-            ValheimGeometryDirtyBridge.Mark("terrain internal operation", __instance);
+            float radius = 0.5f;
+            if (modifier.m_level) radius = Mathf.Max(radius, modifier.m_levelRadius);
+            if (modifier.m_raise) radius = Mathf.Max(radius, modifier.m_raiseRadius);
+            if (modifier.m_smooth) radius = Mathf.Max(radius, modifier.m_smoothRadius);
+            if (modifier.m_paintCleared) radius = Mathf.Max(radius, modifier.m_paintRadius);
+            float vertical = 8f + Mathf.Abs(modifier.m_levelOffset) + Mathf.Abs(modifier.m_raiseDelta);
+            ValheimGeometryDirtyBridge.Mark(
+                "terrain internal operation",
+                __instance,
+                new Bounds(pos, new Vector3(2f * radius, 2f * vertical, 2f * radius)));
         }
     }
 
