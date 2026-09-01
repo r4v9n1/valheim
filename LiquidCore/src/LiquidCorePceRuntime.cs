@@ -73,7 +73,13 @@ namespace PhysicalWater
                 _events.PublishAdded(change.SourceId, pceCategory, region, change.Revision);
             else
                 _events.PublishChanged(change.SourceId, pceCategory, region, change.Revision);
-            _geometry.ApplySourceAtRegion(new VolumetricWorldGeometrySource { SourceId = change.SourceId, Category = pceCategory, RevisionHash = unchecked((int)change.Revision) }, region);
+            // Do not eagerly materialize the approximate solid occupancy here.
+            // A terrain discovery region can cover the entire active window
+            // (over one million cells); doing that synchronously from the
+            // adapter's scan callback stalls the Unity main thread. Exact
+            // collider occupancy is applied at the strict causal
+            // synchronization gate in ApplyMappedColliderOccupancy, before
+            // the finite-domain solver is released.
         }
 
         internal bool TryGetActiveSource(string sourceId, out ValheimPceGeometryChange change) => _activeSources.TryGetValue(sourceId, out change);
