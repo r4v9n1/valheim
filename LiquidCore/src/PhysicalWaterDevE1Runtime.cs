@@ -233,6 +233,7 @@ namespace PhysicalWater
                 return;
             }
 
+            var createWatch = System.Diagnostics.Stopwatch.StartNew();
             DestroyDomain();
             Vector3 playerPosition = Player.m_localPlayer.transform.position;
             const float dx = 0.75f;
@@ -268,9 +269,14 @@ namespace PhysicalWater
                     EnableBlockingValidationTelemetry = false,
                     UseAsyncOwnershipReadback = true
                 });
+            double initializeMs = createWatch.Elapsed.TotalMilliseconds;
             _domain = _streaming.Domain;
             _accumulator = 0f;
-            _nextTelemetryTime = 0f;
+            // Do not issue a blocking full-field diagnostic readback in the
+            // same frame as F6 resource creation. The newly-created domain is
+            // deliberately paused and empty; its first full telemetry sample
+            // can wait for the normal interval.
+            _nextTelemetryTime = Time.unscaledTime + Mathf.Max(0.5f, PhysicalWaterPlugin.Settings.StageE1TelemetryInterval.Value);
             _nextLiveFieldProbeCheckpoint = 0;
             _observedGeometryGeneration = -1;
             _appliedGeometryStateRevision = int.MinValue;
@@ -279,8 +285,10 @@ namespace PhysicalWater
             _coverageWindowOrigin = new Vector3(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
             _domain.Paused = true;
             PhysicalWaterPersistenceRuntime.TryRestore(_streaming);
+            double restoreMs = createWatch.Elapsed.TotalMilliseconds - initializeMs;
             EnsureGeometryCoverage();
             SynchronizeGeometryIfReady();
+            double coverageMs = createWatch.Elapsed.TotalMilliseconds - initializeMs - restoreMs;
             VolumetricWaterSettings macSettings = _domain.MacDomain.Settings;
             string message = "E3 streaming window created: origin=" + Format(_domain.WorldOrigin) +
                              ", logicalRegion=" + (macSettings.CellSize * 32f).ToString("F0") + "x" + (macSettings.CellSize * 32f).ToString("F0") + "m" +
@@ -288,6 +296,12 @@ namespace PhysicalWater
                              ", cell=" + macSettings.CellSize.ToString("F2") + "m, size=" + Format(_domain.WorldSize) +
                              ", particles=0. No sea-level or vanilla-water fill was performed.";
             PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devE3 " + message);
+            PhysicalWaterPlugin.Log.LogInfo(
+                "PhysicalWater devE3 domain creation timing: " +
+                "initializeMs=" + initializeMs.ToString("F3", CultureInfo.InvariantCulture) +
+                ", persistenceRestoreMs=" + restoreMs.ToString("F3", CultureInfo.InvariantCulture) +
+                ", coverageGateMs=" + coverageMs.ToString("F3", CultureInfo.InvariantCulture) +
+                ", totalMs=" + createWatch.Elapsed.TotalMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + ".");
             Reply(args, message);
         }
 
@@ -910,6 +924,13 @@ namespace PhysicalWater
 
         private void LogTelemetry()
         {
+            if (_domain.Paused && _domain.ParticleCount == 0)
+            {
+                PhysicalWaterPlugin.Log.LogInfo(
+                    "PhysicalWater devE3 idle telemetry: paused=True, particles=0, " +
+                    "blocking diagnostics deferred until fluid is active.");
+                return;
+            }
             VolumetricFiniteDomainDiagnostics d = _domain.CaptureDiagnosticsSync();
             VolumetricStreamingDiagnostics streaming = _streaming.CaptureDiagnosticsSync();
             bool invalid = !d.Particles.Finite || d.Particles.InvalidParticles != 0 || d.Particles.ParticlesOutOfBounds != 0 ||
