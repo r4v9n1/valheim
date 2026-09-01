@@ -88,6 +88,7 @@ namespace PhysicalWater
         {
             if (cellSize <= 0f) return 0;
             int refinedSources = 0;
+            int deferredLargeSources = 0;
             foreach (ValheimPceGeometryChange change in _activeSources.Values)
             {
                 if (!change.CanFeedSdf || change.Root == null || !change.Root.activeInHierarchy ||
@@ -99,6 +100,17 @@ namespace PhysicalWater
                 clipped = IntersectBounds(clipped, domainBounds);
                 Vector3Int min = WorldToCell(clipped.min, domainOrigin, cellSize);
                 Vector3Int max = WorldToCell(clipped.max, domainOrigin, cellSize);
+                long cellCount = (long)(max.x - min.x + 1) * (max.y - min.y + 1) * (max.z - min.z + 1);
+                if (cellCount > 65536L)
+                {
+                    // Large terrain colliders must not turn the causal gate into
+                    // an unbounded synchronous Physics.ClosestPoint scan. The
+                    // authoritative source/SDF rebuild still covers this region;
+                    // exact collider sampling remains enabled for bounded
+                    // construction and dynamic-solid changes.
+                    deferredLargeSources++;
+                    continue;
+                }
                 var source = new VolumetricWorldGeometrySource
                 {
                     SourceId = change.SourceId,
@@ -114,6 +126,8 @@ namespace PhysicalWater
             }
             if (refinedSources > 0)
                 PhysicalWaterPlugin.Log.LogInfo("LiquidCore PCE mapped collider occupancy (solid/partial) for " + refinedSources + " source(s); dirty bounds remained only the update region.");
+            if (deferredLargeSources > 0)
+                PhysicalWaterPlugin.Log.LogInfo("LiquidCore PCE deferred exact collider occupancy for " + deferredLargeSources + " large source region(s) to the bounded source/SDF rebuild.");
             return refinedSources;
         }
 
