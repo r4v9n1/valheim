@@ -3,7 +3,9 @@
 - Diagnostic-only candidate. No fluid solver, pressure, APIC/FLIP, SDF, E3 streaming, damping, E2 smoothing, topology, or shader behavior is changed from devE3.2.
 - Added four bounded blocking live field snapshots at approximately 2, 5, 20, and 60 simulated seconds after explicit fill, plus `F11` / `pw_e3_probe` for a manual snapshot.
 - Each snapshot writes a CSV comparing the authoritative fractional top interface, Valheim Heightmap terrain height, solid-SDF zero crossing below the liquid, final E2 column height, previous/current persistent render vertex height, and the actual presentation-interpolated render height.
-- Logs terrain correlations and RMSEs needed to classify the live-only terrain blanket without another speculative physics change.
+- Logs terrain correlations and RMSEs needed to classify the live-only terrain blanket without another speculative physics change.
+
+- Coalesces bursts of causal Valheim geometry changes before applying the exact finite-domain solid synchronization. This prevents repeated synchronous occupancy/SDF/texture-upload rebuilds from turning world loading or construction activity into recurring multi-hundred-millisecond stalls; no geometry state or safety check is skipped.
 - This build is evidence-gathering only and must not be marked live PASS from compilation or offline regressions.
 ## 0.6.0-devE3.2
 

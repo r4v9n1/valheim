@@ -31,6 +31,7 @@ namespace PhysicalWater
         private float _lastSimulationCpuMs;
         private long _observedGeometryGeneration = -1;
         private int _appliedGeometryStateRevision = int.MinValue;
+        private float _nextCausalGeometryApplyTime;
         private Vector3 _coverageWindowOrigin = new Vector3(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
         private Bounds _geometryCoverageBounds;
 
@@ -273,6 +274,7 @@ namespace PhysicalWater
             _nextLiveFieldProbeCheckpoint = 0;
             _observedGeometryGeneration = -1;
             _appliedGeometryStateRevision = int.MinValue;
+            _nextCausalGeometryApplyTime = 0f;
             _appliedGeometryRevisions.Clear();
             _coverageWindowOrigin = new Vector3(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
             _domain.Paused = true;
@@ -812,6 +814,18 @@ namespace PhysicalWater
             if (pce == null) return;
             EnsureGeometryCoverage();
             if (!adapter.CausalGeometryCoverageReady) return;
+            // World discovery and Valheim destruction callbacks often arrive
+            // as a burst. Applying every intermediate generation would run a
+            // synchronous occupancy/SDF/upload rebuild for each event and
+            // turn normal loading or construction into multi-hundred-ms
+            // stalls. The causal snapshot below is still the newest complete
+            // state; defer only until the burst quiets so one exact rebuild
+            // represents the accumulated changes.
+            float now = Time.realtimeSinceStartup;
+            float scanInterval = PhysicalWaterPlugin.Settings != null
+                ? Mathf.Max(0.25f, PhysicalWaterPlugin.Settings.ValheimGeometryScanInterval.Value)
+                : 0.25f;
+            if (now < _nextCausalGeometryApplyTime) return;
             long generation;
             int coverageStateRevision;
             if (!pce.TryGetCausalGeometrySnapshot(_geometryCoverageBounds, _observedGeometryGeneration, _geometryRoots, _coverageGeometryRevisions, out generation, out coverageStateRevision)) return;
@@ -858,6 +872,7 @@ namespace PhysicalWater
                 _appliedGeometryRevisions.Add(pair.Key, pair.Value);
             _domain.Paused = false;
             adapter.ReleaseCausalGeometryCoverage();
+            _nextCausalGeometryApplyTime = now + Mathf.Max(0.75f, scanInterval * 3f);
             PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devE3 causal solid synchronization: " + update + ".");
             if (update.ParticlesStillInSolid != 0 || update.ParticlesDeleted != 0)
             {
