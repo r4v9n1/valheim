@@ -20,6 +20,7 @@ $PluginDllPath = Join-Path $PluginDir "LiquidCore.dll"
 $PluginBundlePath = Join-Path $PluginDir "physicalwater_assets"
 $LegacyPluginDir = Join-Path $PluginRoot "PhysicalWater"
 $EnableFiniteStreaming = $EnableStageE1.IsPresent -or $EnableStageE3.IsPresent
+$EnableGeometryDiagnostics = (-not $EnableFiniteStreaming).ToString().ToLowerInvariant()
 
 New-Item -ItemType Directory -Force -Path $PluginDir | Out-Null
 Copy-Item -LiteralPath $DllPath -Destination $PluginDllPath -Force
@@ -124,14 +125,14 @@ Set-LiquidCoreConfigValue -Path $ConfigPath -Section "ShipPhysics" -Key "ShipUpr
 Set-LiquidCoreConfigValue -Path $ConfigPath -Section "CreatureWater" -Key "SmallCreatureSwimAssist" -Value "false"
 Set-LiquidCoreConfigValue -Path $ConfigPath -Section "Camera" -Key "DisableUnderwaterCameraClamp" -Value "false"
 Set-LiquidCoreConfigValue -Path $ConfigPath -Section "WaterShape" -Key "FarOceanEnabled" -Value "false"
-Set-LiquidCoreConfigValue -Path $ConfigPath -Section "ValheimGeometryAdapter" -Key "DiagnosticsEnabled" -Value "true"
+Set-LiquidCoreConfigValue -Path $ConfigPath -Section "ValheimGeometryAdapter" -Key "DiagnosticsEnabled" -Value $EnableGeometryDiagnostics
 Set-LiquidCoreConfigValue -Path $ConfigPath -Section "ValheimGeometryAdapter" -Key "ScanRadius" -Value "64"
 Set-LiquidCoreConfigValue -Path $ConfigPath -Section "ValheimGeometryAdapter" -Key "ScanInterval" -Value "0.25"
 Set-LiquidCoreConfigValue -Path $ConfigPath -Section "ValheimGeometryAdapter" -Key "FullConsistencyInterval" -Value "900"
 Set-LiquidCoreConfigValue -Path $ConfigPath -Section "ValheimGeometryAdapter" -Key "DiscoveryChunksPerScan" -Value "1"
 Set-LiquidCoreConfigValue -Path $ConfigPath -Section "ValheimGeometryAdapter" -Key "EstimatedVoxelCellSize" -Value "0.75"
 Set-LiquidCoreConfigValue -Path $ConfigPath -Section "ValheimGeometryAdapter" -Key "DirtyPaddingCells" -Value "4"
-Set-LiquidCoreConfigValue -Path $ConfigPath -Section "ValheimGeometryAdapter" -Key "LogRejectedSamples" -Value "true"
+Set-LiquidCoreConfigValue -Path $ConfigPath -Section "ValheimGeometryAdapter" -Key "LogRejectedSamples" -Value "false"
 Set-LiquidCoreConfigValue -Path $ConfigPath -Section "ValheimGeometryAdapter" -Key "DebugVisualization" -Value "false"
 Set-LiquidCoreConfigValue -Path $ConfigPath -Section "ValheimGeometryAdapter" -Key "ChunkSize" -Value "32"
 Set-LiquidCoreConfigValue -Path $ConfigPath -Section "ValheimGeometryAdapter" -Key "DiscoveryTileSize" -Value "8"

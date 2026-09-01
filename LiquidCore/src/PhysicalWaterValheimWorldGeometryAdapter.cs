@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
+using R4V9N1.PhysicalOcean.Probes;
 using R4V9N1.PhysicalOcean.Volumetric;
 using UnityEngine;
 
@@ -207,6 +208,7 @@ namespace PhysicalWater
         private readonly HashSet<ChunkKey> _discoveryChunks = new HashSet<ChunkKey>();
         private readonly HashSet<ChunkKey> _pendingDiscoveryChunks = new HashSet<ChunkKey>();
         private readonly HashSet<ChunkKey> _priorityDiscoveryChunks = new HashSet<ChunkKey>();
+        private readonly ProbeColonyDiscoverySchedule<ChunkKey> _discoverySchedule = new ProbeColonyDiscoverySchedule<ChunkKey>();
         private readonly Dictionary<string, DeferredEvent> _deferredEvents = new Dictionary<string, DeferredEvent>();
         private readonly List<string> _dueDeferredEventIds = new List<string>();
         private readonly List<ChunkKey> _loadedChunks = new List<ChunkKey>();
@@ -258,7 +260,6 @@ namespace PhysicalWater
         // temporarily include its bounds in the effective discovery window so
         // priority tiles cannot become permanently unschedulable.
         private Bounds _causalCoverageBounds;
-        private bool _hasCausalCoverageRequest;
 
         private static readonly MethodInfo HeightmapGetWorldHeightMethod = typeof(Heightmap).GetMethod(
             "GetWorldHeight",
@@ -426,7 +427,7 @@ namespace PhysicalWater
         internal void RequestCausalGeometryCoverage(Bounds worldBounds)
         {
             _causalCoverageBounds = worldBounds;
-            _hasCausalCoverageRequest = true;
+            _discoverySchedule.BeginCausalCoverageWindow();
 
             float tileSize = Mathf.Max(4f, PhysicalWaterPlugin.Settings.ValheimGeometryDiscoveryTileSize.Value);
             _chunkScratch.Clear();
@@ -436,6 +437,7 @@ namespace PhysicalWater
                 _priorityDiscoveryChunks.Add(key);
                 _dirtyDiscoveryChunks.Add(key);
                 _pendingDiscoveryChunks.Add(key);
+                _discoverySchedule.Request(key);
             }
             _nextScanTime = 0f;
 
@@ -444,12 +446,16 @@ namespace PhysicalWater
                 ", priorityTiles=" + _priorityDiscoveryChunks.Count + ".");
         }
 
-        internal bool CausalGeometryCoverageReady => _priorityDiscoveryChunks.Count == 0 && _workQueue.Count == 0;
+        internal bool CausalGeometryCoverageReady =>
+            _priorityDiscoveryChunks.Count == 0 &&
+            _discoverySchedule.RequiredCount == 0 &&
+            _workQueue.Count == 0 &&
+            !_discoverySchedule.ConsistencySweepActive;
         internal int CausalGeometryCoveragePendingChunks => _priorityDiscoveryChunks.Count;
 
         internal void ReleaseCausalGeometryCoverage()
         {
-            _hasCausalCoverageRequest = false;
+            _discoverySchedule.ReleaseCausalGate();
             _priorityDiscoveryChunks.Clear();
         }
 
@@ -492,13 +498,71 @@ namespace PhysicalWater
             ProcessQueuedWork();
 
             float interval = Mathf.Max(0.25f, PhysicalWaterPlugin.Settings.ValheimGeometryScanInterval.Value);
-            if (!_forceScanAfterEvent && Time.realtimeSinceStartup < _nextScanTime)
+            float now = Time.realtimeSinceStartup;
+            bool finiteCoverageMode = PhysicalWaterPlugin.Settings.StageE1Enabled.Value && _discoverySchedule.CoverageWindowActive;
+            bool waitingForFirstFiniteCoverage = PhysicalWaterPlugin.Settings.StageE1Enabled.Value && !_discoverySchedule.CoverageWindowActive;
+            if (waitingForFirstFiniteCoverage &&
+                _workQueue.Count == 0 &&
+                _dirtyDiscoveryChunks.Count == 0 &&
+                !_forceScanAfterEvent)
+            {
+                _pendingDiscoveryChunks.Clear();
+                _discoverySchedule.TrySleep(false);
+                return;
+            }
+            bool liveCoverageCanSleep =
+                finiteCoverageMode &&
+                _priorityDiscoveryChunks.Count == 0 &&
+                _discoverySchedule.RequiredCount == 0 &&
+                _workQueue.Count == 0 &&
+                !_forceScanAfterEvent &&
+                _dirtyDiscoveryChunks.Count == 0 &&
+                now < _nextConsistencyScanTime;
+            bool wasSleeping = _discoverySchedule.State == ProbeColonyChunkState.Sleeping;
+            bool completingConsistency = _discoverySchedule.ConsistencySweepActive &&
+                                         _discoverySchedule.RequiredCount == 0 &&
+                                         _workQueue.Count == 0;
+            if (liveCoverageCanSleep && _discoverySchedule.TrySleep(false))
+            {
+                // The explicit causal window is complete. Discard remaining
+                // speculative discovery tiles and sleep until a Valheim event
+                // or the bounded consistency interval wakes the adapter.
+                // Without this boundary, background tile churn repeatedly
+                // changes the global generation and forces full E3 SDF uploads.
+                _pendingDiscoveryChunks.Clear();
+                if (completingConsistency)
+                {
+                    PhysicalWaterPlugin.Log.LogInfo(
+                        "LiquidCore PCE bounded consistency sweep complete; causal geometry is stable and returned to sleep.");
+                }
+                if (!wasSleeping)
+                {
+                    PhysicalWaterPlugin.Log.LogInfo(
+                        "LiquidCore PCE geometry discovery sleeping: causal coverage complete, no dirty event work, " +
+                        "requiredTiles=" + _discoverySchedule.RequiredCount +
+                        ", eventWakeups=" + _discoverySchedule.EventWakeups +
+                        ", coalescedRequired=" + _discoverySchedule.CoalescedWork +
+                        ", " +
+                        "next bounded consistency sweep in " +
+                        Mathf.Max(0f, _nextConsistencyScanTime - now).ToString("F1") + "s.");
+                }
+                return;
+            }
+            if (wasSleeping)
+            {
+                PhysicalWaterPlugin.Log.LogInfo(
+                    "LiquidCore PCE geometry discovery waking: " +
+                    (_forceScanAfterEvent || _dirtyDiscoveryChunks.Count > 0 || _discoverySchedule.RequiredCount > 0
+                        ? "dirty Valheim event"
+                        : "bounded consistency sweep") + ".");
+            }
+            if (!_forceScanAfterEvent && now < _nextScanTime)
             {
                 return;
             }
 
             _forceScanAfterEvent = false;
-            _nextScanTime = Time.realtimeSinceStartup + interval;
+            _nextScanTime = now + interval;
             ScanAndLog();
         }
 
@@ -508,7 +572,11 @@ namespace PhysicalWater
             {
                 kv.Value.ExplicitlyDirty = true;
             }
-            foreach (ChunkKey key in _activeChunks) _dirtyDiscoveryChunks.Add(key);
+            foreach (ChunkKey key in _activeChunks)
+            {
+                _dirtyDiscoveryChunks.Add(key);
+                _discoverySchedule.Request(key);
+            }
             _forceScanAfterEvent = true;
             _nextScanTime = 0f;
         }
@@ -579,6 +647,7 @@ namespace PhysicalWater
                 foreach (ChunkKey key in _activeChunks)
                 {
                     _dirtyDiscoveryChunks.Add(key);
+                    _discoverySchedule.Request(key);
                     dirtiedActiveChunk = true;
                 }
             }
@@ -827,7 +896,7 @@ namespace PhysicalWater
             // normal snapped D6 scan center would leave an edge tile just outside
             // the 64 m player-centered scan radius.
             Bounds effectiveScanBounds = scanBounds;
-            if (_hasCausalCoverageRequest)
+            if (_discoverySchedule.CoverageWindowActive)
             {
                 effectiveScanBounds.Encapsulate(_causalCoverageBounds.min);
                 effectiveScanBounds.Encapsulate(_causalCoverageBounds.max);
@@ -838,13 +907,29 @@ namespace PhysicalWater
             float now = Time.realtimeSinceStartup;
             float consistencyInterval = Mathf.Max(15f, PhysicalWaterPlugin.Settings.ValheimGeometryFullConsistencyInterval.Value);
             bool fullConsistency = now >= _nextConsistencyScanTime;
-            if (fullConsistency) _nextConsistencyScanTime = now + consistencyInterval;
+            if (fullConsistency)
+            {
+                _nextConsistencyScanTime = now + consistencyInterval;
+                if (PhysicalWaterPlugin.Settings.StageE1Enabled.Value && _discoverySchedule.CoverageWindowActive)
+                {
+                    _discoverySchedule.BeginConsistencySweep(_activeChunks);
+                    PhysicalWaterPlugin.Log.LogInfo(
+                        "LiquidCore PCE bounded consistency sweep started: sleepingChunks=" + _activeChunks.Count +
+                        ", requiredTiles=" + _discoverySchedule.RequiredCount + ".");
+                }
+            }
 
             int maxDiscoveryChunks = Mathf.Max(1, PhysicalWaterPlugin.Settings.ValheimGeometryDiscoveryChunksPerScan.Value);
             if (fullConsistency)
                 foreach (ChunkKey key in _activeChunks) _pendingDiscoveryChunks.Add(key);
             for (int i = 0; i < _loadedChunks.Count; i++) _pendingDiscoveryChunks.Add(_loadedChunks[i]);
-            for (int i = 0; i < _evictedChunks.Count; i++) _pendingDiscoveryChunks.Remove(_evictedChunks[i]);
+            for (int i = 0; i < _evictedChunks.Count; i++)
+            {
+                _pendingDiscoveryChunks.Remove(_evictedChunks[i]);
+                _priorityDiscoveryChunks.Remove(_evictedChunks[i]);
+                _dirtyDiscoveryChunks.Remove(_evictedChunks[i]);
+                _discoverySchedule.Remove(_evictedChunks[i]);
+            }
 
             _discoveryChunks.Clear();
             foreach (ChunkKey key in _priorityDiscoveryChunks)
@@ -859,11 +944,14 @@ namespace PhysicalWater
                 if (_discoveryChunks.Count < maxDiscoveryChunks) _discoveryChunks.Add(key);
             }
             _dirtyDiscoveryChunks.Clear();
-            SelectPendingDiscoveryChunks(maxDiscoveryChunks);
+            bool requiredOnly = PhysicalWaterPlugin.Settings.StageE1Enabled.Value && _discoverySchedule.CoverageWindowActive;
+            SelectPendingDiscoveryChunks(maxDiscoveryChunks, requiredOnly);
+            if (_discoveryChunks.Count > 0) _discoverySchedule.BeginUpdate();
             foreach (ChunkKey key in _discoveryChunks)
             {
                 _pendingDiscoveryChunks.Remove(key);
                 _priorityDiscoveryChunks.Remove(key);
+                _discoverySchedule.Complete(key);
             }
             for (int i = 0; i < _evictedChunks.Count; i++) _discoveryCache.Remove(_evictedChunks[i]);
 
@@ -875,7 +963,9 @@ namespace PhysicalWater
                 double cachedTotalMs = invocationWatch.Elapsed.TotalMilliseconds;
                 bool cachedWarning = cachedTotalMs > PhysicalWaterPlugin.Settings.ValheimGeometryFrameBudgetMilliseconds.Value;
                 _scanIndex++;
-                PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devD6 geometry scan #" + _scanIndex +
+                if (PhysicalWaterPlugin.Settings.ValheimGeometryDiagnosticsEnabled.Value)
+                {
+                    PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devD6 geometry scan #" + _scanIndex +
                                                 ": mode=cached-reuse, center=" + Format(_streamCenter) +
                                                 ", radius=" + radius.ToString("F1") + "m" +
                                                 ", discoveryTileSize=" + discoveryTileSize.ToString("F1") + "m" +
@@ -898,6 +988,7 @@ namespace PhysicalWater
                                                 ", scanMs=" + cachedTotalMs.ToString("F3") +
                                                 ", totalMs=" + cachedTotalMs.ToString("F3") +
                                                 ", fullConsistency=False, frameBudgetWarning=" + cachedWarning + ".");
+                }
                 return;
             }
 
@@ -1003,7 +1094,9 @@ namespace PhysicalWater
             bool incrementalBudgetWarning = (added + changed + removed) > 0 && totalMs > PhysicalWaterPlugin.Settings.ValheimGeometryIncrementalBudgetMilliseconds.Value;
             double cacheHitRate = cacheLookups > 0 ? cacheHits / (double)cacheLookups : 1.0;
             _scanIndex++;
-            PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devD6 geometry scan #" + _scanIndex +
+            if (PhysicalWaterPlugin.Settings.ValheimGeometryDiagnosticsEnabled.Value)
+            {
+                PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devD6 geometry scan #" + _scanIndex +
                                             ": mode=" + (fullConsistency ? "full-consistency" : "incremental-discovery") +
                                             ", center=" + Format(_streamCenter) +
                                             ", radius=" + radius.ToString("F1") + "m" +
@@ -1075,6 +1168,7 @@ namespace PhysicalWater
                                             ", fullConsistency=" + fullConsistency +
                                             ", frameBudgetWarning=" + frameBudgetWarning +
                                             ", incrementalBudgetWarning=" + incrementalBudgetWarning + ".");
+            }
 
             if (PhysicalWaterPlugin.Settings.ValheimGeometryLogRejected.Value) LogRejectedSamples();
         }
@@ -1348,6 +1442,7 @@ namespace PhysicalWater
             }
 
             if (_workQueue.Count > _queueWorstDepth) _queueWorstDepth = _workQueue.Count;
+            if (_workQueue.Count > 0) _discoverySchedule.WakeForExternalWork();
             if (coalesced > 0 && !string.Equals(reason, "Added", StringComparison.Ordinal) && PhysicalWaterPlugin.Settings.Diagnostics.Value)
             {
                 PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devD6 geometry queue coalesced: sourceId=" + source.Id +
@@ -1578,6 +1673,7 @@ namespace PhysicalWater
             {
                 if (!_activeChunks.Contains(key)) continue;
                 _dirtyDiscoveryChunks.Add(key);
+                _discoverySchedule.Request(key);
                 marked = true;
             }
             return marked;
@@ -1623,7 +1719,7 @@ namespace PhysicalWater
             }
         }
 
-        private void SelectPendingDiscoveryChunks(int maxChunks)
+        private void SelectPendingDiscoveryChunks(int maxChunks, bool requiredOnly)
         {
             while (_discoveryChunks.Count < maxChunks)
             {
@@ -1633,6 +1729,7 @@ namespace PhysicalWater
                 foreach (ChunkKey candidate in _pendingDiscoveryChunks)
                 {
                     if (!_activeChunks.Contains(candidate) || _discoveryChunks.Contains(candidate)) continue;
+                    if (requiredOnly && !_discoverySchedule.IsRequired(candidate)) continue;
                     int distance = 0;
                     if (_discoveryChunks.Count > 0)
                     {

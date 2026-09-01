@@ -1,4 +1,11 @@
-## 0.6.0-devE3.2-probe1
+## 0.6.0-devE3.2-probe1
+
+- Added a reusable PCE required-discovery scheduler with explicit cached/sleeping/dirty/updating/active lifecycle. Causal, Valheim-event, and bounded-consistency tiles now remain readiness-blocking until downstream geometry work drains, while optional streaming discovery can be discarded at the clean sleep boundary.
+- Fixed unchanged F6 worlds continuing speculative discovery after causal coverage, which advanced geometry generations and caused repeated full-domain synchronizations and multi-second stalls without F7 or player construction.
+- Preserved sleeping after E3 releases its transient causal gate; the finite coverage window remains event-driven until the domain is replaced or the scene ends. Stage E1 also stays dormant before the first finite coverage request.
+- Added deterministic coverage for clean sleep, persistent post-gate sleep, localized event wake, duplicate-key coalescing, downstream-work exclusion, bounded-consistency wake, and return to sleep. The current build remains pending manual Valheim acceptance.
+- Finite-streaming installs no longer force verbose geometry scan/rejected-sample diagnostics; diagnostics-only installs retain the maintained geometry diagnostics path.
+
 
 - Diagnostic-only candidate. No fluid solver, pressure, APIC/FLIP, SDF, E3 streaming, damping, E2 smoothing, topology, or shader behavior is changed from devE3.2.
 - Added four bounded blocking live field snapshots at approximately 2, 5, 20, and 60 simulated seconds after explicit fill, plus `F11` / `pw_e3_probe` for a manual snapshot.
