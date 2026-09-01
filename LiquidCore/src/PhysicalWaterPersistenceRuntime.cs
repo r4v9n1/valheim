@@ -10,6 +10,7 @@ namespace PhysicalWater
         private static PhysicalWaterPersistenceRuntime Instance;
         private VolumetricFluidStateSnapshot _pending;
         private string _pendingWorldKey;
+        private string _ignoredSnapshotWorldKey;
 
         private void Awake()
         {
@@ -53,6 +54,18 @@ namespace PhysicalWater
             }
             catch (Exception ex)
             {
+                // A snapshot is valid for its saved domain geometry, not for
+                // every future player-centered test window. Retrying that
+                // known-incompatible snapshot every frame only produces
+                // log/CPU churn and can delay explicit finite-domain testing.
+                bool incompatibleDomain = ex is InvalidOperationException &&
+                    ex.Message.StartsWith("Snapshot/domain mismatch", StringComparison.Ordinal);
+                if (incompatibleDomain)
+                {
+                    Instance._ignoredSnapshotWorldKey = Instance._pendingWorldKey;
+                    Instance._pending = null;
+                    Instance._pendingWorldKey = null;
+                }
                 PhysicalWaterPlugin.Log.LogWarning(
                     "LiquidCore Phase 5 snapshot was not applied; the new domain remains unchanged: " + ex.Message);
             }
@@ -67,6 +80,7 @@ namespace PhysicalWater
                 string path = GetSnapshotPath(out string worldKey);
                 if (path == null) return;
                 runtime.Streaming.CapturePersistedState().Save(path);
+                _ignoredSnapshotWorldKey = null;
                 PhysicalWaterPlugin.Log.LogInfo("LiquidCore Phase 5 world state saved: world=" + worldKey + ", path=" + path + ".");
             }
             catch (Exception ex)
@@ -86,6 +100,7 @@ namespace PhysicalWater
             {
                 string path = GetSnapshotPath(out string worldKey);
                 if (path == null || !File.Exists(path)) return;
+                if (_ignoredSnapshotWorldKey == worldKey) return;
                 if (_pendingWorldKey == worldKey && _pending != null) return;
                 _pending = VolumetricFluidStateSnapshot.Load(path);
                 _pendingWorldKey = worldKey;
