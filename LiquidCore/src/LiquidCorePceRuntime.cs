@@ -141,6 +141,14 @@ namespace PhysicalWater
                 Collider collider = colliders[i];
                 if (collider == null || collider.isTrigger || !collider.enabled || !collider.bounds.Intersects(cell)) continue;
                 intersects = true;
+                // Unity only supports ClosestPoint for primitive colliders and
+                // convex MeshColliders. Non-convex mesh/compound colliders are
+                // conservatively partial here; calling ClosestPoint on them
+                // logs once per sampled cell and can freeze the live client.
+                if (!(collider is BoxCollider) && !(collider is SphereCollider) &&
+                    !(collider is CapsuleCollider) &&
+                    (!(collider is MeshCollider mesh) || !mesh.convex))
+                    continue;
                 if ((collider.ClosestPoint(point) - point).sqrMagnitude <= tolerance) return ProbeOccupancy.Solid;
             }
             return intersects ? ProbeOccupancy.Partial : ProbeOccupancy.Open;
