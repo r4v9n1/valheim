@@ -911,6 +911,11 @@ namespace PhysicalWater
             Bounds? localizedDirtyWorldBounds = adapter.TryGetReadyDirtyWorldBounds(generation, out dirtyWorldBounds)
                 ? dirtyWorldBounds
                 : (Bounds?)null;
+            // The inactive solid bank may still be retiring the preceding
+            // geometry generation. Defer without consuming PCE state; the
+            // same causal snapshot is retried on a later frame once its CPU
+            // synchronization fence reports safe reuse.
+            if (_appliedGeometryStateRevision != int.MinValue && !_domain.MacDomain.CanApplyPreparedSolidFields) return;
             pce.ApplyMappedColliderOccupancy(_domain.WorldBounds, _domain.WorldOrigin, _domain.MacDomain.Settings.CellSize);
             if (_appliedGeometryStateRevision == int.MinValue)
             {
@@ -929,7 +934,8 @@ namespace PhysicalWater
                 generation,
                 _geometryRoots,
                 _changedGeometryRoots,
-                localizedDirtyWorldBounds);
+                localizedDirtyWorldBounds,
+                synchronizeDiagnostics: false);
             _appliedGeometryStateRevision = stateRevision;
             _appliedGeometryRevisions.Clear();
             foreach (KeyValuePair<int, int> pair in _coverageGeometryRevisions)
@@ -939,11 +945,20 @@ namespace PhysicalWater
             _nextCausalGeometryApplyTime = now + Mathf.Max(0.75f, scanInterval * 3f);
             PhysicalWaterPlugin.Log.LogInfo(
                 "PW_E3_F6_READY geometryReady=True, fillReady=True, simulationPaused=False; causal solid synchronization: " + update + ".");
-            if (update.ParticlesStillInSolid != 0 || update.ParticlesDeleted != 0)
+            _domain.FlipDomain.RequestSafetyMetricsAsync(safety =>
             {
+                if (_domain == null) return;
+                bool unsafeState = !safety.Finite || safety.ParticlesInSolid != 0 || safety.ParticlesOutOfBounds != 0 ||
+                                   float.IsNaN(safety.MaxParticleSpeed) || float.IsInfinity(safety.MaxParticleSpeed);
+                PhysicalWaterPlugin.Log.LogInfo(
+                    "PW_E3_GEOMETRY_SAFETY_ASYNC generation=" + generation + ", particles=" + safety.ParticleCount +
+                    ", inSolid=" + safety.ParticlesInSolid + ", out=" + safety.ParticlesOutOfBounds +
+                    ", maxSpeed=" + safety.MaxParticleSpeed.ToString("F4", CultureInfo.InvariantCulture) +
+                    ", safe=" + (!unsafeState) + ".");
+                if (!unsafeState) return;
                 _domain.Paused = true;
-                PhysicalWaterPlugin.Log.LogError("PhysicalWater devE3 paused after unsafe solid update: " + update + ". No vanilla-water fallback was used.");
-            }
+                PhysicalWaterPlugin.Log.LogError("PhysicalWater devE3 paused after asynchronous geometry safety verification failed. No vanilla-water fallback was used.");
+            });
         }
 
         internal static bool ShouldApplyCausalGeometry(
