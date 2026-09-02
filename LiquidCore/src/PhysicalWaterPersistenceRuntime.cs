@@ -52,6 +52,20 @@ namespace PhysicalWater
             if (Instance == null || streaming == null || Instance._pending == null) return;
             try
             {
+                if (Instance._pending.Particles.Length == 0)
+                {
+                    // Geometry is reconstructable PCE/cache state, while the
+                    // persisted authority is finite liquid. Uploading an old
+                    // empty snapshot's full SDF/mask during F6 is both wasted
+                    // work and immediately superseded by causal geometry.
+                    Instance._restoredSnapshotWorldKey = Instance._pendingWorldKey;
+                    PhysicalWaterPlugin.Log.LogInfo(
+                        "LiquidCore Phase 5 empty world state consumed without geometry restore: world=" +
+                        Instance._pendingWorldKey + ".");
+                    Instance._pending = null;
+                    Instance._pendingWorldKey = null;
+                    return;
+                }
                 streaming.RestorePersistedState(Instance._pending);
                 PhysicalWaterPlugin.Log.LogInfo(
                     "LiquidCore Phase 5 world state restored: world=" + Instance._pendingWorldKey +
