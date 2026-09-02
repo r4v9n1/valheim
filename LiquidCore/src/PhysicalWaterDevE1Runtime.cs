@@ -16,6 +16,7 @@ namespace PhysicalWater
         private readonly List<GameObject> _changedGeometryRoots = new List<GameObject>();
         private readonly Dictionary<int, int> _coverageGeometryRevisions = new Dictionary<int, int>();
         private readonly Dictionary<int, int> _appliedGeometryRevisions = new Dictionary<int, int>();
+        private readonly Dictionary<int, int> _preparedGeometryRevisions = new Dictionary<int, int>();
         private AssetBundle _bundle;
         private ComputeShader _macShader;
         private ComputeShader _flipShader;
@@ -34,11 +35,13 @@ namespace PhysicalWater
         private float _nextCausalGeometryApplyTime;
         private Vector3 _coverageWindowOrigin = new Vector3(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
         private Bounds _geometryCoverageBounds;
+        private VolumetricSolidGeometrySdf.RebasePreparation _initialGeometryPreparation;
+        private long _preparedGeometryGeneration = -1;
+        private int _preparedGeometryStateRevision = int.MinValue;
 
-        // Diagnostic-only devE3.2 probe. These checkpoints perform blocking GPU
-        // readback only four times per explicit fill, never every frame.
-        private static readonly float[] LiveFieldProbeCheckpoints = { 2f, 5f, 20f, 60f };
-        private int _nextLiveFieldProbeCheckpoint;
+        // Full field probes are intentionally explicit (F11) because their GPU
+        // downloads serialize the render and simulation queues. Never schedule
+        // them from the frame loop.
 
         private void Awake()
         {
@@ -109,7 +112,6 @@ namespace PhysicalWater
                 LogTelemetry();
             }
 
-            MaybeCaptureLiveFieldProbe();
         }
 
         private static bool TestChordDown(KeyCode key)
@@ -277,7 +279,6 @@ namespace PhysicalWater
             // deliberately paused and empty; its first full telemetry sample
             // can wait for the normal interval.
             _nextTelemetryTime = Time.unscaledTime + Mathf.Max(0.5f, PhysicalWaterPlugin.Settings.StageE1TelemetryInterval.Value);
-            _nextLiveFieldProbeCheckpoint = 0;
             _observedGeometryGeneration = -1;
             _appliedGeometryStateRevision = int.MinValue;
             _nextCausalGeometryApplyTime = 0f;
@@ -327,7 +328,6 @@ namespace PhysicalWater
             Vector3 center = new Vector3(worldPlayer.x, worldPlayer.y + bottomOffset + sy * 0.5f, worldPlayer.z);
             Bounds requested = new Bounds(center, new Vector3(sx, sy, sz));
             int count = _streaming.SeedWorldBox(requested);
-            _nextLiveFieldProbeCheckpoint = 0;
             string message = "E3 explicit fill complete: requested=" + Format(requested.size) + ", worldCenter=" + Format(requested.center) + ", particles=" + count + ". No fallback or reseeding source was used.";
             PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devE3 " + message);
             Reply(args, message);
@@ -469,21 +469,6 @@ namespace PhysicalWater
                              ", bounds=" + fixture.WorldBounds + ".";
             PhysicalWaterPlugin.Log.LogInfo("PW_TERRAIN_CAPTURE " + message);
             Reply(args, message);
-        }
-
-        private void MaybeCaptureLiveFieldProbe()
-        {
-            if (_domain == null || _domain.Paused || _domain.ParticleCount <= 0) return;
-            if (_nextLiveFieldProbeCheckpoint >= LiveFieldProbeCheckpoints.Length) return;
-            VolumetricWaterDomain mac = _domain.MacDomain;
-            if (mac == null) return;
-
-            float simulatedSeconds = mac.Diagnostics.SimulatedSeconds;
-            float checkpoint = LiveFieldProbeCheckpoints[_nextLiveFieldProbeCheckpoint];
-            if (simulatedSeconds + 0.0001f < checkpoint) return;
-
-            _nextLiveFieldProbeCheckpoint++;
-            CaptureLiveFieldProbe("auto-" + checkpoint.ToString("0", CultureInfo.InvariantCulture) + "s");
         }
 
         private void CaptureLiveFieldProbe(string reason)
@@ -830,6 +815,56 @@ namespace PhysicalWater
             if (pce == null) return;
             EnsureGeometryCoverage();
             if (!adapter.CausalGeometryCoverageReady) return;
+
+            if (_initialGeometryPreparation != null)
+            {
+                long currentGeneration;
+                int currentStateRevision;
+                if (!pce.TryGetCausalGeometrySnapshot(_domain.WorldBounds, -1, _activeGeometryRoots, null, out currentGeneration, out currentStateRevision) ||
+                    currentGeneration != _preparedGeometryGeneration || currentStateRevision != _preparedGeometryStateRevision)
+                {
+                    PhysicalWaterPlugin.Log.LogInfo(
+                        "PhysicalWater devE3 discarded stale initial geometry preparation generation=" + _preparedGeometryGeneration +
+                        ", currentGeneration=" + currentGeneration + ".");
+                    _initialGeometryPreparation = null;
+                    _preparedGeometryGeneration = -1;
+                    _preparedGeometryStateRevision = int.MinValue;
+                    _observedGeometryGeneration = -1;
+                    return;
+                }
+                if (!_initialGeometryPreparation.IsCompleted) return;
+                if (_initialGeometryPreparation.IsFaulted || _initialGeometryPreparation.IsCanceled)
+                {
+                    PhysicalWaterPlugin.Log.LogError("PhysicalWater devE3 initial geometry preparation failed before application.");
+                    _initialGeometryPreparation = null;
+                    _observedGeometryGeneration = -1;
+                    return;
+                }
+
+                var applyWatch = System.Diagnostics.Stopwatch.StartNew();
+                if (!_streaming.TryApplyPreparedGeometry(_preparedGeometryGeneration, _initialGeometryPreparation, out VolumetricFiniteSolidUpdateDiagnostics preparedUpdate)) return;
+                applyWatch.Stop();
+                _appliedGeometryStateRevision = _preparedGeometryStateRevision;
+                _appliedGeometryRevisions.Clear();
+                foreach (KeyValuePair<int, int> pair in _preparedGeometryRevisions)
+                    _appliedGeometryRevisions.Add(pair.Key, pair.Value);
+                _initialGeometryPreparation = null;
+                _preparedGeometryGeneration = -1;
+                _preparedGeometryStateRevision = int.MinValue;
+                _preparedGeometryRevisions.Clear();
+                _domain.Paused = false;
+                adapter.ReleaseCausalGeometryCoverage();
+                _nextCausalGeometryApplyTime = Time.realtimeSinceStartup + 0.75f;
+                PhysicalWaterPlugin.Log.LogInfo(
+                    "PW_E3_F6_READY geometryReady=True, fillReady=True, simulationPaused=False; prepared causal solid synchronization apply=" +
+                    applyWatch.Elapsed.TotalMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "ms: " + preparedUpdate + ".");
+                if (preparedUpdate.ParticlesStillInSolid != 0 || preparedUpdate.ParticlesDeleted != 0)
+                {
+                    _domain.Paused = true;
+                    PhysicalWaterPlugin.Log.LogError("PhysicalWater devE3 paused after unsafe prepared solid update: " + preparedUpdate + ". No vanilla-water fallback was used.");
+                }
+                return;
+            }
             // World discovery and Valheim destruction callbacks often arrive
             // as a burst. Applying every intermediate generation would run a
             // synchronous occupancy/SDF/upload rebuild for each event and
@@ -877,6 +912,19 @@ namespace PhysicalWater
                 ? dirtyWorldBounds
                 : (Bounds?)null;
             pce.ApplyMappedColliderOccupancy(_domain.WorldBounds, _domain.WorldOrigin, _domain.MacDomain.Settings.CellSize);
+            if (_appliedGeometryStateRevision == int.MinValue)
+            {
+                _preparedGeometryRevisions.Clear();
+                foreach (KeyValuePair<int, int> pair in _coverageGeometryRevisions)
+                    _preparedGeometryRevisions.Add(pair.Key, pair.Value);
+                _preparedGeometryGeneration = generation;
+                _preparedGeometryStateRevision = stateRevision;
+                _initialGeometryPreparation = _streaming.BeginPrepareGeometry(generation, _geometryRoots);
+                PhysicalWaterPlugin.Log.LogInfo(
+                    "PhysicalWater devE3 began background initial geometry preparation generation=" + generation +
+                    ", roots=" + _geometryRoots.Count + ". Fill remains gated until atomic application.");
+                return;
+            }
             VolumetricFiniteSolidUpdateDiagnostics update = _streaming.SynchronizeGeometry(
                 generation,
                 _geometryRoots,
@@ -927,30 +975,18 @@ namespace PhysicalWater
 
         private void LogTelemetry()
         {
-            if (_domain.Paused && _domain.ParticleCount == 0)
-            {
-                PhysicalWaterPlugin.Log.LogInfo(
-                    "PhysicalWater devE3 idle telemetry: paused=True, particles=0, " +
-                    "blocking diagnostics deferred until fluid is active.");
-                return;
-            }
-            VolumetricFiniteDomainDiagnostics d = _domain.CaptureDiagnosticsSync();
-            VolumetricStreamingDiagnostics streaming = _streaming.CaptureDiagnosticsSync();
-            bool invalid = !d.Particles.Finite || d.Particles.InvalidParticles != 0 || d.Particles.ParticlesOutOfBounds != 0 ||
-                           d.Particles.ParticlesInSolid != 0 || d.Surface.TriangleBufferOverflowed ||
-                           float.IsNaN(d.Particles.MaxParticleSpeed) || float.IsInfinity(d.Particles.MaxParticleSpeed) ||
-                           streaming.LostParticleIds != 0 || streaming.DuplicatedParticleIds != 0 ||
-                           streaming.UnownedParticles != 0 || streaming.BlockedArtificialBoundaryEvents != 0;
+            VolumetricStreamingDiagnostics streaming = _streaming.Diagnostics;
+            VolumetricWaterDomain mac = _domain.MacDomain;
             PhysicalWaterPlugin.Log.LogInfo(
-                "PhysicalWater devE3 telemetry: substeps=" + _lastSubsteps +
+                "PhysicalWater devE3 nonblocking telemetry: paused=" + _domain.Paused +
+                ", particles=" + _domain.ParticleCount +
+                ", substeps=" + _lastSubsteps +
                 ", activeCpuMs=" + _lastSimulationCpuMs.ToString("F3") +
-                ", finite=(" + d + "), streaming=(" + streaming + ")" +
+                ", simulatedSeconds=" + (mac != null ? mac.Diagnostics.SimulatedSeconds.ToString("F3") : "n/a") +
+                ", flipTiming=(" + _domain.FlipDomain.LastStepTimings + ")" +
+                ", macTiming=(" + (mac != null ? mac.LastStepTimings.ToString() : "n/a") + ")" +
+                ", streaming=(" + streaming + ")" +
                 ", globalOcean=False, vanillaFallback=False, hiddenReseeding=False.");
-            if (invalid)
-            {
-                _domain.Paused = true;
-                PhysicalWaterPlugin.Log.LogError("PhysicalWater devE3 numerical/streaming safety gate paused the finite simulation. No fallback was attempted.");
-            }
         }
 
         private void LoadAssets()
@@ -1012,6 +1048,10 @@ namespace PhysicalWater
             _observedGeometryGeneration = -1;
             _appliedGeometryStateRevision = int.MinValue;
             _appliedGeometryRevisions.Clear();
+            _initialGeometryPreparation = null;
+            _preparedGeometryGeneration = -1;
+            _preparedGeometryStateRevision = int.MinValue;
+            _preparedGeometryRevisions.Clear();
             _coverageWindowOrigin = new Vector3(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
         }
 
