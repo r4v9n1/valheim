@@ -263,7 +263,7 @@ namespace PhysicalWater
                     // compact window so that normal transport does not hit an
                     // artificial boundary while the safety gate remains strict.
                     WindowRegionsZ = 3,
-                    PrefetchCells = 4,
+                    PrefetchCells = 16,
                     OwnershipScanIntervalSteps = 4,
                     AutoRebaseWindow = true,
                     EnableBlockingValidationTelemetry = false,
@@ -299,6 +299,8 @@ namespace PhysicalWater
             PhysicalWaterPlugin.Log.LogInfo(
                 "PhysicalWater devE3 domain creation timing: " +
                 "initializeMs=" + initializeMs.ToString("F3", CultureInfo.InvariantCulture) +
+                ", macWarmupMs=" + _domain.MacDomain.ComputeWarmupMilliseconds.ToString("F3", CultureInfo.InvariantCulture) +
+                ", flipWarmupMs=" + _domain.FlipDomain.ComputeWarmupMilliseconds.ToString("F3", CultureInfo.InvariantCulture) +
                 ", persistenceRestoreMs=" + restoreMs.ToString("F3", CultureInfo.InvariantCulture) +
                 ", coverageGateMs=" + coverageMs.ToString("F3", CultureInfo.InvariantCulture) +
                 ", totalMs=" + createWatch.Elapsed.TotalMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + ".");
@@ -887,7 +889,8 @@ namespace PhysicalWater
             _domain.Paused = false;
             adapter.ReleaseCausalGeometryCoverage();
             _nextCausalGeometryApplyTime = now + Mathf.Max(0.75f, scanInterval * 3f);
-            PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devE3 causal solid synchronization: " + update + ".");
+            PhysicalWaterPlugin.Log.LogInfo(
+                "PW_E3_F6_READY geometryReady=True, fillReady=True, simulationPaused=False; causal solid synchronization: " + update + ".");
             if (update.ParticlesStillInSolid != 0 || update.ParticlesDeleted != 0)
             {
                 _domain.Paused = true;
