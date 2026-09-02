@@ -11,6 +11,7 @@ $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $LocalProjectRoot = Join-Path $env:LOCALAPPDATA "R4V9N1\LiquidCore"
 $LocalDistDir = Join-Path $LocalProjectRoot "dist"
 & (Join-Path $ProjectRoot "build.ps1") -ValheimDir $ValheimDir -Configuration $Configuration
+& (Join-Path $ProjectRoot "build-assets.ps1")
 
 $DllPath = Join-Path $LocalDistDir "LiquidCore.dll"
 $BundleName = "physicalwater_assets"
@@ -25,14 +26,14 @@ $EnableGeometryDiagnostics = (-not $EnableFiniteStreaming).ToString().ToLowerInv
 New-Item -ItemType Directory -Force -Path $PluginDir | Out-Null
 Copy-Item -LiteralPath $DllPath -Destination $PluginDllPath -Force
 
-$bundleCandidates = @(
-    (Join-Path $LocalDistDir $BundleName),
-    (Join-Path $ProjectRoot "dist\$BundleName"),
-    (Join-Path $LegacyPluginDir $BundleName)
-)
-$BundlePath = $bundleCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
-if ($BundlePath) {
-    Copy-Item -LiteralPath $BundlePath -Destination $PluginBundlePath -Force
+$BundlePath = Join-Path $LocalDistDir $BundleName
+if (!(Test-Path -LiteralPath $BundlePath -PathType Leaf)) {
+    throw "Fresh validated AssetBundle is missing: $BundlePath"
+}
+Copy-Item -LiteralPath $BundlePath -Destination $PluginBundlePath -Force
+if ((Get-FileHash -LiteralPath $BundlePath -Algorithm SHA256).Hash -ne
+    (Get-FileHash -LiteralPath $PluginBundlePath -Algorithm SHA256).Hash) {
+    throw "Installed AssetBundle hash does not match the validated build output."
 }
 
 # The BepInEx GUID and config remain legacy-compatible, but the old assembly must
