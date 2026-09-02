@@ -11,6 +11,7 @@ namespace PhysicalWater
         private VolumetricFluidStateSnapshot _pending;
         private string _pendingWorldKey;
         private string _ignoredSnapshotWorldKey;
+        private string _restoredSnapshotWorldKey;
 
         private void Awake()
         {
@@ -37,7 +38,13 @@ namespace PhysicalWater
 
         internal static void NotifyWorldReady()
         {
-            if (Instance != null) Instance.TryLoadWorldState();
+            if (Instance == null) return;
+            // WorldSetup denotes a new load lifecycle, including re-entering
+            // the same world without restarting Valheim. Permit one restore
+            // for that lifecycle; the successful marker then blocks per-frame
+            // reloads until the next WorldSetup.
+            Instance._restoredSnapshotWorldKey = null;
+            Instance.TryLoadWorldState();
         }
 
         internal static void TryRestore(VolumetricStreamingDomainController streaming)
@@ -49,6 +56,12 @@ namespace PhysicalWater
                 PhysicalWaterPlugin.Log.LogInfo(
                     "LiquidCore Phase 5 world state restored: world=" + Instance._pendingWorldKey +
                     ", particles=" + Instance._pending.Particles.Length + ".");
+                // A successful restore consumes this world's on-disk snapshot
+                // for the current session. Without a completed-world marker,
+                // Update reloads the same file on the next frame and restores
+                // it forever, repeatedly uploading an unchanged empty/full
+                // domain and collapsing live FPS after F6.
+                Instance._restoredSnapshotWorldKey = Instance._pendingWorldKey;
                 Instance._pending = null;
                 Instance._pendingWorldKey = null;
             }
@@ -101,6 +114,7 @@ namespace PhysicalWater
                 string path = GetSnapshotPath(out string worldKey);
                 if (path == null || !File.Exists(path)) return;
                 if (_ignoredSnapshotWorldKey == worldKey) return;
+                if (_restoredSnapshotWorldKey == worldKey) return;
                 if (_pendingWorldKey == worldKey && _pending != null) return;
                 _pending = VolumetricFluidStateSnapshot.Load(path);
                 _pendingWorldKey = worldKey;
