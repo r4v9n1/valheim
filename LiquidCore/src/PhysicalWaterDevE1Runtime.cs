@@ -53,7 +53,7 @@ namespace PhysicalWater
                 "Vanilla-water suppression OFF. Swimming/buoyancy/ships/fish OFF. Explicit finite fluid only.");
             PhysicalWaterPlugin.Log.LogInfo(
                 "PhysicalWater devE3 explicit test controls: console pw_e3_* (pw_e1_* aliases retained); " +
-                "F6=create domain, F7=fill 6m cube, F8=clear, F9=status, F10=pause, F11=raw/live field probe, F12=capture terrain fixture; " +
+                "F6=create domain, F7=initialize a 216m3 local basin waterline, F8=clear, F9=status, F10=pause, F11=raw/live field probe, F12=capture terrain fixture; " +
                 "Ctrl+Shift+D/W/X/S/P/B/C mirror those actions, Ctrl+Shift+G enables safe terrain-test flight, " +
                 "and Ctrl+Shift+J/K apply deterministic native terrain lower/raise operations.");
         }
@@ -325,13 +325,31 @@ namespace PhysicalWater
                     Player.m_localPlayer.Message(MessageHud.MessageType.TopLeft, "PhysicalWater E1 geometry is still preparing.");
                 return;
             }
+            Vector3 worldPlayer = Player.m_localPlayer != null
+                ? Player.m_localPlayer.transform.position
+                : _domain.WorldOrigin + _domain.WorldSize * 0.5f;
+            if (args == null || args.Length <= 1)
+            {
+                const float requestedVolume = 216f;
+                Bounds domainBounds = _domain.WorldBounds;
+                var search = new Bounds(
+                    new Vector3(worldPlayer.x, domainBounds.center.y, worldPlayer.z),
+                    new Vector3(24f, domainBounds.size.y, 24f));
+                float volume = _streaming.SeedWorldWaterline(search, requestedVolume, out int waterlineParticles);
+                string waterlineMessage = "E3 terrain-aware waterline fill complete: search=24x" +
+                    domainBounds.size.y.ToString("F1", CultureInfo.InvariantCulture) + "x24m, requestedVolume=" +
+                    requestedVolume.ToString("F3", CultureInfo.InvariantCulture) + "m3, seededVolume=" +
+                    volume.ToString("F3", CultureInfo.InvariantCulture) + "m3, particles=" + waterlineParticles +
+                    ". Lowest terrain-open cells were selected by waterline; no elevated drop or reseeding source was used.";
+                PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devE3 " + waterlineMessage);
+                Reply(args, waterlineMessage);
+                return;
+            }
+
             float sx = ParsePositive(args, 1, 6f);
             float sy = ParsePositive(args, 2, 6f);
             float sz = ParsePositive(args, 3, 6f);
             float bottomOffset = Parse(args, 4, 4f);
-            Vector3 worldPlayer = Player.m_localPlayer != null
-                ? Player.m_localPlayer.transform.position
-                : _domain.WorldOrigin + _domain.WorldSize * 0.5f;
             Vector3 center = new Vector3(worldPlayer.x, worldPlayer.y + bottomOffset + sy * 0.5f, worldPlayer.z);
             Bounds requested = new Bounds(center, new Vector3(sx, sy, sz));
             int count = _streaming.SeedWorldBox(requested);
