@@ -30,6 +30,22 @@ namespace PhysicalWater
         private bool _registeredCommands;
         private int _lastSubsteps;
         private float _lastSimulationCpuMs;
+        private readonly float[] _telemetryFrameMilliseconds = new float[1024];
+        private int _telemetryFrameCount;
+        private int _telemetryFrameSampleCount;
+        private int _telemetrySolverSteps;
+        private double _telemetryFrameSum;
+        private double _telemetryActiveCpuSum;
+        private double _telemetrySolverSum;
+        private double _telemetryPressureSum;
+        private double _telemetryPcgSum;
+        private double _telemetrySurfaceSum;
+        private int _telemetryPreviousOwnershipRequests;
+        private long _telemetryPreviousOwnershipBytes;
+        private int _telemetryPreviousGc0;
+        private int _telemetryPreviousGc1;
+        private int _telemetryPreviousGc2;
+        private long _telemetryPreviousManagedMemory;
         private long _observedGeometryGeneration = -1;
         private int _appliedGeometryStateRevision = int.MinValue;
         private float _nextCausalGeometryApplyTime;
@@ -105,6 +121,7 @@ namespace PhysicalWater
             watch.Stop();
             _lastSubsteps = substeps;
             _lastSimulationCpuMs = (float)watch.Elapsed.TotalMilliseconds;
+            AccumulateTelemetry(substeps);
 
             if (Time.unscaledTime >= _nextTelemetryTime)
             {
@@ -286,6 +303,7 @@ namespace PhysicalWater
             // deliberately paused and empty; its first full telemetry sample
             // can wait for the normal interval.
             _nextTelemetryTime = Time.unscaledTime + Mathf.Max(0.5f, PhysicalWaterPlugin.Settings.StageE1TelemetryInterval.Value);
+            ResetTelemetryWindow(_streaming.Diagnostics, GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2), GC.GetTotalMemory(false));
             _observedGeometryGeneration = -1;
             _appliedGeometryStateRevision = int.MinValue;
             _nextCausalGeometryApplyTime = 0f;
@@ -1023,16 +1041,75 @@ namespace PhysicalWater
         {
             VolumetricStreamingDiagnostics streaming = _streaming.Diagnostics;
             VolumetricWaterDomain mac = _domain.MacDomain;
+            int frameCount = Math.Max(1, _telemetryFrameCount);
+            int solverSteps = Math.Max(1, _telemetrySolverSteps);
+            Array.Sort(_telemetryFrameMilliseconds, 0, _telemetryFrameSampleCount);
+            float frameP95 = _telemetryFrameSampleCount > 0
+                ? _telemetryFrameMilliseconds[Mathf.Clamp(Mathf.FloorToInt(0.95f * (_telemetryFrameSampleCount - 1)), 0, _telemetryFrameSampleCount - 1)]
+                : 0f;
+            int gc0 = GC.CollectionCount(0);
+            int gc1 = GC.CollectionCount(1);
+            int gc2 = GC.CollectionCount(2);
+            long managedMemory = GC.GetTotalMemory(false);
+            VolumetricSolidGeometryUpdateDiagnostics geometry = _domain.Geometry.LastUpdate;
             PhysicalWaterPlugin.Log.LogInfo(
                 "PhysicalWater devE3 nonblocking telemetry: paused=" + _domain.Paused +
                 ", particles=" + _domain.ParticleCount +
                 ", substeps=" + _lastSubsteps +
                 ", activeCpuMs=" + _lastSimulationCpuMs.ToString("F3") +
+                ", intervalFrames=" + _telemetryFrameCount +
+                ", frameMs[mean/p95]=" + (_telemetryFrameSum / frameCount).ToString("F3") + "/" + frameP95.ToString("F3") +
+                ", simulationCpuMeanMs=" + (_telemetryActiveCpuSum / frameCount).ToString("F3") +
+                ", solverStepMeanMs=" + (_telemetrySolverSum / solverSteps).ToString("F3") +
+                ", pressureMeanMs=" + (_telemetryPressureSum / solverSteps).ToString("F3") +
+                ", pcgMeanMs=" + (_telemetryPcgSum / solverSteps).ToString("F3") +
+                ", surfaceMeanMs=" + (_telemetrySurfaceSum / solverSteps).ToString("F3") +
+                ", ownership[requests/bytes]=" + (streaming.AsyncOwnershipRequests - _telemetryPreviousOwnershipRequests) + "/" + (streaming.OwnershipReadbackBytes - _telemetryPreviousOwnershipBytes) +
+                ", managedMemory[bytes/delta]=" + managedMemory + "/" + (managedMemory - _telemetryPreviousManagedMemory) +
+                ", gc[0/1/2]=" + (gc0 - _telemetryPreviousGc0) + "/" + (gc1 - _telemetryPreviousGc1) + "/" + (gc2 - _telemetryPreviousGc2) +
+                ", regions[active/dormant]=" + streaming.ActiveRegions + "/" + streaming.DormantRegions +
+                ", geometry[generation/changed/totalMs]=" + _domain.AppliedGeometryGeneration + "/" + geometry.ChangedCells + "/" + geometry.TotalMilliseconds.ToString("F3") +
                 ", simulatedSeconds=" + (mac != null ? mac.Diagnostics.SimulatedSeconds.ToString("F3") : "n/a") +
                 ", flipTiming=(" + _domain.FlipDomain.LastStepTimings + ")" +
                 ", macTiming=(" + (mac != null ? mac.LastStepTimings.ToString() : "n/a") + ")" +
                 ", streaming=(" + streaming + ")" +
                 ", globalOcean=False, vanillaFallback=False, hiddenReseeding=False.");
+            ResetTelemetryWindow(streaming, gc0, gc1, gc2, managedMemory);
+        }
+
+        private void AccumulateTelemetry(int substeps)
+        {
+            if (_telemetryFrameSampleCount < _telemetryFrameMilliseconds.Length)
+                _telemetryFrameMilliseconds[_telemetryFrameSampleCount++] = Time.unscaledDeltaTime * 1000f;
+            _telemetryFrameCount++;
+            _telemetryFrameSum += Time.unscaledDeltaTime * 1000.0;
+            _telemetryActiveCpuSum += _lastSimulationCpuMs;
+            if (substeps <= 0 || _domain == null || _domain.MacDomain == null) return;
+            VolumetricWaterDomain mac = _domain.MacDomain;
+            _telemetrySolverSteps += substeps;
+            _telemetrySolverSum += mac.LastStepTimings.TotalMilliseconds * substeps;
+            _telemetryPressureSum += mac.LastStepTimings.PressureMilliseconds * substeps;
+            _telemetryPcgSum += mac.LastCutCellHotPathTimings.Projection.PcgMilliseconds * substeps;
+            _telemetrySurfaceSum += _domain.Surface.LastReconstructionMilliseconds * substeps;
+        }
+
+        private void ResetTelemetryWindow(VolumetricStreamingDiagnostics streaming, int gc0, int gc1, int gc2, long managedMemory)
+        {
+            _telemetryFrameCount = 0;
+            _telemetryFrameSampleCount = 0;
+            _telemetrySolverSteps = 0;
+            _telemetryFrameSum = 0.0;
+            _telemetryActiveCpuSum = 0.0;
+            _telemetrySolverSum = 0.0;
+            _telemetryPressureSum = 0.0;
+            _telemetryPcgSum = 0.0;
+            _telemetrySurfaceSum = 0.0;
+            _telemetryPreviousOwnershipRequests = streaming.AsyncOwnershipRequests;
+            _telemetryPreviousOwnershipBytes = streaming.OwnershipReadbackBytes;
+            _telemetryPreviousGc0 = gc0;
+            _telemetryPreviousGc1 = gc1;
+            _telemetryPreviousGc2 = gc2;
+            _telemetryPreviousManagedMemory = managedMemory;
         }
 
         private void LoadAssets()
