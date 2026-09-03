@@ -254,6 +254,9 @@ namespace PhysicalWater
         private Bounds _readyDirtyWorldBounds;
         private bool _hasReadyDirtyWorldBounds;
         private long _readyDirtyBoundsGeneration = -1;
+        private float _pendingDirtyEventTime = float.PositiveInfinity;
+        private float _readyDirtyEventTime = float.NaN;
+        private float _readyDirtyPublishedTime = float.NaN;
         private Bounds _recentTerrainOperationBounds;
         private float _recentTerrainOperationTime = float.NegativeInfinity;
 
@@ -461,10 +464,21 @@ namespace PhysicalWater
             _priorityDiscoveryChunks.Clear();
         }
 
-        internal bool TryGetReadyDirtyWorldBounds(long generation, out Bounds dirtyWorldBounds)
+        internal bool TryGetReadyDirtyWorldBounds(
+            long generation,
+            out Bounds dirtyWorldBounds,
+            out float eventToReadyMilliseconds,
+            out float readyAgeMilliseconds)
         {
             dirtyWorldBounds = _readyDirtyWorldBounds;
-            return _hasReadyDirtyWorldBounds && _readyDirtyBoundsGeneration == generation;
+            eventToReadyMilliseconds = 0f;
+            readyAgeMilliseconds = 0f;
+            if (!_hasReadyDirtyWorldBounds || _readyDirtyBoundsGeneration != generation) return false;
+            if (!float.IsNaN(_readyDirtyEventTime) && !float.IsNaN(_readyDirtyPublishedTime))
+                eventToReadyMilliseconds = Mathf.Max(0f, (_readyDirtyPublishedTime - _readyDirtyEventTime) * 1000f);
+            if (!float.IsNaN(_readyDirtyPublishedTime))
+                readyAgeMilliseconds = Mathf.Max(0f, (Time.realtimeSinceStartup - _readyDirtyPublishedTime) * 1000f);
+            return true;
         }
 
         private void Awake()
@@ -1289,6 +1303,7 @@ namespace PhysicalWater
             {
                 _pendingDirtyWorldBounds = bounds;
                 _hasPendingDirtyWorldBounds = true;
+                _pendingDirtyEventTime = Time.realtimeSinceStartup;
             }
             else _pendingDirtyWorldBounds.Encapsulate(bounds);
         }
@@ -1299,7 +1314,10 @@ namespace PhysicalWater
             _readyDirtyBoundsGeneration = _geometryGeneration;
             _hasReadyDirtyWorldBounds = _hasPendingDirtyWorldBounds;
             if (_hasPendingDirtyWorldBounds) _readyDirtyWorldBounds = _pendingDirtyWorldBounds;
+            _readyDirtyEventTime = _pendingDirtyEventTime;
+            _readyDirtyPublishedTime = Time.realtimeSinceStartup;
             _hasPendingDirtyWorldBounds = false;
+            _pendingDirtyEventTime = float.PositiveInfinity;
         }
 
         private int LogChangeAndQueue(

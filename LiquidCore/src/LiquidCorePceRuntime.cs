@@ -89,6 +89,22 @@ namespace PhysicalWater
 
         internal bool TryGetActiveSource(string sourceId, out ValheimPceGeometryChange change) => _activeSources.TryGetValue(sourceId, out change);
 
+        internal bool TryGetReadyChangeBounds(
+            long generation,
+            out Bounds dirtyWorldBounds,
+            out float eventToReadyMilliseconds,
+            out float readyAgeMilliseconds)
+        {
+            dirtyWorldBounds = default;
+            eventToReadyMilliseconds = 0f;
+            readyAgeMilliseconds = 0f;
+            return _adapter != null && _adapter.TryGetReadyDirtyWorldBounds(
+                generation,
+                out dirtyWorldBounds,
+                out eventToReadyMilliseconds,
+                out readyAgeMilliseconds);
+        }
+
         internal int ApplyMappedColliderOccupancy(Bounds domainBounds, Vector3 domainOrigin, float cellSize)
         {
             if (cellSize <= 0f) return 0;

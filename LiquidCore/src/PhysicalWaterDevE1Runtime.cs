@@ -13,6 +13,7 @@ namespace PhysicalWater
 
         private readonly List<GameObject> _geometryRoots = new List<GameObject>();
         private readonly List<GameObject> _activeGeometryRoots = new List<GameObject>();
+        private readonly List<GameObject> _changedGeometryRoots = new List<GameObject>();
         private readonly Dictionary<int, int> _coverageGeometryRevisions = new Dictionary<int, int>();
         private readonly Dictionary<int, int> _appliedGeometryRevisions = new Dictionary<int, int>();
         private readonly Dictionary<int, int> _preparedGeometryRevisions = new Dictionary<int, int>();
@@ -543,13 +544,16 @@ namespace PhysicalWater
                 float[] interfaceTops = mac.CaptureLiquidInterfaceTopSync();
                 float[] solidSdf = mac.CaptureSolidSdfSync();
                 float[] columnHeights = surface.CaptureColumnHeightsSync();
+                float[] columnCoverages = surface.CaptureColumnCoveragesSync();
                 if (fractions.Length != mac.CellCount || interfaceTops.Length != mac.CellCount || solidSdf.Length != mac.CellCount ||
-                    columnHeights.Length != surface.SurfaceResolutionX * surface.SurfaceResolutionZ)
+                    columnHeights.Length != surface.SurfaceResolutionX * surface.SurfaceResolutionZ ||
+                    columnCoverages.Length != surface.SurfaceResolutionX * surface.SurfaceResolutionZ)
                 {
                     PhysicalWaterPlugin.Log.LogError(
                         "PW_E3_PROBE failed readback sizes: fractions=" + fractions.Length +
                         ", interfaceTops=" + interfaceTops.Length +
-                        ", sdf=" + solidSdf.Length + ", columns=" + columnHeights.Length + ".");
+                        ", sdf=" + solidSdf.Length + ", columns=" + columnHeights.Length +
+                        ", coverages=" + columnCoverages.Length + ".");
                     return;
                 }
 
@@ -595,7 +599,7 @@ namespace PhysicalWater
                 var representative = new List<string>();
                 var csv = new List<string>(sx * sz + 2)
                 {
-                    "reason,simSeconds,surfaceX,surfaceZ,worldX,worldZ,terrainWorldY,solidSurfaceWorldY,legacyFractionTopWorldY,interfaceTopWorldY,columnHeightWorldY,renderPreviousWorldY,renderCurrentWorldY,renderInterpolatedWorldY,topLiquidCell,topFraction,interfaceMinusTerrain,columnMinusInterface,renderMinusColumn"
+                    "reason,simSeconds,surfaceX,surfaceZ,worldX,worldZ,terrainWorldY,solidSurfaceWorldY,legacyFractionTopWorldY,interfaceTopWorldY,columnHeightWorldY,columnCoverage,renderPreviousWorldY,renderCurrentWorldY,renderInterpolatedWorldY,topLiquidCell,topFraction,interfaceMinusTerrain,columnMinusInterface,renderMinusColumn"
                 };
 
                 int wetColumns = 0;
@@ -623,7 +627,9 @@ namespace PhysicalWater
                     float legacyRawWorldY = origin.y + (topY + topFraction) * dx;
                     float rawLocalY = (topY + Mathf.Clamp01(interfaceTops[topIndex])) * dx;
                     float rawWorldY = origin.y + rawLocalY;
-                    float columnLocalY = columnHeights[x + sx * z];
+                    int columnIndex = x + sx * z;
+                    float columnLocalY = columnHeights[columnIndex];
+                    float columnCoverage = Mathf.Clamp01(columnCoverages[columnIndex]);
                     float columnWorldY = columnLocalY >= 0f ? origin.y + columnLocalY : float.NaN;
 
                     float worldX = origin.x + localX;
@@ -678,7 +684,7 @@ namespace PhysicalWater
                         reason + "," + ProbeFmt(sim) + "," + x + "," + z + "," +
                         ProbeFmt(worldX) + "," + ProbeFmt(worldZ) + "," +
                         ProbeFmt(terrainWorldY) + "," + ProbeFmt(solidWorldY) + "," +
-                        ProbeFmt(legacyRawWorldY) + "," + ProbeFmt(rawWorldY) + "," + ProbeFmt(columnWorldY) + "," +
+                        ProbeFmt(legacyRawWorldY) + "," + ProbeFmt(rawWorldY) + "," + ProbeFmt(columnWorldY) + "," + ProbeFmt(columnCoverage) + "," +
                         ProbeFmt(renderPreviousWorldY) + "," + ProbeFmt(renderCurrentWorldY) + "," +
                         ProbeFmt(renderWorldY) + "," + topY + "," + ProbeFmt(topFraction) + "," +
                         ProbeFmt(ProbeFinite(terrainWorldY) ? rawWorldY - terrainWorldY : float.NaN) + "," +
@@ -694,6 +700,7 @@ namespace PhysicalWater
                         " legacyTopY=" + ProbeFmt(legacyRawWorldY) +
                         " interfaceTopY=" + ProbeFmt(rawWorldY) +
                         " columnY=" + ProbeFmt(columnWorldY) +
+                        " coverage=" + ProbeFmt(columnCoverage) +
                         " renderY=" + ProbeFmt(renderWorldY) +
                         " topCell=" + topY +
                         " topFrac=" + ProbeFmt(topFraction));
@@ -928,7 +935,7 @@ namespace PhysicalWater
                 _preparedGeometryRevisions.Clear();
                 _domain.Paused = false;
                 adapter.ReleaseCausalGeometryCoverage();
-                _nextCausalGeometryApplyTime = Time.realtimeSinceStartup + 0.75f;
+                _nextCausalGeometryApplyTime = 0f;
                 string readyMarker = wasInitialPreparation ? "PW_E3_F6_READY" : "PW_E3_GEOMETRY_READY";
                 PhysicalWaterPlugin.Log.LogInfo(
                     readyMarker + " geometryReady=True, fillReady=True, simulationPaused=False; prepared causal solid synchronization apply=" +
@@ -937,12 +944,9 @@ namespace PhysicalWater
                 if (preparedUpdate.ParticlesBefore > 0) RequestGeometrySafety(appliedGeneration);
                 return;
             }
-            // World discovery and Valheim destruction callbacks often arrive
-            // as a burst. Applying every intermediate generation would run a
-            // occupancy/SDF rebuild for each event. The causal snapshot below
-            // is still the newest complete state; defer until the burst quiets
-            // so one exact background preparation represents the accumulated
-            // changes.
+            // PCE publishes only a completed causal generation. Consuming that
+            // ready signal must not add an independent debounce delay: doing so
+            // made terrain changes appear disconnected from their probe event.
             float now = Time.realtimeSinceStartup;
             if (now < _nextCausalGeometryApplyTime) return;
             long generation;
@@ -977,6 +981,51 @@ namespace PhysicalWater
             _preparedGeometryGeneration = generation;
             _preparedGeometryStateRevision = stateRevision;
             _preparedGeometryIsInitial = _appliedGeometryStateRevision == int.MinValue;
+            if (!_preparedGeometryIsInitial && pce.TryGetReadyChangeBounds(
+                    generation,
+                    out Bounds dirtyWorldBounds,
+                    out float pceEventToReadyMilliseconds,
+                    out float pceReadyAgeMilliseconds))
+            {
+                _changedGeometryRoots.Clear();
+                for (int i = 0; i < _geometryRoots.Count; i++)
+                {
+                    GameObject root = _geometryRoots[i];
+                    if (root == null) continue;
+                    int rootId = root.GetInstanceID();
+                    if (!_coverageGeometryRevisions.TryGetValue(rootId, out int revision)) continue;
+                    if (!_appliedGeometryRevisions.TryGetValue(rootId, out int appliedRevision) || appliedRevision != revision)
+                        _changedGeometryRoots.Add(root);
+                }
+
+                var applyWatch = System.Diagnostics.Stopwatch.StartNew();
+                VolumetricFiniteSolidUpdateDiagnostics incrementalUpdate = _streaming.SynchronizeGeometry(
+                    generation,
+                    _geometryRoots,
+                    _changedGeometryRoots,
+                    dirtyWorldBounds,
+                    synchronizeDiagnostics: false);
+                applyWatch.Stop();
+                _appliedGeometryStateRevision = stateRevision;
+                _appliedGeometryRevisions.Clear();
+                foreach (KeyValuePair<int, int> pair in _coverageGeometryRevisions)
+                    _appliedGeometryRevisions.Add(pair.Key, pair.Value);
+                _preparedGeometryGeneration = -1;
+                _preparedGeometryStateRevision = int.MinValue;
+                _preparedGeometryIsInitial = false;
+                _preparedGeometryRevisions.Clear();
+                adapter.ReleaseCausalGeometryCoverage();
+                _nextCausalGeometryApplyTime = 0f;
+                PhysicalWaterPlugin.Log.LogInfo(
+                    "PW_E3_GEOMETRY_READY geometryReady=True, fillReady=True, simulationPaused=False; precise causal solid synchronization apply=" +
+                    applyWatch.Elapsed.TotalMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "ms, changedRoots=" +
+                    _changedGeometryRoots.Count + ", pceEventToReady=" +
+                    pceEventToReadyMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "ms, pceReadyToApply=" +
+                    pceReadyAgeMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "ms, dirtyWorldBounds=" +
+                    dirtyWorldBounds + ": " + incrementalUpdate + ".");
+                if (incrementalUpdate.ParticlesBefore > 0) RequestGeometrySafety(generation);
+                return;
+            }
             _initialGeometryPreparation = _streaming.BeginPrepareGeometry(generation, _geometryRoots);
             PhysicalWaterPlugin.Log.LogInfo(
                 "PhysicalWater devE3 began background " + (_preparedGeometryIsInitial ? "initial" : "dynamic") +
