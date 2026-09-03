@@ -1,7 +1,7 @@
 param(
     [string]$ValheimDir = "C:\Program Files (x86)\Steam\steamapps\common\Valheim",
     [string]$Configuration = "Release",
-    [string]$Version = "0.6.0-devE3.2-probe4"
+    [string]$Version = "0.6.0-devE3.2-probe3"
 )
 
 $ErrorActionPreference = "Stop"
