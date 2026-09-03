@@ -105,19 +105,26 @@ namespace PhysicalWater
             if (TestChordDown(KeyCode.K)) ApplyTerrainTestDelta(1f, "raise");
             if (_streaming == null || _domain == null || !_domain.Initialized) return;
 
-            SynchronizeGeometryIfReady();
+            // Do not replace solid fields underneath an in-flight pressure
+            // graph. The causal geometry update is applied immediately after
+            // that authoritative substep completes.
+            if (!_streaming.HasDeferredStep) SynchronizeGeometryIfReady();
 
             float fixedDt = 1f / 30f;
             _accumulator = Mathf.Min(_accumulator + Time.deltaTime, fixedDt * 3f);
             int maxSubsteps = Mathf.Clamp(PhysicalWaterPlugin.Settings.StageE1MaxSubstepsPerFrame.Value, 1, 4);
             int substeps = 0;
             var watch = System.Diagnostics.Stopwatch.StartNew();
-            while (!_domain.Paused && _accumulator >= fixedDt && substeps < maxSubsteps)
+            if (!_domain.Paused && _streaming.HasDeferredStep && _streaming.TryCompleteDeferredStep())
             {
-                _streaming.Step(fixedDt);
-                _accumulator -= fixedDt;
                 substeps++;
             }
+            // The GPU field copy and CPU pressure graph no longer occupy one
+            // uninterrupted Update. Begin one authoritative substep, render
+            // while its CPU projection runs, then finalize it on a later frame.
+            if (!_domain.Paused && !_streaming.HasDeferredStep && _accumulator >= fixedDt && substeps < maxSubsteps &&
+                _streaming.BeginDeferredStep(fixedDt))
+                _accumulator -= fixedDt;
             watch.Stop();
             _lastSubsteps = substeps;
             _lastSimulationCpuMs = (float)watch.Elapsed.TotalMilliseconds;
@@ -275,7 +282,12 @@ namespace PhysicalWater
                 _surfaceShader,
                 _surfaceMaterial,
                 origin,
-                new VolumetricFiniteDomainSettings(),
+                new VolumetricFiniteDomainSettings
+                {
+                    // Per-cell pre/post divergence reconstruction is diagnostic
+                    // only; the PCG residual remains available in live telemetry.
+                    EnableCutCellDivergenceDiagnostics = false
+                },
                 new VolumetricStreamingSettings
                 {
                     RegionCellsX = 32,
@@ -360,6 +372,7 @@ namespace PhysicalWater
                     volume.ToString("F3", CultureInfo.InvariantCulture) + "m3, particles=" + waterlineParticles +
                     ". Lowest terrain-open cells were selected by waterline; no elevated drop or reseeding source was used.";
                 PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devE3 " + waterlineMessage);
+                ResetTelemetryWindow(_streaming.Diagnostics, GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2), GC.GetTotalMemory(false));
                 Reply(args, waterlineMessage);
                 return;
             }
@@ -1159,11 +1172,15 @@ namespace PhysicalWater
                 Reply(args, "No E1 domain exists. Run pw_e1_create_domain first.");
                 return false;
             }
+            if (_streaming != null && _streaming.HasDeferredStep)
+                _streaming.CompleteDeferredStepBlocking();
             return true;
         }
 
         private void DestroyDomain()
         {
+            if (_streaming != null && _streaming.HasDeferredStep)
+                _streaming.CompleteDeferredStepBlocking();
             _streaming = null;
             _domain = null;
             if (_domainObject != null) Destroy(_domainObject);
