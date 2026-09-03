@@ -1,3 +1,12 @@
+## 0.6.0-devE3.2-probe4
+
+- Internal performance candidate only; no live milestone is claimed.
+- Corrected cached cut-cell pressure-region expansion authority at the finite domain boundary. Liquid touching a real domain face no longer invalidates the cache as if that face were an expandable interior crop boundary; true interior crop contact still expands immediately.
+- Preserved solver equations, pressure parameters, particle deposition, gravity, volume, PCE geometry, and surface reconstruction unchanged.
+- The captured 216 m3 live state completed 600 steps with one readback stage per settled step instead of the three-stage fallback seen in Baseline A. Exact volume and all ownership/safety counters remained clean.
+- Dedicated physical/interior boundary decisions and the full protected production regression pass. Live Valheim A/B acceptance remains pending.
+- Assembly `0.6.0.20`.
+
 ## 0.6.0-devE3.2-probe3
 
 - Moved causal snapshot revalidation to the completed-preparation application boundary. The preceding live F6 trace rebuilt and logged the same 111-root snapshot 186 times while one background preparation ran, despite zero intervening geometry events; the prepared result is still rejected before application if its generation or state revision changed.
