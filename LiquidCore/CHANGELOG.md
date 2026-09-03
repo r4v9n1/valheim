@@ -1,3 +1,11 @@
+## 0.6.0-devE3.2-probe5
+
+- Retains the deferred cut-cell projection crop across transient liquid-bound changes, expanding immediately and shrinking only after eight identical tight bounds. The focused 4,096-particle A/B reduces reproduced safety fallbacks from `40/40` to `2/40` and mean readback stages from `3.0` to `1.1` with bit-identical pressure/liquid fields and exact `216.000000 m3` volume.
+- Decouples coarse per-MAC-column coverage from shoreline foam intensity while preserving coverage clipping, slope/motion foam, cel bands, rim lighting, and the intentional animated band. The synchronized captured render retains exactly `106,992` water pixels while reducing bright pixels from `29,270` to `4,761` and coverage-driven temporal foam variation from `5,164.477` to `0`.
+- Corrects detailed projection diagnostics to inspect only the current cropped cell range rather than stale capacity in a reused workspace buffer.
+- Protected canonical transfer, surface topology, captured live surface/performance, PCE nerve, and full production validation PASS. This remains a live-candidate build until the single deliberate Valheim gate confirms the predicted product-level changes.
+- Assembly `0.6.0.21`.
+
 ## 0.6.0-devE3.2-probe3
 
 - Moved causal snapshot revalidation to the completed-preparation application boundary. The preceding live F6 trace rebuilt and logged the same 111-root snapshot 186 times while one background preparation ran, despite zero intervening geometry events; the prepared result is still rejected before application if its generation or state revision changed.
