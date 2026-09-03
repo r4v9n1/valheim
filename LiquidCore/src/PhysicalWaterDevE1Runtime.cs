@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using R4V9N1.PhysicalOcean.Probes;
 using R4V9N1.PhysicalOcean.Volumetric;
 using UnityEngine;
 
@@ -14,6 +15,7 @@ namespace PhysicalWater
         private readonly List<GameObject> _geometryRoots = new List<GameObject>();
         private readonly List<GameObject> _activeGeometryRoots = new List<GameObject>();
         private readonly List<GameObject> _changedGeometryRoots = new List<GameObject>();
+        private readonly List<int> _removedGeometryRootIds = new List<int>();
         private readonly Dictionary<int, int> _coverageGeometryRevisions = new Dictionary<int, int>();
         private readonly Dictionary<int, int> _appliedGeometryRevisions = new Dictionary<int, int>();
         private readonly Dictionary<int, int> _preparedGeometryRevisions = new Dictionary<int, int>();
@@ -882,6 +884,48 @@ namespace PhysicalWater
             LiquidCorePceRuntime pce = LiquidCorePceRuntime.Instance;
             if (pce == null) return;
             EnsureGeometryCoverage();
+
+            // After initial coverage, targeted PCE events cross as compact
+            // source deltas. Do not wait for discovery polling or rebuild the
+            // complete root set: the registered SDF owns unchanged sources.
+            if (_appliedGeometryStateRevision != int.MinValue &&
+                _domain.MacDomain.CanApplyPreparedSolidFields &&
+                pce.TryConsumeCausalGeometrySignals(
+                    _domain.WorldBounds,
+                    _observedGeometryGeneration,
+                    _changedGeometryRoots,
+                    _removedGeometryRootIds,
+                    out ProbeColonyCausalGeometryBatch causalBatch))
+            {
+                var applyWatch = System.Diagnostics.Stopwatch.StartNew();
+                VolumetricFiniteSolidUpdateDiagnostics causalUpdate = _streaming.SynchronizeGeometryDelta(
+                    causalBatch.Generation,
+                    _changedGeometryRoots,
+                    _removedGeometryRootIds,
+                    causalBatch.DirtyWorldBounds,
+                    synchronizeDiagnostics: false);
+                applyWatch.Stop();
+                long solverReadyTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+                double lcResponseMilliseconds = ProbeColonyCausalGeometrySignalQueue.ElapsedMilliseconds(
+                    causalBatch.LatestReadyTimestamp,
+                    solverReadyTimestamp);
+                double totalNerveMilliseconds = ProbeColonyCausalGeometrySignalQueue.ElapsedMilliseconds(
+                    causalBatch.EarliestEventTimestamp,
+                    solverReadyTimestamp);
+                _observedGeometryGeneration = causalBatch.Generation;
+                PhysicalWaterPlugin.Log.LogInfo(
+                    "PW_PCE_LC_NERVE geometryReady=True, generation=" + causalBatch.Generation +
+                    ", signals=" + causalBatch.SignalCount +
+                    ", changedRoots=" + causalBatch.AddedOrChangedRoots +
+                    ", removedRoots=" + causalBatch.RemovedRoots +
+                    ", T0toT1_PceSensingMs=" + causalBatch.PceSensingMilliseconds.ToString("F3", CultureInfo.InvariantCulture) +
+                    ", T1toT2_LcResponseMs=" + lcResponseMilliseconds.ToString("F3", CultureInfo.InvariantCulture) +
+                    ", T0toT2_TotalNerveMs=" + totalNerveMilliseconds.ToString("F3", CultureInfo.InvariantCulture) +
+                    ", applyMs=" + applyWatch.Elapsed.TotalMilliseconds.ToString("F3", CultureInfo.InvariantCulture) +
+                    ", dirtyWorldBounds=" + causalBatch.DirtyWorldBounds + ": " + causalUpdate + ".");
+                if (causalUpdate.ParticlesBefore > 0) RequestGeometrySafety(causalBatch.Generation);
+                return;
+            }
             if (!adapter.CausalGeometryCoverageReady) return;
 
             if (_initialGeometryPreparation != null)
@@ -939,6 +983,7 @@ namespace PhysicalWater
                 _preparedGeometryIsInitial = false;
                 _preparedGeometryRevisions.Clear();
                 _domain.Paused = false;
+                pce.DiscardCausalGeometrySignalsThrough(appliedGeneration);
                 adapter.ReleaseCausalGeometryCoverage();
                 _nextCausalGeometryApplyTime = 0f;
                 string readyMarker = wasInitialPreparation ? "PW_E3_F6_READY" : "PW_E3_GEOMETRY_READY";

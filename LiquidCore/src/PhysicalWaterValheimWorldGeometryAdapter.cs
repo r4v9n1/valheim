@@ -58,6 +58,12 @@ namespace PhysicalWater
         internal string HierarchyPath;
         internal string RootType;
         internal bool CanFeedSdf;
+        internal bool HasOldWorldBounds;
+        internal bool HasNewWorldBounds;
+        internal int RootInstanceId;
+        internal long Generation;
+        internal long EventTimestamp;
+        internal long ReadyTimestamp;
     }
 
     internal sealed class PhysicalWaterValheimWorldGeometryAdapter : MonoBehaviour
@@ -118,6 +124,7 @@ namespace PhysicalWater
             internal bool HasOldBounds;
             internal bool HasNewBounds;
             internal float Time;
+            internal long Timestamp;
             internal GameObject Root;
         }
 
@@ -773,7 +780,8 @@ namespace PhysicalWater
                     "targeted-remove",
                     cached.Chunks != null ? cached.Chunks.Count : 0,
                     sdfChunkSize,
-                    cellSize);
+                    cellSize,
+                    false);
                 RemoveCachedSource(record.SourceId);
                 stageWatch.Stop();
                 report.DirtyDetectionMilliseconds = stageWatch.Elapsed.TotalMilliseconds;
@@ -839,7 +847,8 @@ namespace PhysicalWater
                     "targeted-miss",
                     sourceChunks.Count,
                     sdfChunkSize,
-                    voxelCellSize);
+                    voxelCellSize,
+                    false);
                 report.Outcome = "added";
             }
             else if (cached.Source.Revision != source.Revision)
@@ -859,7 +868,8 @@ namespace PhysicalWater
                     "targeted-hit",
                     sourceChunks.Count,
                     sdfChunkSize,
-                    voxelCellSize);
+                    voxelCellSize,
+                    false);
                 cached.Source = source;
                 cached.Chunks = sourceChunks;
                 cached.DiscoveryChunks = discoveryMemberships;
@@ -1331,14 +1341,18 @@ namespace PhysicalWater
             string cacheState,
             int sourceChunkCount,
             float chunkSize,
-            float cellSize)
+            float cellSize,
+            bool enqueueSyntheticWork = true)
         {
             EventRecord record = ConsumeEventForSource(source);
             string reason = record != null ? record.Reason : changeKind.ToString();
-            int queued = EnqueueDirtyChunks(dirtyRegion, reason, source, changeKind, sourceChunkCount, chunkSize, cellSize);
+            int queued = enqueueSyntheticWork
+                ? EnqueueDirtyChunks(dirtyRegion, reason, source, changeKind, sourceChunkCount, chunkSize, cellSize)
+                : 0;
             if (dirtyRegion.Valid) _geometryGeneration++;
             if (dirtyRegion.Valid && source != null)
             {
+                long readyTimestamp = Stopwatch.GetTimestamp();
                 PceGeometryChanged?.Invoke(new ValheimPceGeometryChange
                 {
                     SourceId = source.Id,
@@ -1353,7 +1367,13 @@ namespace PhysicalWater
                     Kind = source.Kind,
                     HierarchyPath = source.Path,
                     RootType = source.RootType,
-                    CanFeedSdf = source.CanFeedSdf
+                    CanFeedSdf = source.CanFeedSdf,
+                    HasOldWorldBounds = hasOldBounds,
+                    HasNewWorldBounds = hasNewBounds,
+                    RootInstanceId = source.Root != null ? source.Root.GetInstanceID() : 0,
+                    Generation = _geometryGeneration,
+                    EventTimestamp = record != null ? record.Timestamp : readyTimestamp,
+                    ReadyTimestamp = readyTimestamp
                 });
             }
 
@@ -1600,6 +1620,7 @@ namespace PhysicalWater
                 Sequence = ++_eventSequence,
                 Reason = string.IsNullOrEmpty(label) ? "unknown" : label,
                 Time = Time.realtimeSinceStartup,
+                Timestamp = Stopwatch.GetTimestamp(),
                 SourceType = source != null ? source.GetType().Name : "unknown"
             };
 

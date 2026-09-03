@@ -13,6 +13,7 @@ namespace PhysicalWater
         private ProbeColonyEventBridge _events;
         private PhysicalWaterValheimWorldGeometryAdapter _adapter;
         private ProbeColonyChangeQueue _queue;
+        private readonly ProbeColonyCausalGeometrySignalQueue _causalSignals = new ProbeColonyCausalGeometrySignalQueue();
         private readonly Dictionary<string, ValheimPceGeometryChange> _activeSources = new Dictionary<string, ValheimPceGeometryChange>();
         // The Valheim adapter publishes a root-level digest for the exact
         // ready snapshot. Retain that digest at the PCE boundary; individual
@@ -48,7 +49,7 @@ namespace PhysicalWater
                 _adapter = current;
                 if (_adapter != null) _adapter.PceGeometryChanged += OnGeometryChanged;
             }
-            _queue.Drain();
+            if (_queue.PendingCount > 0) _queue.Drain();
         }
 
         internal void Attach(PhysicalWaterValheimWorldGeometryAdapter adapter)
@@ -65,6 +66,26 @@ namespace PhysicalWater
             PhysicalWaterPlugin.Log.LogInfo("LiquidCore PCE geometry event #" + _publishedEvents + ": source=" + change.SourceId + ", category=" + change.Category + ", change=" + change.ChangeKind + ", revision=" + change.Revision + ", kind=" + change.Kind + ", root=" + change.RootType + ", region=" + change.DirtyMin + ".." + change.DirtyMax + ".");
             VolumetricWorldGeometryVoxelRegion region = new VolumetricWorldGeometryVoxelRegion { Min = change.DirtyMin, Max = change.DirtyMax, Valid = true };
             VolumetricWorldGeometryCategory pceCategory = ToPceCategory(change.Category);
+            _causalSignals.Publish(new ProbeColonyCausalGeometrySignal
+            {
+                SourceId = change.SourceId,
+                ChangeKind = change.ChangeKind == ValheimWorldGeometryChangeKind.Added
+                    ? VolumetricWorldGeometryChangeKind.Added
+                    : change.ChangeKind == ValheimWorldGeometryChangeKind.Removed
+                        ? VolumetricWorldGeometryChangeKind.Removed
+                        : VolumetricWorldGeometryChangeKind.MovedOrChanged,
+                Category = pceCategory,
+                SourceRevision = change.Revision,
+                Generation = change.Generation,
+                Root = change.Root,
+                RootInstanceId = change.RootInstanceId,
+                OldWorldBounds = change.OldWorldBounds,
+                NewWorldBounds = change.NewWorldBounds,
+                HasOldWorldBounds = change.HasOldWorldBounds,
+                HasNewWorldBounds = change.HasNewWorldBounds,
+                EventTimestamp = change.EventTimestamp,
+                ReadyTimestamp = change.ReadyTimestamp
+            });
             if (change.ChangeKind == ValheimWorldGeometryChangeKind.Removed)
             {
                 _events.PublishRemoved(change.SourceId, pceCategory, region, change.Revision);
@@ -88,6 +109,26 @@ namespace PhysicalWater
         }
 
         internal bool TryGetActiveSource(string sourceId, out ValheimPceGeometryChange change) => _activeSources.TryGetValue(sourceId, out change);
+
+        internal bool TryConsumeCausalGeometrySignals(
+            Bounds worldBounds,
+            long generationAfter,
+            List<GameObject> addedOrChangedRoots,
+            List<int> removedRootInstanceIds,
+            out ProbeColonyCausalGeometryBatch batch)
+        {
+            return _causalSignals.TryDrain(
+                worldBounds,
+                generationAfter,
+                addedOrChangedRoots,
+                removedRootInstanceIds,
+                out batch);
+        }
+
+        internal void DiscardCausalGeometrySignalsThrough(long generation)
+        {
+            _causalSignals.DiscardThrough(generation);
+        }
 
         internal bool TryGetReadyChangeBounds(
             long generation,
