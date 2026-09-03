@@ -266,7 +266,10 @@ namespace PhysicalWater
                     // artificial boundary while the safety gate remains strict.
                     WindowRegionsZ = 3,
                     PrefetchCells = 16,
-                    OwnershipScanIntervalSteps = 4,
+                    // The 12 m prefetch guard permits a one-second ownership
+                    // cadence. Faster full-particle GPU readbacks eventually
+                    // serialized the live compute queue (captured at 66-149 ms).
+                    OwnershipScanIntervalSteps = 30,
                     AutoRebaseWindow = true,
                     EnableBlockingValidationTelemetry = false,
                     UseAsyncOwnershipReadback = true

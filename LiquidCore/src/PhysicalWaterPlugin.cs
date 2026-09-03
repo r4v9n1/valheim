@@ -22,9 +22,9 @@ namespace PhysicalWater
     {
         public const string PluginGuid = "r4v9n1.physicalwater";
         public const string PluginName = "LiquidCore";
-        public const string PluginVersion = "0.6.0-devE3.2-probe1";
-        public const string PluginBepInExVersion = "0.6.0.17";
-        public const string PluginAssemblyVersion = "0.6.0.17";
+        public const string PluginVersion = "0.6.0-devE3.2-probe2";
+        public const string PluginBepInExVersion = "0.6.0.18";
+        public const string PluginAssemblyVersion = "0.6.0.18";
         public const string CreatorCredit = "Created by R4V9N1";
 
         internal static ManualLogSource Log;

@@ -56,8 +56,8 @@ if (!(Test-Path -LiteralPath $DllPath -PathType Leaf)) {
 }
 
 $dllVersion = ([Reflection.AssemblyName]::GetAssemblyName($DllPath)).Version.ToString()
-if ($dllVersion -ne "0.6.0.17") {
-    throw "Fresh DLL version is $dllVersion, expected 0.6.0.17."
+if ($dllVersion -ne "0.6.0.18") {
+    throw "Fresh DLL version is $dllVersion, expected 0.6.0.18."
 }
 
 Write-Host "Built fresh LiquidCore.dll" -ForegroundColor Green

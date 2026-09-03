@@ -157,4 +157,4 @@ Write-Host ""
 Write-Host "devE3 safety config written (legacy replacement OFF, finite streaming=$EnableFiniteStreaming):" -ForegroundColor Yellow
 Write-Host $ConfigPath
 Write-Host ""
-Write-Host "LiquidCore 0.6.0-devE3.2-probe1: diagnostic-only live field probe on the devE3.2 pressure candidate; legacy BepInEx/config identity preserved; global replacement, vanilla suppression, player, ship, fish, swimming and buoyancy hooks remain disabled."
+Write-Host "LiquidCore 0.6.0-devE3.2-probe2: sparse-domain topology and ownership-readback checkpoint; legacy BepInEx/config identity preserved; global replacement, vanilla suppression, player, ship, fish, swimming and buoyancy hooks remain disabled."

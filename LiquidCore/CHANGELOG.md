@@ -1,3 +1,11 @@
+## 0.6.0-devE3.2-probe2
+
+- Added sampling-density-aware liquid reconstruction: dense domains retain marker-exact terrain behavior, while sparse domains accept horizontal parcel overlap only in each marker's own vertical layer.
+- Added a 120-step marker-precision window after a solid edit so construction and terrain displacement remain causal before sparse steady-state connectivity resumes.
+- Reduced full-particle ownership scans from every four steps to every 30 steps under the existing 12 m prefetch guard, removing delayed GPU/CPU serialization.
+- Added exact replay of the preserved 216 m3 live failure snapshot. Visibility flips fell from 76,296 to 1,780 and liquid-mask components from 61 to 8 while terrain edits, equilibrium, streaming, persistence, PCE, conservation, and safety regressions pass.
+- Assembly `0.6.0.18`; manual Valheim visual and construction acceptance remains pending.
+
 ## 0.6.0-devE3.2-probe1
 
 - Added a reusable PCE required-discovery scheduler with explicit cached/sleeping/dirty/updating/active lifecycle. Causal, Valheim-event, and bounded-consistency tiles now remain readiness-blocking until downstream geometry work drains, while optional streaming discovery can be discarded at the clean sleep boundary.
