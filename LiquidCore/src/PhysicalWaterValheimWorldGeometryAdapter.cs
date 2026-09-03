@@ -95,6 +95,7 @@ namespace PhysicalWater
             internal bool ExplicitlyDirty;
             internal HashSet<ChunkKey> Chunks = new HashSet<ChunkKey>();
             internal HashSet<ChunkKey> DiscoveryChunks = new HashSet<ChunkKey>();
+            internal readonly HashSet<ChunkKey> AbsenceVerifiedChunks = new HashSet<ChunkKey>();
         }
 
         private sealed class DiscoveryChunk
@@ -1055,6 +1056,7 @@ namespace PhysicalWater
                 else
                 {
                     cached.Seen = true;
+                    cached.AbsenceVerifiedChunks.Clear();
                     bool revisionChanged = cached.Source.Revision != source.Revision;
                     if (revisionChanged)
                     {
@@ -1084,12 +1086,26 @@ namespace PhysicalWater
             _removed.Clear();
             foreach (var kv in _cache)
             {
-                if (kv.Value.Seen) continue;
+                CachedSource cached = kv.Value;
+                if (cached.Seen) continue;
+
+                // A compound/root source can own several discovery tiles even
+                // when a particular edge tile contains no collider. Absence in
+                // one selected tile is therefore not proof that the source was
+                // removed. Accumulate negative observations across all retained
+                // memberships; any positive rediscovery above clears the proof.
+                // Sources outside the active window still evict immediately.
+                if (effectiveScanBounds.Intersects(cached.Source.Bounds) &&
+                    !AccumulateCompleteAbsenceProof(cached))
+                {
+                    cached.Seen = true;
+                    continue;
+                }
                 _removed.Add(kv.Key);
                 removed++;
-                Encapsulate(ref dirtyBounds, ref hasDirty, kv.Value.Source.Bounds);
-                VoxelRegion region = EstimateDirtyRegion(kv.Value.Source.Bounds, true, center, radius, cellSize, padding);
-                queuedJobs += LogChangeAndQueue(ValheimWorldGeometryChangeKind.Removed, kv.Value.Source, kv.Value.Source.Bounds, default(Bounds), true, false, region, "remove", kv.Value.Chunks != null ? kv.Value.Chunks.Count : 0, sdfChunkSize, cellSize);
+                Encapsulate(ref dirtyBounds, ref hasDirty, cached.Source.Bounds);
+                VoxelRegion region = EstimateDirtyRegion(cached.Source.Bounds, true, center, radius, cellSize, padding);
+                queuedJobs += LogChangeAndQueue(ValheimWorldGeometryChangeKind.Removed, cached.Source, cached.Source.Bounds, default(Bounds), true, false, region, "remove", cached.Chunks != null ? cached.Chunks.Count : 0, sdfChunkSize, cellSize);
             }
             for (int i = 0; i < _removed.Count; i++) RemoveCachedSource(_removed[i]);
 
@@ -1732,6 +1748,16 @@ namespace PhysicalWater
             foreach (ChunkKey key in memberships)
                 if (_discoveryChunks.Contains(key)) return true;
             return false;
+        }
+
+        private bool AccumulateCompleteAbsenceProof(CachedSource cached)
+        {
+            if (cached.DiscoveryChunks == null || cached.DiscoveryChunks.Count == 0) return true;
+            foreach (ChunkKey key in cached.DiscoveryChunks)
+                if (_discoveryChunks.Contains(key)) cached.AbsenceVerifiedChunks.Add(key);
+            foreach (ChunkKey key in cached.DiscoveryChunks)
+                if (!cached.AbsenceVerifiedChunks.Contains(key)) return false;
+            return true;
         }
 
         private void SelectPendingDiscoveryChunks(int maxChunks, bool requiredOnly)
