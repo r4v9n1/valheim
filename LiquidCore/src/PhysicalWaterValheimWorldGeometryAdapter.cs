@@ -997,9 +997,15 @@ namespace PhysicalWater
             foreach (var kv in _cache)
             {
                 CachedSource cached = kv.Value;
-                cached.Seen = effectiveScanBounds.Intersects(cached.Source.Bounds) &&
-                              !cached.ExplicitlyDirty &&
-                              !discoveryBounds.Intersects(cached.Source.Bounds);
+                // _discoveryChunks may contain non-adjacent tiles (for example one
+                // priority tile plus one normal pending tile). discoveryBounds is
+                // only the enclosing Physics.OverlapBox and therefore includes
+                // unscanned gaps. Treating that whole AABB as authoritative made
+                // sources in those gaps oscillate Removed -> Added on successive
+                // scans. A cached source is absent only when one of its exact
+                // discovery memberships was selected in this invocation.
+                bool selectedForDiscovery = IntersectsSelectedDiscoveryChunk(cached.DiscoveryChunks);
+                cached.Seen = effectiveScanBounds.Intersects(cached.Source.Bounds) && !selectedForDiscovery;
             }
 
             PrepareDiscoveryChunks(_discoveryChunks, now);
@@ -1718,6 +1724,14 @@ namespace PhysicalWater
                 chunk.Revision++;
                 chunk.LastDiscoveryTime = now;
             }
+        }
+
+        private bool IntersectsSelectedDiscoveryChunk(HashSet<ChunkKey> memberships)
+        {
+            if (memberships == null || memberships.Count == 0 || _discoveryChunks.Count == 0) return false;
+            foreach (ChunkKey key in memberships)
+                if (_discoveryChunks.Contains(key)) return true;
+            return false;
         }
 
         private void SelectPendingDiscoveryChunks(int maxChunks, bool requiredOnly)
