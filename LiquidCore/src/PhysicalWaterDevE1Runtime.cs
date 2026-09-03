@@ -40,6 +40,11 @@ namespace PhysicalWater
         private double _telemetryPressureSum;
         private double _telemetryPcgSum;
         private double _telemetrySurfaceSum;
+        private double _telemetryDeferredWallSum;
+        private double _telemetryGpuReadbackWallSum;
+        private double _telemetryWorkerQueueSum;
+        private double _telemetryWorkerExecutionSum;
+        private double _telemetryReadbackStagesSum;
         private int _telemetryPreviousOwnershipRequests;
         private long _telemetryPreviousOwnershipBytes;
         private int _telemetryPreviousGc0;
@@ -1106,6 +1111,12 @@ namespace PhysicalWater
                 ", pressureMeanMs=" + (_telemetryPressureSum / solverSteps).ToString("F3") +
                 ", pcgMeanMs=" + (_telemetryPcgSum / solverSteps).ToString("F3") +
                 ", surfaceMeanMs=" + (_telemetrySurfaceSum / solverSteps).ToString("F3") +
+                ", deferredPipeline[wall/readback/queue/worker/stages]=" +
+                (_telemetryDeferredWallSum / solverSteps).ToString("F3") + "/" +
+                (_telemetryGpuReadbackWallSum / solverSteps).ToString("F3") + "/" +
+                (_telemetryWorkerQueueSum / solverSteps).ToString("F3") + "/" +
+                (_telemetryWorkerExecutionSum / solverSteps).ToString("F3") + "/" +
+                (_telemetryReadbackStagesSum / solverSteps).ToString("F2") +
                 ", ownership[requests/bytes]=" + (streaming.AsyncOwnershipRequests - _telemetryPreviousOwnershipRequests) + "/" + (streaming.OwnershipReadbackBytes - _telemetryPreviousOwnershipBytes) +
                 ", managedMemory[bytes/delta]=" + managedMemory + "/" + (managedMemory - _telemetryPreviousManagedMemory) +
                 ", gc[0/1/2]=" + (gc0 - _telemetryPreviousGc0) + "/" + (gc1 - _telemetryPreviousGc1) + "/" + (gc2 - _telemetryPreviousGc2) +
@@ -1133,6 +1144,11 @@ namespace PhysicalWater
             _telemetryPressureSum += mac.LastStepTimings.PressureMilliseconds * substeps;
             _telemetryPcgSum += mac.LastCutCellHotPathTimings.Projection.PcgMilliseconds * substeps;
             _telemetrySurfaceSum += _domain.Surface.LastReconstructionMilliseconds * substeps;
+            _telemetryDeferredWallSum += mac.LastCutCellHotPathTimings.DeferredWallMilliseconds * substeps;
+            _telemetryGpuReadbackWallSum += mac.LastCutCellHotPathTimings.GpuReadbackWallMilliseconds * substeps;
+            _telemetryWorkerQueueSum += mac.LastCutCellHotPathTimings.WorkerQueueMilliseconds * substeps;
+            _telemetryWorkerExecutionSum += mac.LastCutCellHotPathTimings.WorkerExecutionMilliseconds * substeps;
+            _telemetryReadbackStagesSum += mac.LastCutCellHotPathTimings.ReadbackStages * substeps;
         }
 
         private void ResetTelemetryWindow(VolumetricStreamingDiagnostics streaming, int gc0, int gc1, int gc2, long managedMemory)
@@ -1146,6 +1162,11 @@ namespace PhysicalWater
             _telemetryPressureSum = 0.0;
             _telemetryPcgSum = 0.0;
             _telemetrySurfaceSum = 0.0;
+            _telemetryDeferredWallSum = 0.0;
+            _telemetryGpuReadbackWallSum = 0.0;
+            _telemetryWorkerQueueSum = 0.0;
+            _telemetryWorkerExecutionSum = 0.0;
+            _telemetryReadbackStagesSum = 0.0;
             _telemetryPreviousOwnershipRequests = streaming.AsyncOwnershipRequests;
             _telemetryPreviousOwnershipBytes = streaming.OwnershipReadbackBytes;
             _telemetryPreviousGc0 = gc0;
