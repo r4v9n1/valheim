@@ -204,6 +204,7 @@ namespace PhysicalWater
         private readonly HashSet<ChunkKey> _activeChunks = new HashSet<ChunkKey>();
         private readonly HashSet<ChunkKey> _nextChunks = new HashSet<ChunkKey>();
         private readonly HashSet<ChunkKey> _chunkScratch = new HashSet<ChunkKey>();
+        private readonly HashSet<int> _rootIdScratch = new HashSet<int>();
         private readonly HashSet<ChunkKey> _dirtyDiscoveryChunks = new HashSet<ChunkKey>();
         private readonly HashSet<ChunkKey> _discoveryChunks = new HashSet<ChunkKey>();
         private readonly HashSet<ChunkKey> _pendingDiscoveryChunks = new HashSet<ChunkKey>();
@@ -400,7 +401,7 @@ namespace PhysicalWater
 
             roots.Clear();
             rootRevisions?.Clear();
-            var seen = new HashSet<int>();
+            _rootIdScratch.Clear();
             int sourceCount = 0;
             foreach (var kv in _cache)
             {
@@ -413,7 +414,7 @@ namespace PhysicalWater
                     sourceCount++;
                 }
                 int rootId = source.Root.GetInstanceID();
-                if (seen.Add(rootId)) roots.Add(source.Root);
+                if (_rootIdScratch.Add(rootId)) roots.Add(source.Root);
                 if (rootRevisions != null)
                 {
                     if (rootRevisions.TryGetValue(rootId, out int previous)) rootRevisions[rootId] = previous ^ source.Revision;

@@ -1,3 +1,11 @@
+## 0.6.0-devE3.2-probe3
+
+- Moved causal snapshot revalidation to the completed-preparation application boundary. The preceding live F6 trace rebuilt and logged the same 111-root snapshot 186 times while one background preparation ran, despite zero intervening geometry events; the prepared result is still rejected before application if its generation or state revision changed.
+- Reworked the PCE causal-root proof from repeated nested source scans and temporary per-call collections to one linear source pass over reusable scratch maps and sets. The Valheim adapter also reuses its root-id scratch set.
+- The user-controlled F6 run reached `PW_E3_F6_READY` with healthy geometry, 145 roots, 163 sources, no particles, and a 2.824-second background preparation. This is F6 evidence only; F7 visual, construction/destruction, terrain, and idle acceptance remain pending.
+- Integration build, PCE foundation/scale/stress, causal preparation, exact captured live replay, live-scale equilibrium, hydrostatic, corrected basin, lifecycle, persistence, all 14 streaming cases plus dedicated long settle, Phase 2 terrain, surface topology/spectrum, DevD3, and full production validation PASS.
+- Assembly `0.6.0.19`; no manual F7 PASS is claimed.
+
 ## 0.6.0-devE3.2-probe2
 
 - Added sampling-density-aware liquid reconstruction: dense domains retain marker-exact terrain behavior, while sparse domains accept horizontal parcel overlap only in each marker's own vertical layer.

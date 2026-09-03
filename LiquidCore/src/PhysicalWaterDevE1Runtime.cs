@@ -821,6 +821,13 @@ namespace PhysicalWater
 
             if (_initialGeometryPreparation != null)
             {
+                // Preparing the full SDF can take several seconds, but the result cannot
+                // be consumed before its worker completes. Rebuilding and validating the
+                // complete causal root snapshot on every intervening frame only allocates,
+                // hashes, and logs the same state hundreds of times. Validate once at the
+                // application boundary instead; a generation/revision change is still
+                // detected before the prepared fields can become authoritative.
+                if (!_initialGeometryPreparation.IsCompleted) return;
                 long currentGeneration;
                 int currentStateRevision;
                 if (!pce.TryGetCausalGeometrySnapshot(_domain.WorldBounds, -1, _activeGeometryRoots, null, out currentGeneration, out currentStateRevision) ||
@@ -835,7 +842,6 @@ namespace PhysicalWater
                     _observedGeometryGeneration = -1;
                     return;
                 }
-                if (!_initialGeometryPreparation.IsCompleted) return;
                 if (_initialGeometryPreparation.IsFaulted || _initialGeometryPreparation.IsCanceled)
                 {
                     PhysicalWaterPlugin.Log.LogError("PhysicalWater devE3 initial geometry preparation failed before application.");

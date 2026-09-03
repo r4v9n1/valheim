@@ -19,6 +19,11 @@ namespace PhysicalWater
         // event revisions are source-level and cannot represent overlapping
         // sources under one Unity root on their own.
         private readonly Dictionary<int, int> _causalRootRevisionDigests = new Dictionary<int, int>();
+        private readonly Dictionary<int, int> _snapshotAdapterRevisions = new Dictionary<int, int>();
+        private readonly HashSet<int> _snapshotAdapterRootIds = new HashSet<int>();
+        private readonly HashSet<int> _snapshotRepresentedRootIds = new HashSet<int>();
+        private readonly Dictionary<int, GameObject> _snapshotPceRoots = new Dictionary<int, GameObject>();
+        private readonly Dictionary<int, int> _snapshotPceRevisions = new Dictionary<int, int>();
         private int _publishedEvents;
         internal static LiquidCorePceRuntime Instance { get; private set; }
 
@@ -181,24 +186,45 @@ namespace PhysicalWater
             // even when the caller only requests the root list. PCE must prove
             // that its retained source records represent the same generation
             // before the SDF/cut-cell path consumes the routed roots.
-            var adapterRevisions = new Dictionary<int, int>();
-            if (!_adapter.TryGetCausalGeometrySnapshot(worldBounds, generationAfter, roots, adapterRevisions, out generation, out stateRevision)) return false;
+            _snapshotAdapterRevisions.Clear();
+            if (!_adapter.TryGetCausalGeometrySnapshot(worldBounds, generationAfter, roots, _snapshotAdapterRevisions, out generation, out stateRevision)) return false;
 
-            var adapterRootIds = new HashSet<int>();
+            _snapshotAdapterRootIds.Clear();
             for (int i = 0; i < roots.Count; i++)
             {
                 GameObject root = roots[i];
-                if (root != null) adapterRootIds.Add(root.GetInstanceID());
-                bool represented = false;
-                foreach (ValheimPceGeometryChange source in _activeSources.Values)
-                    if (source.Root == root) { represented = true; break; }
-                if (!represented)
+                if (root != null) _snapshotAdapterRootIds.Add(root.GetInstanceID());
+            }
+
+            _snapshotRepresentedRootIds.Clear();
+            _snapshotPceRoots.Clear();
+            _snapshotPceRevisions.Clear();
+            foreach (ValheimPceGeometryChange source in _activeSources.Values)
+            {
+                GameObject root = source.Root;
+                if (root == null) continue;
+                int rootId = root.GetInstanceID();
+                _snapshotRepresentedRootIds.Add(rootId);
+                if (!root.activeInHierarchy || !source.CanFeedSdf ||
+                    !worldBounds.Intersects(source.NewWorldBounds) ||
+                    !_snapshotAdapterRootIds.Contains(rootId)) continue;
+                if (!_snapshotPceRoots.ContainsKey(rootId)) _snapshotPceRoots.Add(rootId, root);
+                if (!_causalRootRevisionDigests.ContainsKey(rootId))
                 {
-                    PhysicalWaterPlugin.Log.LogWarning("LiquidCore PCE causal gate rejected an SDF snapshot because its root is not represented by an exact retained PCE source: " + (root != null ? root.name : "<null>") + ".");
-                    roots.Clear();
-                    rootRevisions?.Clear();
-                    return false;
+                    if (_snapshotPceRevisions.TryGetValue(rootId, out int previous))
+                        _snapshotPceRevisions[rootId] = previous ^ unchecked((int)source.Revision);
+                    else
+                        _snapshotPceRevisions.Add(rootId, unchecked((int)source.Revision));
                 }
+            }
+            for (int i = 0; i < roots.Count; i++)
+            {
+                GameObject root = roots[i];
+                if (root != null && _snapshotRepresentedRootIds.Contains(root.GetInstanceID())) continue;
+                PhysicalWaterPlugin.Log.LogWarning("LiquidCore PCE causal gate rejected an SDF snapshot because its root is not represented by an exact retained PCE source: " + (root != null ? root.name : "<null>") + ".");
+                roots.Clear();
+                rootRevisions?.Clear();
+                return false;
             }
 
             // The adapter remains the accuracy authority for readiness and
@@ -206,37 +232,24 @@ namespace PhysicalWater
             // path must cross the PCE boundary. Restrict it to the exact roots
             // accepted by the adapter snapshot so newly observed events cannot
             // leak into a partially ready generation.
-            var pceRoots = new List<GameObject>(adapterRootIds.Count);
-            var pceRevisions = rootRevisions != null ? new Dictionary<int, int>(adapterRootIds.Count) : null;
-            foreach (ValheimPceGeometryChange source in _activeSources.Values)
-            {
-                GameObject root = source.Root;
-                if (root == null || !root.activeInHierarchy || !source.CanFeedSdf ||
-                    !worldBounds.Intersects(source.NewWorldBounds)) continue;
-                int rootId = root.GetInstanceID();
-                if (!adapterRootIds.Contains(rootId)) continue;
-                if (!pceRoots.Contains(root)) pceRoots.Add(root);
-                if (pceRevisions != null && !_causalRootRevisionDigests.ContainsKey(rootId))
-                    pceRevisions[rootId] = unchecked((int)source.Revision);
-            }
-            if (pceRoots.Count != adapterRootIds.Count)
+            if (_snapshotPceRoots.Count != _snapshotAdapterRootIds.Count)
             {
                 PhysicalWaterPlugin.Log.LogWarning("LiquidCore PCE causal gate rejected an SDF snapshot because the retained PCE root set was incomplete.");
                 roots.Clear();
                 rootRevisions?.Clear();
                 return false;
             }
-            foreach (KeyValuePair<int, int> adapterRevision in adapterRevisions)
+            foreach (KeyValuePair<int, int> adapterRevision in _snapshotAdapterRevisions)
             {
                 _causalRootRevisionDigests[adapterRevision.Key] = adapterRevision.Value;
-                if (pceRevisions != null) pceRevisions[adapterRevision.Key] = adapterRevision.Value;
+                if (rootRevisions != null) _snapshotPceRevisions[adapterRevision.Key] = adapterRevision.Value;
             }
             roots.Clear();
-            roots.AddRange(pceRoots);
+            foreach (GameObject root in _snapshotPceRoots.Values) roots.Add(root);
             if (rootRevisions != null)
             {
                 rootRevisions.Clear();
-                foreach (KeyValuePair<int, int> pair in pceRevisions) rootRevisions.Add(pair.Key, pair.Value);
+                foreach (KeyValuePair<int, int> pair in _snapshotPceRevisions) rootRevisions.Add(pair.Key, pair.Value);
             }
             PhysicalWaterPlugin.Log.LogInfo("LiquidCore PCE supplied the causal SDF root set: roots=" + roots.Count + ", generation=" + generation + ", stateRevision=" + stateRevision + ".");
             return true;
