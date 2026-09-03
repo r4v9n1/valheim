@@ -239,7 +239,11 @@ namespace PhysicalWater
             DestroyDomain();
             Vector3 playerPosition = Player.m_localPlayer.transform.position;
             const float dx = 0.75f;
-            Vector3 worldSize = new Vector3(72f, 18f, 48f);
+            // The production compact window is 3 x 3 regions at 24 m per
+            // region. Keep the requested origin centered on the actual 72 m
+            // square; the former 48 m Z value survived from the old 3 x 2
+            // window and biased every live domain 12 m forward.
+            Vector3 worldSize = new Vector3(72f, 18f, 72f);
             Vector3 origin = new Vector3(
                 Snap(playerPosition.x - worldSize.x * 0.5f, dx),
                 Snap(playerPosition.y - 3f, dx),
@@ -1039,8 +1043,8 @@ namespace PhysicalWater
                 else if (shader.name.IndexOf("VolumetricSurface", StringComparison.OrdinalIgnoreCase) >= 0) _surfaceShader = shader;
             }
             Material materialAsset = _bundle.LoadAsset<Material>("R4V9N1_PhysicalVolumetricDebugSurface");
-            if (materialAsset != null) _surfaceMaterial = new Material(materialAsset) { name = "PhysicalWater_devE1_DebugSurface" };
-            PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devE1 assets: mac=" + (_macShader != null) + ", flip=" + (_flipShader != null) + ", surface=" + (_surfaceShader != null) + ", material=" + (_surfaceMaterial != null) + ".");
+            if (materialAsset != null) _surfaceMaterial = new Material(materialAsset) { name = "LiquidCore_CelWaterSurface" };
+            PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devE1 assets: mac=" + (_macShader != null) + ", flip=" + (_flipShader != null) + ", surface=" + (_surfaceShader != null) + ", celMaterial=" + (_surfaceMaterial != null) + ".");
         }
 
         private bool ReadyForCommand(Terminal.ConsoleEventArgs args, bool playerRequired)
