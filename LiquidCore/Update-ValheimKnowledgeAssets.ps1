@@ -39,6 +39,7 @@ foreach ($record in $selected) {
         runtimeInspectionRequired = [bool]$requiresStateInspection
         colliderCount = [int]$record.colliderCount
         colliderTypes = @($record.colliderTypes)
+        colliderRecipes = @($record.colliderRecipes)
         meshColliderCount = [int]$record.meshColliderCount
         primitiveColliderCount = [int]$record.primitiveColliderCount
         triggerColliderCount = [int]$record.triggerColliderCount
@@ -72,6 +73,7 @@ $assets.Add([ordered]@{
     runtimeInspectionRequired = $true
     colliderCount = 0
     colliderTypes = @()
+    colliderRecipes = @()
     meshColliderCount = 0
     primitiveColliderCount = 0
     triggerColliderCount = 0

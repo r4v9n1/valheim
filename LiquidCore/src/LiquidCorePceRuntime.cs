@@ -19,6 +19,7 @@ namespace PhysicalWater
         internal Vector3Int PceTileMax;
         internal int PceOccupancyHandle;
         internal int LcPreparedGeometryHandle;
+        internal VolumetricPreparedGeometryDescriptor PreparedGeometry;
         internal Bounds SdfDependencyRegion;
         internal Bounds CutCellDependencyRegion;
         internal Bounds ApertureDependencyRegion;
@@ -43,6 +44,8 @@ namespace PhysicalWater
         private readonly ProbeColonyCausalGeometrySignalQueue _causalSignals = new ProbeColonyCausalGeometrySignalQueue();
         private readonly Dictionary<string, ValheimPceGeometryChange> _activeSources = new Dictionary<string, ValheimPceGeometryChange>();
         private readonly Dictionary<string, SourceRuntimeRecord> _sourceRuntimeRecords = new Dictionary<string, SourceRuntimeRecord>();
+        private readonly Dictionary<string, VolumetricPreparedGeometryDescriptor> _preparedGeometryByAsset =
+            new Dictionary<string, VolumetricPreparedGeometryDescriptor>(StringComparer.Ordinal);
         // The Valheim adapter publishes a root-level digest for the exact
         // ready snapshot. Retain that digest at the PCE boundary; individual
         // event revisions are source-level and cannot represent overlapping
@@ -53,6 +56,9 @@ namespace PhysicalWater
         private readonly HashSet<int> _snapshotRepresentedRootIds = new HashSet<int>();
         private readonly Dictionary<int, GameObject> _snapshotPceRoots = new Dictionary<int, GameObject>();
         private readonly Dictionary<int, int> _snapshotPceRevisions = new Dictionary<int, int>();
+        private readonly HashSet<int> _preparedDescriptorAmbiguousRoots = new HashSet<int>();
+        private readonly List<Collider> _mappedPreparedColliders = new List<Collider>();
+        private readonly List<Collider> _mappedColliderComponentScratch = new List<Collider>();
         private int _publishedEvents;
         private int _nextSourceRuntimeHandle;
         private int _directQueueBypasses;
@@ -108,6 +114,7 @@ namespace PhysicalWater
                 SourceRevision = change.Revision,
                 SourceRuntimeHandle = runtimeRecord.PceOccupancyHandle,
                 DependencyHandle = runtimeRecord.LcPreparedGeometryHandle,
+                PreparedGeometry = runtimeRecord.PreparedGeometry,
                 DatabaseHit = runtimeRecord.DatabaseHit,
                 Generation = change.Generation,
                 Root = change.Root,
@@ -220,6 +227,7 @@ namespace PhysicalWater
             record.PceTileMin = change.DirtyMin;
             record.PceTileMax = change.DirtyMax;
             record.DatabaseHit = change.DatabaseHit;
+            record.PreparedGeometry = ResolvePreparedGeometry(change);
             if (change.Root != null)
             {
                 Transform transform = change.Root.transform;
@@ -228,6 +236,37 @@ namespace PhysicalWater
                 record.Scale = transform.lossyScale;
             }
             return record;
+        }
+
+        private VolumetricPreparedGeometryDescriptor ResolvePreparedGeometry(ValheimPceGeometryChange change)
+        {
+            if (string.IsNullOrEmpty(change.AssetClassId) || change.ColliderRecipes == null ||
+                change.ColliderRecipes.Length == 0) return null;
+            string key = change.AssetClassId + "|" + (change.GeometrySignature ?? string.Empty);
+            if (_preparedGeometryByAsset.TryGetValue(key, out VolumetricPreparedGeometryDescriptor cached))
+                return cached;
+            var addresses = new VolumetricPreparedColliderAddress[change.ColliderRecipes.Length];
+            for (int i = 0; i < change.ColliderRecipes.Length; i++)
+            {
+                ValheimKnowledgeDatabase.ColliderRecipe recipe = change.ColliderRecipes[i];
+                if (recipe == null || recipe.transformChildIndices == null ||
+                    recipe.colliderComponentIndex < 0 || string.IsNullOrEmpty(recipe.colliderType))
+                    return null;
+                addresses[i] = new VolumetricPreparedColliderAddress
+                {
+                    TransformChildIndices = recipe.transformChildIndices,
+                    ColliderComponentIndex = recipe.colliderComponentIndex,
+                    ColliderType = recipe.colliderType
+                };
+            }
+            cached = new VolumetricPreparedGeometryDescriptor
+            {
+                AssetClassId = change.AssetClassId,
+                GeometrySignature = change.GeometrySignature,
+                Colliders = addresses
+            };
+            _preparedGeometryByAsset.Add(key, cached);
+            return cached;
         }
 
         internal bool TryConsumeCausalGeometrySignals(
@@ -275,8 +314,17 @@ namespace PhysicalWater
             {
                 if (!change.CanFeedSdf || change.Root == null || !change.Root.activeInHierarchy ||
                     !domainBounds.Intersects(change.NewWorldBounds)) continue;
-                Collider[] colliders = change.Root.GetComponentsInChildren<Collider>(true);
-                if (colliders == null || colliders.Length == 0) continue;
+                IList<Collider> colliders;
+                if (_sourceRuntimeRecords.TryGetValue(change.SourceId, out SourceRuntimeRecord record) &&
+                    record.PreparedGeometry != null &&
+                    record.PreparedGeometry.TryResolveColliders(
+                        change.Root,
+                        _mappedPreparedColliders,
+                        _mappedColliderComponentScratch))
+                    colliders = _mappedPreparedColliders;
+                else
+                    colliders = change.Root.GetComponentsInChildren<Collider>(true);
+                if (colliders == null || colliders.Count == 0) continue;
                 Bounds clipped = change.NewWorldBounds;
                 clipped.Expand(0.5f * cellSize);
                 clipped = IntersectBounds(clipped, domainBounds);
@@ -313,12 +361,47 @@ namespace PhysicalWater
             return refinedSources;
         }
 
-        private static ProbeOccupancy SampleColliderOccupancy(Collider[] colliders, Vector3 point, float cellSize)
+        internal void PopulatePreparedGeometryByRoot(
+            IReadOnlyList<GameObject> roots,
+            Dictionary<int, VolumetricPreparedGeometryDescriptor> preparedGeometryByRoot)
+        {
+            if (preparedGeometryByRoot == null) throw new ArgumentNullException(nameof(preparedGeometryByRoot));
+            preparedGeometryByRoot.Clear();
+            _preparedDescriptorAmbiguousRoots.Clear();
+            _snapshotAdapterRootIds.Clear();
+            if (roots == null) return;
+            for (int i = 0; i < roots.Count; i++)
+                if (roots[i] != null) _snapshotAdapterRootIds.Add(roots[i].GetInstanceID());
+
+            foreach (KeyValuePair<string, ValheimPceGeometryChange> pair in _activeSources)
+            {
+                ValheimPceGeometryChange source = pair.Value;
+                if (source.Root == null) continue;
+                int rootId = source.Root.GetInstanceID();
+                if (!_snapshotAdapterRootIds.Contains(rootId) || _preparedDescriptorAmbiguousRoots.Contains(rootId)) continue;
+                if (!_sourceRuntimeRecords.TryGetValue(pair.Key, out SourceRuntimeRecord record) || record.PreparedGeometry == null)
+                {
+                    preparedGeometryByRoot.Remove(rootId);
+                    _preparedDescriptorAmbiguousRoots.Add(rootId);
+                    continue;
+                }
+                if (preparedGeometryByRoot.TryGetValue(rootId, out VolumetricPreparedGeometryDescriptor existing) &&
+                    !ReferenceEquals(existing, record.PreparedGeometry))
+                {
+                    preparedGeometryByRoot.Remove(rootId);
+                    _preparedDescriptorAmbiguousRoots.Add(rootId);
+                    continue;
+                }
+                preparedGeometryByRoot[rootId] = record.PreparedGeometry;
+            }
+        }
+
+        private static ProbeOccupancy SampleColliderOccupancy(IList<Collider> colliders, Vector3 point, float cellSize)
         {
             const float tolerance = 0.0001f;
             Bounds cell = new Bounds(point, Vector3.one * cellSize);
             bool intersects = false;
-            for (int i = 0; i < colliders.Length; i++)
+            for (int i = 0; i < colliders.Count; i++)
             {
                 Collider collider = colliders[i];
                 if (collider == null || collider.isTrigger || !collider.enabled || !collider.bounds.Intersects(cell)) continue;

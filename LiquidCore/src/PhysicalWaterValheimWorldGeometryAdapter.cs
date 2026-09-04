@@ -66,6 +66,8 @@ namespace PhysicalWater
         internal long Generation;
         internal long EventTimestamp;
         internal long ReadyTimestamp;
+        internal string GeometrySignature;
+        internal ValheimKnowledgeDatabase.ColliderRecipe[] ColliderRecipes;
     }
 
     internal sealed class PhysicalWaterValheimWorldGeometryAdapter : MonoBehaviour
@@ -95,6 +97,8 @@ namespace PhysicalWater
             internal int MeshTriangles;
             internal bool AssetDescriptorHydrated;
             internal int AssetDescriptorHash;
+            internal string GeometrySignature;
+            internal ValheimKnowledgeDatabase.ColliderRecipe[] ColliderRecipes;
             internal bool NonUniformScale;
             internal bool CanFeedSdf;
             internal string RejectionReason;
@@ -1463,7 +1467,9 @@ namespace PhysicalWater
                     RootInstanceId = source.Root != null ? source.Root.GetInstanceID() : 0,
                     Generation = _geometryGeneration,
                     EventTimestamp = record != null ? record.Timestamp : readyTimestamp,
-                    ReadyTimestamp = readyTimestamp
+                    ReadyTimestamp = readyTimestamp,
+                    GeometrySignature = source.GeometrySignature,
+                    ColliderRecipes = source.ColliderRecipes
                 });
             }
 
@@ -2422,7 +2428,9 @@ namespace PhysicalWater
                 MeshVertices = rule.meshVertices,
                 MeshTriangles = rule.meshTriangles,
                 AssetDescriptorHydrated = true,
-                AssetDescriptorHash = rule.geometrySignature.GetHashCode()
+                AssetDescriptorHash = rule.geometrySignature.GetHashCode(),
+                GeometrySignature = rule.geometrySignature,
+                ColliderRecipes = rule.colliderRecipes
             };
             return true;
         }
@@ -2561,6 +2569,9 @@ namespace PhysicalWater
                                source.MeshVertices + ":" + source.MeshTriangles + ":" +
                                Quantize(localBounds.size.x) + ":" + Quantize(localBounds.size.y) + ":" + Quantize(localBounds.size.z) + ":" +
                                string.Join(",", componentTypes);
+            ValheimKnowledgeDatabase.ColliderRecipe[] colliderRecipes = ValheimColliderRecipeCapture.Capture(source.Root);
+            source.GeometrySignature = signature;
+            source.ColliderRecipes = colliderRecipes;
             PhysicalWaterPlugin.ValheimKnowledge.LearnAsset(
                 assetId,
                 source.RootType,
@@ -2579,7 +2590,8 @@ namespace PhysicalWater
                 localBounds.size,
                 destructible,
                 buildPiece,
-                door);
+                door,
+                colliderRecipes);
         }
 
         private static Bounds WorldBoundsToLocalBounds(Transform root, Bounds worldBounds)

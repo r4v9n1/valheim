@@ -289,6 +289,7 @@ namespace PhysicalWater
                 geometrySignature = Hash(string.Join("\n", signatureRows.ToArray())),
                 componentTypes = componentTypes,
                 colliderTypes = colliderTypes,
+                colliderRecipes = ValheimColliderRecipeCapture.Capture(prefab),
                 localBoundsCenter = new[] { localBounds.center.x, localBounds.center.y, localBounds.center.z },
                 localBoundsSize = new[] { localBounds.size.x, localBounds.size.y, localBounds.size.z },
                 staticClass = door ? "dynamic-solid" : destructible ? "destructible-static" : buildPiece ? "stateful-static" : "prefab-static",

@@ -89,6 +89,8 @@ if ($null -eq $terrainRule -or $terrainRule.authority -ne 'authoritative-local' 
 
 $assets = @($database.observedAssets)
 $reusableAssets = @($assets | Where-Object { $_.precompute -and !$_.runtimeInspectionRequired })
+$exactRecipeAssets = 0
+$exactColliderRecipes = 0
 if ($assets.Count -lt 800 -or $reusableAssets.Count -lt 700) {
     throw "Fingerprint prefab inventory is incomplete: assets=$($assets.Count), reusable=$($reusableAssets.Count)."
 }
@@ -102,6 +104,35 @@ foreach ($asset in $assets | Where-Object precompute) {
         [string]::IsNullOrWhiteSpace($asset.pceRule) -or
         [string]::IsNullOrWhiteSpace($asset.liquidCoreRule)) {
         throw "Incomplete reusable asset descriptor: $($asset.assetId)"
+    }
+    $recipes = @($asset.colliderRecipes)
+    if ($recipes.Count -ne [int]$asset.colliderCount) {
+        throw "Reusable asset lacks a complete exact collider recipe set: $($asset.assetId) recipes=$($recipes.Count) colliders=$($asset.colliderCount)"
+    }
+    foreach ($recipe in $recipes) {
+        if ($null -eq $recipe -or
+            $null -eq $recipe.transformChildIndices -or
+            [int]$recipe.colliderComponentIndex -lt 0 -or
+            [string]::IsNullOrWhiteSpace([string]$recipe.colliderType)) {
+            throw "Invalid exact collider address recipe: $($asset.assetId)"
+        }
+        if ($recipe.colliderType -eq 'BoxCollider' -and
+            (@($recipe.center).Count -ne 3 -or @($recipe.size).Count -ne 3)) {
+            throw "Incomplete BoxCollider recipe: $($asset.assetId)"
+        }
+        if (($recipe.colliderType -eq 'SphereCollider' -or $recipe.colliderType -eq 'CapsuleCollider') -and
+            @($recipe.center).Count -ne 3) {
+            throw "Incomplete primitive collider recipe: $($asset.assetId)"
+        }
+        if ($recipe.colliderType -eq 'MeshCollider' -and
+            ([int]$recipe.meshVertexCount -lt 0 -or [int]$recipe.meshTriangleCount -lt 0 -or
+             (([int]$recipe.meshVertexCount -eq 0) -xor ([int]$recipe.meshTriangleCount -eq 0)))) {
+            throw "Inconsistent MeshCollider recipe: $($asset.assetId)"
+        }
+    }
+    if (!$asset.runtimeInspectionRequired) {
+        $exactRecipeAssets++
+        $exactColliderRecipes += $recipes.Count
     }
 }
 $locationProxy = $assets | Where-Object assetId -eq 'LocationProxy'
@@ -121,7 +152,8 @@ foreach ($requiredCertificationText in @(
     'MATCHED current game/mod/schema fingerprint: schema=',
     'known assets/terrain rules are being served from the database rather than runtime reinspection',
     'bypass hierarchy/category reinspection on hit',
-    'descriptors bypass collider/component hierarchy reinspection on immutable cache hits',
+    'bypass collider/component hierarchy reinspection on immutable cache hits',
+    'exactColliderAddressRecipes=',
     'terrainRules=',
     'bypass discovery')) {
     if (!$databaseSource.Contains($requiredCertificationText)) {
@@ -205,6 +237,8 @@ foreach ($requiredPreparedTerrainCacheContract in @(
     }
 }
 foreach ($requiredAssetDescriptorContract in @(
+    'ColliderRecipe',
+    'colliderRecipes',
     'TryGetReusableGeometryAsset',
     'TryCreateSourceFromKnownAsset',
     'TryCreateSourceFromKnownAssetRule',
@@ -216,6 +250,16 @@ foreach ($requiredAssetDescriptorContract in @(
     'if (!source.AssetDescriptorHydrated)')) {
     if (!$databaseSource.Contains($requiredAssetDescriptorContract) -and !$adapterSource.Contains($requiredAssetDescriptorContract)) {
         throw "Reusable prefab geometry path is incomplete: $requiredAssetDescriptorContract"
+    }
+}
+$recipeCaptureSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'src\ValheimColliderRecipeCapture.cs') -Raw
+foreach ($requiredExactRecipeContract in @(
+    'ValheimColliderRecipeCapture',
+    'transformChildIndices',
+    'colliderComponentIndex',
+    'GetSiblingIndex()')) {
+    if (!$recipeCaptureSource.Contains($requiredExactRecipeContract)) {
+        throw "Exact collider recipe capture contract is incomplete: $requiredExactRecipeContract"
     }
 }
 
@@ -243,6 +287,35 @@ foreach ($requiredSharedRuntimeContract in @(
     'LastDrainedCausalGeometrySignals')) {
     if (!$pceRuntimeSource.Contains($requiredSharedRuntimeContract)) {
         throw "Shared PCE/LC runtime-record contract is incomplete: $requiredSharedRuntimeContract"
+    }
+}
+foreach ($requiredInitialPreparedPath in @(
+    'PopulatePreparedGeometryByRoot',
+    'ApplyMappedColliderOccupancy',
+    'TryResolveColliders',
+    'exactPreparedRoots=')) {
+    if (!$pceRuntimeSource.Contains($requiredInitialPreparedPath) -and
+        !(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'src\PhysicalWaterDevE1Runtime.cs') -Raw).Contains($requiredInitialPreparedPath) -and
+        !$causalQueueSource.Contains($requiredInitialPreparedPath)) {
+        throw "Initial database prepared-geometry path is incomplete: $requiredInitialPreparedPath"
+    }
+}
+foreach ($requiredPreparedGeometryContract in @(
+    'VolumetricPreparedGeometryDescriptor',
+    'ResolvePreparedGeometry',
+    '_preparedGeometryByAsset')) {
+    if (!$pceRuntimeSource.Contains($requiredPreparedGeometryContract) -and
+        !$causalQueueSource.Contains($requiredPreparedGeometryContract)) {
+        throw "Prepared geometry handoff contract is incomplete: $requiredPreparedGeometryContract"
+    }
+}
+foreach ($requiredPreparedApplyContract in @(
+    'TryRebuildPreparedSources',
+    'VolumetricPreparedGeometryDescriptor preparedGeometry',
+    'preparedGeometryByRoot')) {
+    if (!$solidGeometrySource.Contains($requiredPreparedApplyContract) -and
+        !(Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\..\workspace\LiquidCore\UnityPhysicalOcean\Runtime\VolumetricFiniteDomain.cs') -Raw).Contains($requiredPreparedApplyContract)) {
+        throw "Prepared geometry apply contract is incomplete: $requiredPreparedApplyContract"
     }
 }
 foreach ($requiredTelemetryContract in @(
@@ -328,6 +401,8 @@ $lookupNanoseconds = $watch.Elapsed.TotalMilliseconds * 1000000.0 / 100000.0
     SignalRules = @($database.signalRules).Count
     ObservedAssets = @($database.observedAssets).Count
     ReusableAssetGeometryDescriptors = $reusableAssets.Count
+    ExactRecipeAssets = $exactRecipeAssets
+    ExactColliderRecipes = $exactColliderRecipes
     EmbeddedResource = $true
     EmbeddedAssemblyContracts = $true
     TerrainFastPathBeforeRediscovery = $true

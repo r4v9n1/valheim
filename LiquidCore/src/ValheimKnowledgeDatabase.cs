@@ -65,6 +65,25 @@ namespace PhysicalWater
         }
 
         [Serializable]
+        public sealed class ColliderRecipe
+        {
+            public int[] transformChildIndices;
+            public int colliderComponentIndex;
+            public string colliderType;
+            public bool enabled;
+            public bool isTrigger;
+            [OptionalField] public string meshName;
+            [OptionalField] public int meshVertexCount;
+            [OptionalField] public int meshTriangleCount;
+            [OptionalField] public bool convex;
+            [OptionalField] public float[] center;
+            [OptionalField] public float[] size;
+            [OptionalField] public float radius;
+            [OptionalField] public float height;
+            [OptionalField] public int direction;
+        }
+
+        [Serializable]
         public sealed class AssetRule
         {
             public string assetId;
@@ -82,6 +101,7 @@ namespace PhysicalWater
             [OptionalField] public string geometrySignature;
             [OptionalField] public string[] componentTypes;
             [OptionalField] public string[] colliderTypes;
+            [OptionalField] public ColliderRecipe[] colliderRecipes;
             [OptionalField] public float[] localBoundsCenter;
             [OptionalField] public float[] localBoundsSize;
             [OptionalField] public string staticClass;
@@ -109,6 +129,7 @@ namespace PhysicalWater
         internal int SignalCacheHits { get; private set; }
         internal int SignalCacheMisses { get; private set; }
         internal int ReusableGeometryDescriptorCount { get; private set; }
+        internal int ExactColliderRecipeCount { get; private set; }
         internal int GeometryDescriptorCacheHits { get; private set; }
         internal int GeometryDescriptorCacheMisses { get; private set; }
 
@@ -177,7 +198,11 @@ namespace PhysicalWater
                     if (rule != null && !string.IsNullOrEmpty(rule.assetId))
                     {
                         _assets[rule.assetId] = rule;
-                        if (HasReusableGeometryDescriptor(rule)) ReusableGeometryDescriptorCount++;
+                        if (HasReusableGeometryDescriptor(rule))
+                        {
+                            ReusableGeometryDescriptorCount++;
+                            ExactColliderRecipeCount += rule.colliderRecipes.Length;
+                        }
                     }
         }
 
@@ -229,7 +254,8 @@ namespace PhysicalWater
                    rule.localBoundsCenter != null && rule.localBoundsCenter.Length == 3 &&
                    rule.localBoundsSize != null && rule.localBoundsSize.Length == 3 &&
                    !string.IsNullOrEmpty(rule.geometrySignature) &&
-                   rule.colliderTypes != null && rule.colliderTypes.Length > 0;
+                   rule.colliderTypes != null && rule.colliderTypes.Length > 0 &&
+                   rule.colliderRecipes != null && rule.colliderRecipes.Length == rule.colliderCount;
         }
 
         internal bool LearnAsset(
@@ -250,7 +276,8 @@ namespace PhysicalWater
             Vector3 localBoundsSize,
             bool destructible,
             bool buildPiece,
-            bool door)
+            bool door,
+            ColliderRecipe[] colliderRecipes = null)
         {
             if (!Loaded || string.IsNullOrEmpty(assetId) || _assets.ContainsKey(assetId)) return false;
             var rule = new AssetRule
@@ -270,6 +297,7 @@ namespace PhysicalWater
                 geometrySignature = geometrySignature,
                 componentTypes = componentTypes,
                 colliderTypes = colliderTypes,
+                colliderRecipes = colliderRecipes,
                 localBoundsCenter = new[] { localBoundsCenter.x, localBoundsCenter.y, localBoundsCenter.z },
                 localBoundsSize = new[] { localBoundsSize.x, localBoundsSize.y, localBoundsSize.z },
                 destructible = destructible,
@@ -278,7 +306,11 @@ namespace PhysicalWater
             };
             _assets.Add(assetId, rule);
             _learnedAssets.Add(rule);
-            if (HasReusableGeometryDescriptor(rule)) ReusableGeometryDescriptorCount++;
+            if (HasReusableGeometryDescriptor(rule))
+            {
+                ReusableGeometryDescriptorCount++;
+                ExactColliderRecipeCount += rule.colliderRecipes.Length;
+            }
             _learnedDirty = true;
             return true;
         }
@@ -316,7 +348,8 @@ namespace PhysicalWater
                 : "loaded=True, schema=" + Data.schemaVersion +
                   ", steamBuild=" + (Data.valheim != null ? Data.valheim.steamBuildId : "unknown") +
                   ", types=" + _types.Count + ", signals=" + _signals.Count + ", assets=" + _assets.Count +
-                  ", reusableGeometryDescriptors=" + ReusableGeometryDescriptorCount;
+                  ", reusableGeometryDescriptors=" + ReusableGeometryDescriptorCount +
+                  ", exactColliderRecipes=" + ExactColliderRecipeCount;
         }
 
         internal string StartupCertification()
@@ -334,7 +367,8 @@ namespace PhysicalWater
                    ", modSetSha256=" + Data.modSet.fingerprint +
                    "; known assets/terrain rules are being served from the database rather than runtime reinspection: knownAssetClassifications=" + _assets.Count +
                    " bypass hierarchy/category reinspection on hit, reusableAssetGeometry=" + ReusableGeometryDescriptorCount +
-                   " descriptors bypass collider/component hierarchy reinspection on immutable cache hits, terrainRules=" + (terrainReady ? "authoritative-local/immediate" : "INVALID") +
+                   " descriptors with exactColliderAddressRecipes=" + ExactColliderRecipeCount +
+                   " bypass collider/component hierarchy reinspection on immutable cache hits, terrainRules=" + (terrainReady ? "authoritative-local/immediate" : "INVALID") +
                    " bypass discovery; stateful and unknown assets retain targeted safe inspection fallback";
         }
 
@@ -373,9 +407,14 @@ namespace PhysicalWater
                     AssetRule rule = overlay.observedAssets[i];
                     if (rule == null || string.IsNullOrEmpty(rule.assetId) || _assets.ContainsKey(rule.assetId)) continue;
                     NormalizeLearnedAssetRule(rule);
+                    // Legacy learned overlays predate exact collider-address recipes. Do not let an
+                    // incomplete entry occupy the asset ID forever: skipping it makes the next real
+                    // encounter perform the one authorized inspection and persist a current recipe.
+                    if (!HasReusableGeometryDescriptor(rule)) continue;
                     _assets.Add(rule.assetId, rule);
                     _learnedAssets.Add(rule);
-                    if (HasReusableGeometryDescriptor(rule)) ReusableGeometryDescriptorCount++;
+                    ReusableGeometryDescriptorCount++;
+                    ExactColliderRecipeCount += rule.colliderRecipes.Length;
                 }
             }
             catch (Exception ex)

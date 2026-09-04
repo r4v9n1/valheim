@@ -38,6 +38,8 @@ namespace PhysicalWater
         private readonly List<GameObject> _activeGeometryRoots = new List<GameObject>();
         private readonly List<GameObject> _changedGeometryRoots = new List<GameObject>();
         private readonly List<int> _removedGeometryRootIds = new List<int>();
+        private readonly Dictionary<int, VolumetricPreparedGeometryDescriptor> _changedPreparedGeometry =
+            new Dictionary<int, VolumetricPreparedGeometryDescriptor>();
         private readonly Dictionary<int, int> _coverageGeometryRevisions = new Dictionary<int, int>();
         private readonly Dictionary<int, int> _appliedGeometryRevisions = new Dictionary<int, int>();
         private readonly Dictionary<int, int> _preparedGeometryRevisions = new Dictionary<int, int>();
@@ -936,11 +938,20 @@ namespace PhysicalWater
             {
                 long applyStartTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
                 var applyWatch = System.Diagnostics.Stopwatch.StartNew();
+                _changedPreparedGeometry.Clear();
+                IReadOnlyList<ProbeColonyCausalGeometrySignal> drainedSignals = pce.LastDrainedCausalGeometrySignals;
+                for (int i = 0; i < drainedSignals.Count; i++)
+                {
+                    ProbeColonyCausalGeometrySignal signal = drainedSignals[i];
+                    if (signal.RootInstanceId == 0 || signal.PreparedGeometry == null) continue;
+                    _changedPreparedGeometry[signal.RootInstanceId] = signal.PreparedGeometry;
+                }
                 VolumetricFiniteSolidUpdateDiagnostics causalUpdate = _streaming.SynchronizeGeometryDelta(
                     causalBatch.Generation,
                     _changedGeometryRoots,
                     _removedGeometryRootIds,
                     causalBatch.DirtyWorldBounds,
+                    _changedPreparedGeometry,
                     synchronizeDiagnostics: false);
                 applyWatch.Stop();
                 long solverReadyTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -950,7 +961,6 @@ namespace PhysicalWater
                 double totalNerveMilliseconds = ProbeColonyCausalGeometrySignalQueue.ElapsedMilliseconds(
                     causalBatch.EarliestEventTimestamp,
                     solverReadyTimestamp);
-                IReadOnlyList<ProbeColonyCausalGeometrySignal> drainedSignals = pce.LastDrainedCausalGeometrySignals;
                 Bounds sdfDependencyWorld = causalUpdate.Geometry.SdfDependencyLocalBounds;
                 sdfDependencyWorld.center += _domain.WorldOrigin;
                 Bounds cutCellDependencyWorld = causalUpdate.Geometry.CutCellDependencyLocalBounds;
@@ -1145,10 +1155,15 @@ namespace PhysicalWater
                 if (incrementalUpdate.ParticlesBefore > 0) RequestGeometrySafety(generation);
                 return;
             }
-            _initialGeometryPreparation = _streaming.BeginPrepareGeometry(generation, _geometryRoots);
+            pce.PopulatePreparedGeometryByRoot(_geometryRoots, _changedPreparedGeometry);
+            _initialGeometryPreparation = _streaming.BeginPrepareGeometry(
+                generation,
+                _geometryRoots,
+                _changedPreparedGeometry);
             PhysicalWaterPlugin.Log.LogInfo(
                 "PhysicalWater devE3 began background " + (_preparedGeometryIsInitial ? "initial" : "dynamic") +
                 " geometry preparation generation=" + generation + ", roots=" + _geometryRoots.Count +
+                ", exactPreparedRoots=" + _changedPreparedGeometry.Count +
                 (_preparedGeometryIsInitial ? ". Fill remains gated until atomic application." : ". Simulation continues against the preceding causal solid generation."));
         }
 
