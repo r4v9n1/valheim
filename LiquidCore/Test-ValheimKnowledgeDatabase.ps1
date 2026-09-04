@@ -52,7 +52,7 @@ foreach ($requiredCertificationText in @(
     'DataContractJsonSerializer',
     'MATCH schema=',
     'database-first serving active',
-    'bypass runtime reinspection on hit',
+    'bypass hierarchy/category reinspection on hit',
     'terrainRules=',
     'bypass discovery')) {
     if (!$databaseSource.Contains($requiredCertificationText)) {

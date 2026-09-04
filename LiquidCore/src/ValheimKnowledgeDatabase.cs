@@ -290,9 +290,9 @@ namespace PhysicalWater
                    ", steamBuild=" + Data.valheim.steamBuildId +
                    ", assemblySha256=" + Data.valheim.assemblySha256 +
                    ", modSetSha256=" + Data.modSet.fingerprint +
-                   "; database-first serving active: knownAssets=" + _assets.Count +
-                   " bypass runtime reinspection on hit, terrainRules=" + (terrainReady ? "authoritative-local/immediate" : "INVALID") +
-                   " bypass discovery; unknown assets retain safe inspection fallback";
+                   "; database-first serving active: knownAssetClassifications=" + _assets.Count +
+                   " bypass hierarchy/category reinspection on hit, terrainRules=" + (terrainReady ? "authoritative-local/immediate" : "INVALID") +
+                   " bypass discovery; collider geometry still uses cached instance data or safe inspection, and unknown assets retain inspection-and-learn fallback";
         }
 
         private static string ComputeModSetFingerprint(string pluginRoot)

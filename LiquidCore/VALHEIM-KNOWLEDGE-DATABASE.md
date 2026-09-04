@@ -36,6 +36,8 @@ Run `Test-ValheimKnowledgeDatabase.ps1` to verify the installed game/build/mod f
 
 On a valid startup LiquidCore emits an explicit `MATCH` certificate containing
 the schema, Steam build, installed assembly hash, and mod-set hash. The same
-line confirms that known assets bypass runtime reinspection on cache hit and
-that the authoritative local terrain rule bypasses discovery. Unknown assets
-alone retain the safe inspection-and-learn fallback.
+line confirms that known-asset classification bypasses hierarchy/category
+reinspection on cache hit and that the authoritative local terrain rule
+bypasses discovery. Collider geometry still comes from retained instance data
+or safe inspection until a complete learned descriptor exists; unknown assets
+retain the safe inspection-and-learn fallback.
