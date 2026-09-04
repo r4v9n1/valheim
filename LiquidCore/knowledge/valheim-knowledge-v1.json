@@ -49,6 +49,7 @@
       { "eventLabel": "mine rock hidden", "type": "MineRock", "method": "RPC_Hide" },
       { "eventLabel": "mine rock mesh update", "type": "MineRock5", "method": "UpdateMesh" },
       { "eventLabel": "streamed source appeared", "type": "ZNetScene", "method": "CreateObject" },
+      { "eventLabel": "streamed source disappeared", "type": "ZNetView", "method": "ResetZDO" },
       { "eventLabel": "streamed source disappeared", "type": "ZNetScene", "method": "RemoveObjects" },
       { "eventLabel": "streamed source disappeared", "type": "ZNetScene", "method": "OnZDODestroyed" }
     ]
@@ -77,7 +78,7 @@
     { "eventLabel": "mine rock hidden", "ownerType": "MineRock.RPC_Hide", "change": "rock sub-geometry hidden", "authority": "authoritative", "immediate": true, "discoveryFallback": false, "bounds": "cached rock bounds or changed sub-piece bounds", "revision": "hidden-piece state", "pceRule": "publish changed rock revision", "liquidCoreRule": "prepare only affected rock region" },
     { "eventLabel": "mine rock mesh update", "ownerType": "MineRock5.UpdateMesh", "change": "rock mesh topology", "authority": "authoritative-derived", "immediate": true, "discoveryFallback": false, "bounds": "union old/new mesh bounds", "revision": "mesh state", "pceRule": "publish newest coalesced mesh revision", "liquidCoreRule": "invalidate only rock prepared data" },
     { "eventLabel": "streamed source appeared", "ownerType": "ZNetScene.CreateObject", "change": "network source added", "authority": "authoritative", "immediate": true, "discoveryFallback": true, "bounds": "new source bounds", "revision": "ZDO data revision", "pceRule": "asset lookup and instance-cache insert", "liquidCoreRule": "reuse prepared asset data when available" },
-    { "eventLabel": "streamed source disappeared", "ownerType": "ZNetScene.RemoveObjects/OnZDODestroyed", "change": "network source absent", "authority": "authoritative", "immediate": true, "discoveryFallback": true, "bounds": "cached old source bounds", "revision": "source removal", "pceRule": "remove instance cache entry", "liquidCoreRule": "remove only source contribution" }
+    { "eventLabel": "streamed source disappeared", "ownerType": "ZNetView.ResetZDO called by ZNetScene.Destroy/OnZDODestroyed/RemoveObjects/Shutdown", "change": "network source absent", "authority": "authoritative", "immediate": true, "discoveryFallback": false, "bounds": "cached old source bounds", "revision": "source removal", "pceRule": "remove instance cache entry directly before identity/hierarchy teardown", "liquidCoreRule": "remove only source contribution" }
   ],
   "observedAssets": [
     { "assetId": "LocationProxy", "observedRootType": "Location", "category": "SolidBarrier", "geometryKind": "MeshCollider", "source": "2026-09-03 failed live trace", "precompute": true },

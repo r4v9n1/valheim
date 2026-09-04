@@ -105,6 +105,30 @@ foreach ($requiredCertificationText in @(
         throw "Startup database certification is incomplete: $requiredCertificationText"
     }
 }
+$eventPatchSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'src\PhysicalWaterValheimWorldGeometryPatches.cs') -Raw
+foreach ($requiredLifecycleBridge in @(
+    '[HarmonyPatch(typeof(ZNetScene), "CreateObject", new[] { typeof(ZDO) })]',
+    'ValheimGeometryDirtyBridge.Mark("streamed source appeared", view)',
+    '[HarmonyPatch(typeof(ZNetView), "ResetZDO")]',
+    'ValheimGeometryDirtyBridge.Mark("streamed source disappeared", __instance)'
+)) {
+    if (!$eventPatchSource.Contains($requiredLifecycleBridge)) {
+        throw "Direct streamed lifecycle bridge is incomplete: $requiredLifecycleBridge"
+    }
+}
+foreach ($requiredLifecycleFilter in @(
+    'adapter.IsStreamedSourceNearActiveDomain(view)',
+    'adapter.IsCachedStreamedSource(__instance)',
+    '_cache.ContainsKey(BuildSourceId(view.gameObject))'
+)) {
+    if (!$eventPatchSource.Contains($requiredLifecycleFilter) -and !$adapterSource.Contains($requiredLifecycleFilter)) {
+        throw "Streamed lifecycle bridge lacks its bounded cache/domain filter: $requiredLifecycleFilter"
+    }
+}
+if ($eventPatchSource.Contains('GetField("m_instances"') -or
+    $eventPatchSource.Contains('AccessTools.Field(typeof(ZNetScene), "m_instances")')) {
+    throw 'Streamed lifecycle bridge must not enumerate ZNetScene.m_instances.'
+}
 $fastPathIndex = $adapterSource.IndexOf('record.AuthoritativeLocalSignal && cached != null', [StringComparison]::Ordinal)
 $rediscoveryIndex = $adapterSource.IndexOf('Source source = CreateSource(record.Root);', [StringComparison]::Ordinal)
 if ($fastPathIndex -lt 0 -or $rediscoveryIndex -lt 0 -or $fastPathIndex -gt $rediscoveryIndex) {
@@ -118,6 +142,41 @@ if (!(Test-Path -LiteralPath $builtDll -PathType Leaf)) { throw "Build output is
 $assembly = [Reflection.Assembly]::LoadFile($builtDll)
 $resources = @($assembly.GetManifestResourceNames())
 if ('PhysicalWater.knowledge.valheim-knowledge-v1.json' -notin $resources) { throw "Database is not embedded in LiquidCore.dll." }
+$embeddedStream = $assembly.GetManifestResourceStream('PhysicalWater.knowledge.valheim-knowledge-v1.json')
+try {
+    $embeddedReader = [IO.StreamReader]::new($embeddedStream)
+    try { $embeddedDatabase = $embeddedReader.ReadToEnd() | ConvertFrom-Json }
+    finally { $embeddedReader.Dispose() }
+} finally {
+    if ($null -ne $embeddedStream) { $embeddedStream.Dispose() }
+}
+if (@($embeddedDatabase.assemblyContracts.callbacks).Count -ne $callbackContracts.Count -or
+    @($embeddedDatabase.assemblyContracts.types).Count -ne $assemblyTypeContracts.Count) {
+    throw 'Built LiquidCore.dll does not embed the currently certified assembly contracts.'
+}
+
+$builtAssembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($builtDll)
+try {
+    foreach ($compiledBridge in @(
+        @{ Type = 'ValheimGeometryStreamedSourceAppearedPatch'; Method = 'Postfix'; Label = 'streamed source appeared' },
+        @{ Type = 'ValheimGeometryStreamedSourceDisappearedPatch'; Method = 'Prefix'; Label = 'streamed source disappeared' }
+    )) {
+        $patchType = $builtAssembly.MainModule.Types | Where-Object Name -eq $compiledBridge.Type
+        if ($null -eq $patchType -or 'HarmonyLib.HarmonyPatch' -notin @($patchType.CustomAttributes | ForEach-Object { $_.AttributeType.FullName })) {
+            throw "Compiled lifecycle Harmony patch is missing: $($compiledBridge.Type)"
+        }
+        $patchMethod = $patchType.Methods | Where-Object Name -eq $compiledBridge.Method
+        if ($null -eq $patchMethod -or $compiledBridge.Label -notin @($patchMethod.Body.Instructions | ForEach-Object Operand | Where-Object { $_ -is [string] })) {
+            throw "Compiled lifecycle patch does not publish its database label: $($compiledBridge.Label)"
+        }
+        $enumeratesInstances = @($patchMethod.Body.Instructions | Where-Object {
+            $_.Operand -is [Mono.Cecil.FieldReference] -and $_.Operand.DeclaringType.Name -eq 'ZNetScene' -and $_.Operand.Name -eq 'm_instances'
+        }).Count -ne 0
+        if ($enumeratesInstances) { throw "Compiled lifecycle patch enumerates ZNetScene.m_instances: $($compiledBridge.Type)" }
+    }
+} finally {
+    $builtAssembly.Dispose()
+}
 
 # Compare the exact failed-live full-root shape with a normal 2 m terrain operation.
 # This is a signal/apply footprint contract, not a solver-physics approximation.
@@ -148,7 +207,10 @@ $lookupNanoseconds = $watch.Elapsed.TotalMilliseconds * 1000000.0 / 100000.0
     SignalRules = @($database.signalRules).Count
     ObservedAssets = @($database.observedAssets).Count
     EmbeddedResource = $true
+    EmbeddedAssemblyContracts = $true
     TerrainFastPathBeforeRediscovery = $true
+    DirectStreamedLifecycleBridge = $true
+    CompiledLifecycleBridgeVerified = $true
     FailedLiveFullRootCells = $fullRootCells
     CandidateLocalCells = $localCells
     DirtyCellReduction = [math]::Round($reduction, 2)

@@ -605,6 +605,28 @@ namespace PhysicalWater
             _nextScanTime = 0f;
         }
 
+        internal bool IsStreamedSourceNearActiveDomain(ZNetView view)
+        {
+            if (view == null || _activeChunks.Count == 0) return false;
+            float tileSize = PhysicalWaterPlugin.Settings != null
+                ? Mathf.Max(4f, PhysicalWaterPlugin.Settings.ValheimGeometryDiscoveryTileSize.Value)
+                : 8f;
+            Vector3 position = view.transform.position;
+            int centerX = Mathf.FloorToInt(position.x / tileSize);
+            int centerZ = Mathf.FloorToInt(position.z / tileSize);
+            // One conservative neighboring tile admits large/edge-straddling
+            // objects without inspecting their hierarchy or colliders first.
+            for (int z = centerZ - 1; z <= centerZ + 1; z++)
+            for (int x = centerX - 1; x <= centerX + 1; x++)
+                if (_activeChunks.Contains(new ChunkKey(x, z))) return true;
+            return false;
+        }
+
+        internal bool IsCachedStreamedSource(ZNetView view)
+        {
+            return view != null && _cache.ContainsKey(BuildSourceId(view.gameObject));
+        }
+
         internal void MarkDirtyFromValheimEvent(string label, Component source)
         {
             MarkDirtyFromValheimEvent(label, source, true, null);

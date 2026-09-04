@@ -159,6 +159,35 @@ namespace PhysicalWater
         }
     }
 
+    [HarmonyPatch(typeof(ZNetScene), "CreateObject", new[] { typeof(ZDO) })]
+    internal static class ValheimGeometryStreamedSourceAppearedPatch
+    {
+        private static void Postfix(GameObject __result)
+        {
+            if (__result == null) return;
+            ZNetView view = __result.GetComponent<ZNetView>();
+            PhysicalWaterValheimWorldGeometryAdapter adapter = PhysicalWaterValheimWorldGeometryAdapter.Instance;
+            if (view != null && adapter != null && adapter.IsStreamedSourceNearActiveDomain(view))
+                ValheimGeometryDirtyBridge.Mark("streamed source appeared", view);
+        }
+    }
+
+    // ResetZDO is the single physical-lifecycle point shared by explicit
+    // destruction, ZDO destruction, streaming removal, and scene shutdown.
+    // The prefix runs while the ZDO identity and GameObject hierarchy are
+    // still intact, so PCE can remove exactly the cached source without
+    // enumerating ZNetScene.m_instances or rediscovering world roots.
+    [HarmonyPatch(typeof(ZNetView), "ResetZDO")]
+    internal static class ValheimGeometryStreamedSourceDisappearedPatch
+    {
+        private static void Prefix(ZNetView __instance)
+        {
+            PhysicalWaterValheimWorldGeometryAdapter adapter = PhysicalWaterValheimWorldGeometryAdapter.Instance;
+            if (adapter != null && adapter.IsCachedStreamedSource(__instance))
+                ValheimGeometryDirtyBridge.Mark("streamed source disappeared", __instance);
+        }
+    }
+
     [HarmonyPatch(typeof(Door), "SetState")]
     internal static class ValheimGeometryDoorStatePatch
     {

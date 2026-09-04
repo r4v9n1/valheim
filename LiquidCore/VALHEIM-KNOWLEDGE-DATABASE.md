@@ -7,7 +7,7 @@ The current inventory is keyed to Steam build `21981559`, assembly SHA-256 `3b26
 - 10 geometry-relevant Valheim type rules;
 - 12 authoritative or consistency signal contracts;
 - 7 prefabs observed in retained LiquidCore live traces.
-- 11 assembly type contracts and 14 callback contracts verified directly against the fingerprinted installed assembly.
+- 11 assembly type contracts and 15 callback contracts verified directly against the fingerprinted installed assembly.
 
 The observed-prefab list is deliberately incremental. Unknown assets remain on the existing safe runtime-inspection path once; the completed classification and geometry facts are then retained in `BepInEx/config/LiquidCore/valheim-knowledge-learned-v1.json` and reused on later instances/startups. The learned overlay is accepted only for the same schema, Valheim assembly, and mod-set fingerprints. No broad prefab scan is performed on normal startup.
 
@@ -43,4 +43,4 @@ bypasses discovery. Collider geometry still comes from retained instance data
 or safe inspection until a complete learned descriptor exists; unknown assets
 retain the safe inspection-and-learn fallback.
 
-The database also inventories Valheim's streamed-source appearance and disappearance callbacks. Those records are assembly-verified reference knowledge; they are not yet wired into the direct PCE nerve path. Until that isolated bridge is implemented and validated, streamed lifecycle discovery retains its existing safety path. This limitation is reported explicitly rather than treating recorded knowledge as an active callback patch.
+Streamed-source appearance is delivered directly from `ZNetScene.CreateObject`. Disappearance uses the shared `ZNetView.ResetZDO` lifecycle point while identity and hierarchy data are still intact; Valheim calls it from explicit destruction, ZDO destruction, stream-out removal, and scene shutdown. PCE therefore adds or removes the exact source contribution without enumerating `ZNetScene.m_instances` or waiting for root rediscovery. The consistency scanner remains a safety fallback for callbacks that cannot supply an active source.
