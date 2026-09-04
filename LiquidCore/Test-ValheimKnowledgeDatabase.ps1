@@ -149,6 +149,8 @@ foreach ($required in @('knowledge-authoritative-local-hit', 'EstimateDirtyRegio
 }
 $causalQueuePath = Join-Path $PSScriptRoot '..\..\..\workspace\LiquidCore\UnityPhysicalOcean\Runtime\ProbeColonyCausalGeometrySignals.cs'
 $causalQueueSource = Get-Content -LiteralPath $causalQueuePath -Raw
+$solidGeometryPath = Join-Path $PSScriptRoot '..\..\..\workspace\LiquidCore\UnityPhysicalOcean\Runtime\VolumetricSolidGeometrySdf.cs'
+$solidGeometrySource = Get-Content -LiteralPath $solidGeometryPath -Raw
 foreach ($requiredRevisionCacheContract in @(
     'internal int GeometryHash;',
     '_lastSourceRevisions',
@@ -159,6 +161,16 @@ foreach ($requiredRevisionCacheContract in @(
     'RevisionCacheHits++')) {
     if (!$adapterSource.Contains($requiredRevisionCacheContract) -and !$causalQueueSource.Contains($requiredRevisionCacheContract)) {
         throw "Authoritative SourceID + revision cache contract is incomplete: $requiredRevisionCacheContract"
+    }
+}
+foreach ($requiredPreparedTerrainCacheContract in @(
+    'TryRefreshPreparedHeightfield',
+    'PreparedSourceCacheHits',
+    'PreparedSourceCacheMisses',
+    'PreparedHeightSamplesUpdated',
+    '_heightGridIndexByVertex')) {
+    if (!$solidGeometrySource.Contains($requiredPreparedTerrainCacheContract)) {
+        throw "LC prepared terrain-region cache contract is incomplete: $requiredPreparedTerrainCacheContract"
     }
 }
 
@@ -237,6 +249,7 @@ $lookupNanoseconds = $watch.Elapsed.TotalMilliseconds * 1000000.0 / 100000.0
     CompiledLifecycleBridgeVerified = $true
     MonotonicInstanceRevisionContract = $true
     PersistentPceRevisionCache = $true
+    LocalPreparedTerrainCache = $true
     FailedLiveFullRootCells = $fullRootCells
     CandidateLocalCells = $localCells
     DirtyCellReduction = [math]::Round($reduction, 2)
