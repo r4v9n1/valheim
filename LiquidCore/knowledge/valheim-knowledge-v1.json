@@ -22,9 +22,40 @@
     "invalidate": "a revision change invalidates only dependent source/region data",
     "remove": "source removal invalidates only that source contribution"
   },
+  "assemblyContracts": {
+    "types": [
+      { "type": "Heightmap", "baseType": "UnityEngine.MonoBehaviour", "fields": ["m_heights", "m_width", "m_scale"], "methods": ["Poke", "Regenerate"] },
+      { "type": "TerrainComp", "baseType": "UnityEngine.MonoBehaviour", "fields": ["m_operations", "m_modifiedHeight", "m_lastDataRevision"], "methods": ["DoOperation"] },
+      { "type": "Piece", "baseType": "StaticTarget", "fields": [], "methods": ["OnPlaced"] },
+      { "type": "WearNTear", "baseType": "UnityEngine.MonoBehaviour", "fields": ["m_health", "m_healthPercentage"], "methods": [] },
+      { "type": "Destructible", "baseType": "UnityEngine.MonoBehaviour", "fields": ["m_destroyed", "m_health"], "methods": ["DestroyNow"] },
+      { "type": "Door", "baseType": "UnityEngine.MonoBehaviour", "fields": ["m_lastDataRevision"], "methods": ["SetState"] },
+      { "type": "MineRock", "baseType": "UnityEngine.MonoBehaviour", "fields": ["m_areaMeshes", "m_health"], "methods": ["RPC_Hide"] },
+      { "type": "MineRock5", "baseType": "UnityEngine.MonoBehaviour", "fields": ["m_lastDataRevision", "m_meshFilter"], "methods": ["UpdateMesh"] },
+      { "type": "Location", "baseType": "UnityEngine.MonoBehaviour", "fields": ["m_interiorPrefab", "m_interiorTransform"], "methods": [] },
+      { "type": "ZNetView", "baseType": "UnityEngine.MonoBehaviour", "fields": ["m_zdo"], "methods": ["ResetZDO"] },
+      { "type": "ZNetScene", "baseType": "UnityEngine.MonoBehaviour", "fields": ["m_instances"], "methods": ["CreateObject", "Destroy", "OnZDODestroyed", "RemoveObjects", "FindInstance"] }
+    ],
+    "callbacks": [
+      { "eventLabel": "heightmap terrain operation/regenerate", "type": "TerrainComp", "method": "DoOperation" },
+      { "eventLabel": "heightmap terrain operation/regenerate", "type": "Heightmap", "method": "Regenerate" },
+      { "eventLabel": "heightmap terrain operation", "type": "TerrainComp", "method": "DoOperation" },
+      { "eventLabel": "heightmap poke/regenerate", "type": "Heightmap", "method": "Poke" },
+      { "eventLabel": "heightmap poke/regenerate", "type": "Heightmap", "method": "Regenerate" },
+      { "eventLabel": "piece placed", "type": "Piece", "method": "OnPlaced" },
+      { "eventLabel": "network geometry destroyed", "type": "ZNetScene", "method": "Destroy" },
+      { "eventLabel": "door/gate state", "type": "Door", "method": "SetState" },
+      { "eventLabel": "destructible destroyed", "type": "Destructible", "method": "DestroyNow" },
+      { "eventLabel": "mine rock hidden", "type": "MineRock", "method": "RPC_Hide" },
+      { "eventLabel": "mine rock mesh update", "type": "MineRock5", "method": "UpdateMesh" },
+      { "eventLabel": "streamed source appeared", "type": "ZNetScene", "method": "CreateObject" },
+      { "eventLabel": "streamed source disappeared", "type": "ZNetScene", "method": "RemoveObjects" },
+      { "eventLabel": "streamed source disappeared", "type": "ZNetScene", "method": "OnZDODestroyed" }
+    ]
+  },
   "typeRules": [
     { "type": "Heightmap", "category": "Terrain", "geometryKind": "HeightmapCollisionMesh", "staticClass": "dynamic-terrain", "canFeedSdf": true, "precompute": "recipe-only", "runtimeInspection": "changed height samples in signaled bounds", "stateFields": ["m_heights", "m_width", "m_scale"] },
-    { "type": "TerrainComp", "category": "Terrain", "geometryKind": "HeightmapCollisionMesh", "staticClass": "dynamic-terrain", "canFeedSdf": true, "precompute": "recipe-only", "runtimeInspection": "changed height samples in signaled bounds", "stateFields": ["m_operations", "m_lastDataRevision", "m_lastOpPoint", "m_lastOpRadius"] },
+    { "type": "TerrainComp", "category": "Terrain", "geometryKind": "HeightmapCollisionMesh", "staticClass": "dynamic-terrain", "canFeedSdf": true, "precompute": "recipe-only", "runtimeInspection": "changed height samples in signaled bounds", "stateFields": ["m_operations", "m_modifiedHeight", "m_lastDataRevision", "DoOperation(pos, modifier) arguments"] },
     { "type": "Piece", "category": "SolidBarrier", "geometryKind": "ColliderHierarchy", "staticClass": "stateful-static", "canFeedSdf": true, "precompute": "prefab collider geometry", "runtimeInspection": "transform and state revision", "stateFields": ["placement", "transform"] },
     { "type": "WearNTear", "category": "SolidBarrier", "geometryKind": "ColliderHierarchy", "staticClass": "destructible-static", "canFeedSdf": true, "precompute": "prefab collider geometry", "runtimeInspection": "damage/removal state", "stateFields": ["health", "destroyed"] },
     { "type": "Door", "category": "ThinBlockingBarrier", "geometryKind": "ColliderHierarchy", "staticClass": "dynamic-solid", "canFeedSdf": true, "precompute": "per discrete door state", "runtimeInspection": "state and settled collider transforms", "stateFields": ["Animator.state", "collider transforms"] },

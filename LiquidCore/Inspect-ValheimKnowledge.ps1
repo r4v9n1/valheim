@@ -13,6 +13,8 @@ if ([string]::IsNullOrWhiteSpace($Query)) {
         SteamBuild = $database.valheim.steamBuildId
         AssemblySha256 = $database.valheim.assemblySha256
         ModSetFingerprint = $database.modSet.fingerprint
+        AssemblyTypeContracts = @($database.assemblyContracts.types).Count
+        AssemblyCallbacks = @($database.assemblyContracts.callbacks).Count
         TypeRules = @($database.typeRules).Count
         SignalRules = @($database.signalRules).Count
         ObservedAssets = @($database.observedAssets).Count
@@ -33,6 +35,12 @@ function Matches-Query {
     return $false
 }
 $matches = @()
+$matches += @($database.assemblyContracts.callbacks | Where-Object {
+    Matches-Query $_
+}) | ForEach-Object { [pscustomobject]@{ Kind = "assembly-callback"; Key = "$($_.type).$($_.method)"; Record = $_ } }
+$matches += @($database.assemblyContracts.types | Where-Object {
+    Matches-Query $_
+}) | ForEach-Object { [pscustomobject]@{ Kind = "assembly-type"; Key = $_.type; Record = $_ } }
 $matches += @($database.signalRules | Where-Object {
     Matches-Query $_
 }) | ForEach-Object { [pscustomobject]@{ Kind = "signal"; Key = $_.eventLabel; Record = $_ } }

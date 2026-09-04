@@ -7,6 +7,7 @@ The current inventory is keyed to Steam build `21981559`, assembly SHA-256 `3b26
 - 10 geometry-relevant Valheim type rules;
 - 12 authoritative or consistency signal contracts;
 - 7 prefabs observed in retained LiquidCore live traces.
+- 11 assembly type contracts and 14 callback contracts verified directly against the fingerprinted installed assembly.
 
 The observed-prefab list is deliberately incremental. Unknown assets remain on the existing safe runtime-inspection path once; the completed classification and geometry facts are then retained in `BepInEx/config/LiquidCore/valheim-knowledge-learned-v1.json` and reused on later instances/startups. The learned overlay is accepted only for the same schema, Valheim assembly, and mod-set fingerprints. No broad prefab scan is performed on normal startup.
 
@@ -32,7 +33,7 @@ For a local terrain operation, `TerrainComp.DoOperation` supplies exact operatio
 .\Inspect-ValheimKnowledge.ps1 -Query "Rock_4"
 ```
 
-Run `Test-ValheimKnowledgeDatabase.ps1` to verify the installed game/build/mod fingerprints, embedded resource, signal rules, and terrain fast-path ordering.
+Run `Test-ValheimKnowledgeDatabase.ps1` to verify the installed game/build/mod fingerprints, embedded resource, signal rules, terrain fast-path ordering, and every recorded assembly type, base type, field, method, and callback against the installed `assembly_valheim.dll` through Mono.Cecil. A recorded Valheim contract that drifts from the fingerprinted assembly now fails certification instead of silently becoming stale knowledge.
 
 On a valid startup LiquidCore emits an explicit `MATCH` certificate containing
 the schema, Steam build, installed assembly hash, and mod-set hash. The same
@@ -41,3 +42,5 @@ reinspection on cache hit and that the authoritative local terrain rule
 bypasses discovery. Collider geometry still comes from retained instance data
 or safe inspection until a complete learned descriptor exists; unknown assets
 retain the safe inspection-and-learn fallback.
+
+The database also inventories Valheim's streamed-source appearance and disappearance callbacks. Those records are assembly-verified reference knowledge; they are not yet wired into the direct PCE nerve path. Until that isolated bridge is implemented and validated, streamed lifecycle discovery retains its existing safety path. This limitation is reported explicitly rather than treating recorded knowledge as an active callback patch.

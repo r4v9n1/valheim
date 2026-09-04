@@ -15,6 +15,52 @@ if (!(Test-Path -LiteralPath $assemblyPath -PathType Leaf)) { throw "Valheim ass
 $assemblyHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $assemblyPath).Hash.ToLowerInvariant()
 if ($assemblyHash -ne $database.valheim.assemblySha256) { throw "Valheim assembly fingerprint mismatch." }
 
+$cecilPath = Join-Path $ValheimDir "BepInEx\core\Mono.Cecil.dll"
+if (!(Test-Path -LiteralPath $cecilPath -PathType Leaf)) { throw "Mono.Cecil metadata reader missing: $cecilPath" }
+[void][Reflection.Assembly]::LoadFrom($cecilPath)
+$gameAssembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($assemblyPath)
+try {
+    $typeByName = @{}
+    foreach ($type in $gameAssembly.MainModule.Types) { $typeByName[$type.Name] = $type }
+    $assemblyTypeContracts = @($database.assemblyContracts.types)
+    if ($assemblyTypeContracts.Count -lt @($database.typeRules).Count) {
+        throw "Assembly contract does not cover every knowledge type rule."
+    }
+    foreach ($contract in $assemblyTypeContracts) {
+        if (!$typeByName.ContainsKey($contract.type)) { throw "Recorded Valheim type is absent: $($contract.type)" }
+        $type = $typeByName[$contract.type]
+        if ($type.BaseType.FullName -ne $contract.baseType) {
+            throw "Base type mismatch for $($contract.type): $($type.BaseType.FullName) != $($contract.baseType)"
+        }
+        $fieldNames = @($type.Fields | ForEach-Object Name)
+        foreach ($field in @($contract.fields)) {
+            if ($field -notin $fieldNames) { throw "Recorded field is absent: $($contract.type).$field" }
+        }
+        $methodNames = @($type.Methods | ForEach-Object Name)
+        foreach ($method in @($contract.methods)) {
+            if ($method -notin $methodNames) { throw "Recorded method is absent: $($contract.type).$method" }
+        }
+    }
+
+    $callbackContracts = @($database.assemblyContracts.callbacks)
+    foreach ($callback in $callbackContracts) {
+        if (!$typeByName.ContainsKey($callback.type)) { throw "Callback owner type is absent: $($callback.type)" }
+        if ($callback.method -notin @($typeByName[$callback.type].Methods | ForEach-Object Name)) {
+            throw "Recorded callback is absent: $($callback.type).$($callback.method)"
+        }
+    }
+    $externalSignalLabels = @($database.signalRules |
+        Where-Object { $_.ownerType -notlike 'LiquidCore *' } |
+        ForEach-Object eventLabel |
+        Select-Object -Unique)
+    $callbackLabels = @($callbackContracts | ForEach-Object eventLabel | Select-Object -Unique)
+    foreach ($label in $externalSignalLabels) {
+        if ($label -notin $callbackLabels) { throw "Signal lacks an assembly-verified callback: $label" }
+    }
+} finally {
+    $gameAssembly.Dispose()
+}
+
 $manifest = Get-Content -LiteralPath $manifestPath -Raw
 $buildMatch = [regex]::Match($manifest, '"buildid"\s+"(?<id>\d+)"')
 if (!$buildMatch.Success -or $buildMatch.Groups['id'].Value -ne $database.valheim.steamBuildId) {
@@ -95,6 +141,8 @@ $lookupNanoseconds = $watch.Elapsed.TotalMilliseconds * 1000000.0 / 100000.0
     Schema = $database.schemaVersion
     SteamBuild = $database.valheim.steamBuildId
     AssemblyHash = $assemblyHash
+    AssemblyTypesVerified = $assemblyTypeContracts.Count
+    AssemblyCallbacksVerified = $callbackContracts.Count
     ModSetFingerprint = $modFingerprint
     TypeRules = @($database.typeRules).Count
     SignalRules = @($database.signalRules).Count
