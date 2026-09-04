@@ -158,13 +158,11 @@ namespace PhysicalWater
                 else
                     _events.PublishChanged(change.SourceId, pceCategory, region, change.Revision);
             }
-            // Do not eagerly materialize the approximate solid occupancy here.
-            // A terrain discovery region can cover the entire active window
-            // (over one million cells); doing that synchronously from the
-            // adapter's scan callback stalls the Unity main thread. Exact
-            // collider occupancy is applied at the strict causal
-            // synchronization gate in ApplyMappedColliderOccupancy, before
-            // the finite-domain solver is released.
+            // The retained source/runtime record is PCE's authoritative dormant
+            // state and already carries the exact LC descriptor. Do not eagerly
+            // materialize a duplicate probe-cell field: no solver consumer reads
+            // it, and Physics.ClosestPoint across every source made the causal
+            // gate synchronous with unrelated dormant probes.
         }
 
         internal bool TryGetActiveSource(string sourceId, out ValheimPceGeometryChange change) => _activeSources.TryGetValue(sourceId, out change);

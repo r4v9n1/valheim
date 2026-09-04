@@ -1103,7 +1103,11 @@ namespace PhysicalWater
             // same causal snapshot is retried on a later frame once its CPU
             // synchronization fence reports safe reuse.
             if (_appliedGeometryStateRevision != int.MinValue && !_domain.MacDomain.CanApplyPreparedSolidFields) return;
-            pce.ApplyMappedColliderOccupancy(_domain.WorldBounds, _domain.WorldOrigin, _domain.MacDomain.Settings.CellSize);
+            // PCE's retained source records and exact prepared descriptors are
+            // the causal authority consumed below. The optional mapped probe
+            // field has no LC solver consumer, so materializing every dormant
+            // source through Physics.ClosestPoint here only stalls F6 without
+            // changing occupancy, SDF, cut cells, or the geometry signal.
             _preparedGeometryRevisions.Clear();
             foreach (KeyValuePair<int, int> pair in _coverageGeometryRevisions)
                 _preparedGeometryRevisions.Add(pair.Key, pair.Value);

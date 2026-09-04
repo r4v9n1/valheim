@@ -291,13 +291,23 @@ foreach ($requiredSharedRuntimeContract in @(
 }
 foreach ($requiredInitialPreparedPath in @(
     'PopulatePreparedGeometryByRoot',
-    'ApplyMappedColliderOccupancy',
     'TryResolveColliders',
     'exactPreparedRoots=')) {
     if (!$pceRuntimeSource.Contains($requiredInitialPreparedPath) -and
         !(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'src\PhysicalWaterDevE1Runtime.cs') -Raw).Contains($requiredInitialPreparedPath) -and
         !$causalQueueSource.Contains($requiredInitialPreparedPath)) {
         throw "Initial database prepared-geometry path is incomplete: $requiredInitialPreparedPath"
+    }
+}
+$devRuntimeSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'src\PhysicalWaterDevE1Runtime.cs') -Raw
+if ($devRuntimeSource.Contains('pce.ApplyMappedColliderOccupancy(')) {
+    throw 'The live F6/causal gate must not materialize an unused full PCE collider-occupancy map.'
+}
+foreach ($requiredDormantRecordContract in @(
+    'retained source records and exact prepared descriptors',
+    'has no LC solver consumer')) {
+    if (!$devRuntimeSource.Contains($requiredDormantRecordContract)) {
+        throw "Dormant PCE source-record contract is incomplete: $requiredDormantRecordContract"
     }
 }
 foreach ($requiredPreparedGeometryContract in @(
@@ -411,6 +421,7 @@ $lookupNanoseconds = $watch.Elapsed.TotalMilliseconds * 1000000.0 / 100000.0
     MonotonicInstanceRevisionContract = $true
     PersistentPceRevisionCache = $true
     LocalPreparedTerrainCache = $true
+    PceDormantSourceMaterializationEliminated = $true
     FailedLiveFullRootCells = $fullRootCells
     CandidateLocalCells = $localCells
     DirtyCellReduction = [math]::Round($reduction, 2)
