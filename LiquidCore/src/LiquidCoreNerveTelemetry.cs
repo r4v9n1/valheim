@@ -125,6 +125,26 @@ namespace PhysicalWater
                     "ms, lc=" + lc.ToString("F3", CultureInfo.InvariantCulture) +
                     "ms, total=" + total.ToString("F3", CultureInfo.InvariantCulture) +
                     "ms, full=" + update.Geometry.FullRebuild +
+                    ", controller[source/particle/diagnostics/total]=" +
+                    update.SourceResolutionMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "/" +
+                    update.ParticleSafetyMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "/" +
+                    update.DiagnosticsMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "/" +
+                    update.TotalMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "ms" +
+                    ", geometry[candidates/active]=" + update.Geometry.DependencyCandidates + "/" + update.Geometry.ActiveObjects +
+                    ", geometryMs[occupancy/sdf/cutTotal/capacity/aperture/metadata/acquire/pack/stage/dispatch/sync/diagnostics/uploadTotal]=" +
+                    update.Geometry.OccupancyMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "/" +
+                    update.Geometry.SdfMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "/" +
+                    update.Geometry.CutCellBuildTotalMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "/" +
+                    update.Geometry.CutCellCapacityMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "/" +
+                    update.Geometry.ApertureMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "/" +
+                    update.Geometry.PressureBoundaryMetadataMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "/" +
+                    update.Geometry.UploadAcquireMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "/" +
+                    update.Geometry.UploadPackingMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "/" +
+                    update.Geometry.UploadStagingMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "/" +
+                    update.Geometry.UploadDispatchMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "/" +
+                    update.Geometry.SynchronizationMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "/" +
+                    update.Geometry.DiagnosticsMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "/" +
+                    update.Geometry.UploadMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "ms" +
                     ", cells=" + update.Geometry.ChangedCells + "/" + update.Geometry.DirtyRegionCells +
                     ", dependencies[sdf/cut]=" + update.Geometry.SdfDependencyLocalBounds + "/" + update.Geometry.CutCellDependencyLocalBounds +
                     ", gpu=" + sdfCells + "/" + cutCells + "/" + apertureFaces + "/" + gpuBytes +
