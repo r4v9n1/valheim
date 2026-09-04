@@ -29,6 +29,7 @@ namespace PhysicalWater
 
         internal static ManualLogSource Log;
         internal static PhysicalWaterSettings Settings;
+        internal static ValheimKnowledgeDatabase ValheimKnowledge;
 
         private Harmony _harmony;
         private GameObject _systemObject;
@@ -41,6 +42,8 @@ namespace PhysicalWater
         {
             Log = Logger;
             Settings = new PhysicalWaterSettings(Config);
+            ValheimKnowledge = ValheimKnowledgeDatabase.LoadEmbedded();
+            Logger.LogInfo("LiquidCore Valheim knowledge database: " + ValheimKnowledge.Summary() + ".");
             bool legacyReplacementEnabled = Settings.Enabled.Value && !Settings.StageE1Enabled.Value;
             if (Settings.Enabled.Value && Settings.StageE1Enabled.Value)
             {

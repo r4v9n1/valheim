@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "databaseId": "liquidcore-valheim-knowledge",
+  "generatedUtc": "2026-09-04T00:00:00Z",
+  "valheim": {
+    "steamAppId": "892970",
+    "steamBuildId": "21981559",
+    "assemblyName": "assembly_valheim.dll",
+    "assemblySha256": "3b26c8512778f6e0664b5af2a26f3c30993a00f584c1e76d9123a742b67e2004",
+    "assemblyClassCount": 809
+  },
+  "modSet": {
+    "fingerprintAlgorithm": "sha256(relative-path|length|sha256, ordinal path order, LiquidCore excluded)",
+    "fingerprint": "e5a76ab4774b6dda6647183de34e4b6df09afcca81256d49756b9f671249d62a",
+    "pluginCount": 9
+  },
+  "cacheContract": {
+    "asset": "assetId -> immutable prefab/type geometry knowledge",
+    "instance": "sourceId + assetId + transform + state + revision + bounds + tile ownership",
+    "prepared": "sourceId + authoritative revision -> occupancy/SDF/cut-cell/aperture/GPU preparation",
+    "reuse": "same sourceId and authoritative revision reuses all dependent prepared data",
+    "invalidate": "a revision change invalidates only dependent source/region data",
+    "remove": "source removal invalidates only that source contribution"
+  },
+  "typeRules": [
+    { "type": "Heightmap", "category": "Terrain", "geometryKind": "HeightmapCollisionMesh", "staticClass": "dynamic-terrain", "canFeedSdf": true, "precompute": "recipe-only", "runtimeInspection": "changed height samples in signaled bounds", "stateFields": ["m_heights", "m_width", "m_scale"] },
+    { "type": "TerrainComp", "category": "Terrain", "geometryKind": "HeightmapCollisionMesh", "staticClass": "dynamic-terrain", "canFeedSdf": true, "precompute": "recipe-only", "runtimeInspection": "changed height samples in signaled bounds", "stateFields": ["m_operations", "m_lastDataRevision", "m_lastOpPoint", "m_lastOpRadius"] },
+    { "type": "Piece", "category": "SolidBarrier", "geometryKind": "ColliderHierarchy", "staticClass": "stateful-static", "canFeedSdf": true, "precompute": "prefab collider geometry", "runtimeInspection": "transform and state revision", "stateFields": ["placement", "transform"] },
+    { "type": "WearNTear", "category": "SolidBarrier", "geometryKind": "ColliderHierarchy", "staticClass": "destructible-static", "canFeedSdf": true, "precompute": "prefab collider geometry", "runtimeInspection": "damage/removal state", "stateFields": ["health", "destroyed"] },
+    { "type": "Door", "category": "ThinBlockingBarrier", "geometryKind": "ColliderHierarchy", "staticClass": "dynamic-solid", "canFeedSdf": true, "precompute": "per discrete door state", "runtimeInspection": "state and settled collider transforms", "stateFields": ["Animator.state", "collider transforms"] },
+    { "type": "Destructible", "category": "DynamicSolid", "geometryKind": "ColliderHierarchy", "staticClass": "destructible-static", "canFeedSdf": true, "precompute": "prefab collider geometry", "runtimeInspection": "destroyed state", "stateFields": ["destroyed"] },
+    { "type": "MineRock", "category": "DynamicSolid", "geometryKind": "MeshCollider", "staticClass": "destructible-static", "canFeedSdf": true, "precompute": "intact prefab geometry", "runtimeInspection": "hidden pieces", "stateFields": ["hidden pieces"] },
+    { "type": "MineRock5", "category": "DynamicSolid", "geometryKind": "MeshCollider", "staticClass": "destructible-static", "canFeedSdf": true, "precompute": "intact prefab geometry", "runtimeInspection": "mesh revision", "stateFields": ["mesh state"] },
+    { "type": "Location", "category": "SolidBarrier", "geometryKind": "ColliderHierarchy", "staticClass": "static-solid", "canFeedSdf": true, "precompute": "prefab collider geometry", "runtimeInspection": "transform only", "stateFields": ["transform"] },
+    { "type": "ZNetView", "category": "UnknownUntilAssetLookup", "geometryKind": "AssetRule", "staticClass": "network-instance", "canFeedSdf": false, "precompute": "asset dependent", "runtimeInspection": "prefab id, transform, authoritative ZDO revision", "stateFields": ["ZDO prefab", "ZDO data revision", "transform"] }
+  ],
+  "signalRules": [
+    { "eventLabel": "heightmap terrain operation/regenerate", "ownerType": "TerrainComp.DoOperation -> Heightmap.Regenerate", "change": "terrain heightfield region", "authority": "authoritative-local", "immediate": true, "discoveryFallback": false, "bounds": "TerrainOp.Settings.GetRadius around operation position", "revision": "increment cached terrain source revision", "pceRule": "publish compact local dirty bounds immediately", "liquidCoreRule": "resample and prepare only intersecting heightfield/SDF/cut-cell region" },
+    { "eventLabel": "heightmap terrain operation", "ownerType": "TerrainComp.DoOperation -> Heightmap.Regenerate", "change": "terrain heightfield region", "authority": "authoritative-local", "immediate": true, "discoveryFallback": false, "bounds": "TerrainOp.Settings.GetRadius around operation position", "revision": "increment cached terrain source revision", "pceRule": "publish compact local dirty bounds immediately", "liquidCoreRule": "resample and prepare only intersecting heightfield/SDF/cut-cell region" },
+    { "eventLabel": "heightmap poke/regenerate", "ownerType": "Heightmap.Poke -> Heightmap.Regenerate", "change": "heightmap may have changed", "authority": "consistency-or-network", "immediate": true, "discoveryFallback": true, "bounds": "heightmap root when no causal operation bounds exist", "revision": "inspect Valheim terrain data revision", "pceRule": "fallback consistency signal", "liquidCoreRule": "prepare affected heightmap; never treat as preferred local edit path" },
+    { "eventLabel": "piece placed", "ownerType": "Piece.OnPlaced", "change": "solid source added", "authority": "authoritative", "immediate": true, "discoveryFallback": false, "bounds": "new source bounds", "revision": "source geometry revision", "pceRule": "asset lookup then instance-cache insert", "liquidCoreRule": "reuse prepared asset geometry transformed into affected region" },
+    { "eventLabel": "network geometry destroyed", "ownerType": "ZNetScene.Destroy(GameObject)", "change": "solid source removed", "authority": "authoritative", "immediate": true, "discoveryFallback": false, "bounds": "cached old source bounds", "revision": "source removal", "pceRule": "remove cached instance by sourceId", "liquidCoreRule": "remove only source contribution and update affected region" },
+    { "eventLabel": "door/gate state", "ownerType": "Door.SetState", "change": "blocking topology state", "authority": "authoritative-state", "immediate": true, "discoveryFallback": false, "bounds": "union old/new door bounds", "revision": "door state", "pceRule": "publish state change immediately", "liquidCoreRule": "select/rebuild only new prepared door state" },
+    { "eventLabel": "door/gate settled", "ownerType": "LiquidCore delayed collider consistency check", "change": "settled collider transform", "authority": "consistency", "immediate": false, "discoveryFallback": false, "bounds": "union old/new door bounds", "revision": "settled transform", "pceRule": "suppress if authoritative state already matches", "liquidCoreRule": "apply only if prepared revision differs" },
+    { "eventLabel": "destructible destroyed", "ownerType": "Destructible.DestroyNow", "change": "destructible source removed/changed", "authority": "authoritative", "immediate": true, "discoveryFallback": false, "bounds": "cached old source bounds", "revision": "destroyed state", "pceRule": "publish removal/change immediately", "liquidCoreRule": "invalidate only source contribution" },
+    { "eventLabel": "mine rock hidden", "ownerType": "MineRock.RPC_Hide", "change": "rock sub-geometry hidden", "authority": "authoritative", "immediate": true, "discoveryFallback": false, "bounds": "cached rock bounds or changed sub-piece bounds", "revision": "hidden-piece state", "pceRule": "publish changed rock revision", "liquidCoreRule": "prepare only affected rock region" },
+    { "eventLabel": "mine rock mesh update", "ownerType": "MineRock5.UpdateMesh", "change": "rock mesh topology", "authority": "authoritative-derived", "immediate": true, "discoveryFallback": false, "bounds": "union old/new mesh bounds", "revision": "mesh state", "pceRule": "publish newest coalesced mesh revision", "liquidCoreRule": "invalidate only rock prepared data" },
+    { "eventLabel": "streamed source appeared", "ownerType": "ZNetScene.CreateObject", "change": "network source added", "authority": "authoritative", "immediate": true, "discoveryFallback": true, "bounds": "new source bounds", "revision": "ZDO data revision", "pceRule": "asset lookup and instance-cache insert", "liquidCoreRule": "reuse prepared asset data when available" },
+    { "eventLabel": "streamed source disappeared", "ownerType": "ZNetScene.RemoveObjects/OnZDODestroyed", "change": "network source absent", "authority": "authoritative", "immediate": true, "discoveryFallback": true, "bounds": "cached old source bounds", "revision": "source removal", "pceRule": "remove instance cache entry", "liquidCoreRule": "remove only source contribution" }
+  ],
+  "observedAssets": [
+    { "assetId": "LocationProxy", "observedRootType": "Location", "category": "SolidBarrier", "geometryKind": "MeshCollider", "source": "2026-09-03 failed live trace", "precompute": true },
+    { "assetId": "Rock_3", "observedRootType": "ZNetView", "category": "DynamicSolid", "geometryKind": "MeshCollider", "source": "2026-09-03 failed live trace", "precompute": true },
+    { "assetId": "Rock_4", "observedRootType": "Destructible", "category": "DynamicSolid", "geometryKind": "MeshCollider", "source": "2026-09-03 failed live trace", "precompute": true },
+    { "assetId": "Rock_7", "observedRootType": "Destructible", "category": "DynamicSolid", "geometryKind": "MeshCollider", "source": "historical LiquidCore trace", "precompute": true },
+    { "assetId": "RockDolmen_1", "observedRootType": "Destructible", "category": "DynamicSolid", "geometryKind": "MeshCollider", "source": "historical LiquidCore trace", "precompute": true },
+    { "assetId": "stubbe", "observedRootType": "ZNetView", "category": "DynamicSolid", "geometryKind": "MeshCollider", "source": "historical LiquidCore trace", "precompute": true },
+    { "assetId": "wood_beam_45", "observedRootType": "Piece", "category": "SolidBarrier", "geometryKind": "ColliderHierarchy", "source": "historical LiquidCore trace", "precompute": true }
+  ]
+}

@@ -126,6 +126,7 @@ namespace PhysicalWater
             internal float Time;
             internal long Timestamp;
             internal GameObject Root;
+            internal bool AuthoritativeLocalSignal;
         }
 
         private sealed class DeferredEvent
@@ -621,7 +622,7 @@ namespace PhysicalWater
             if (_applicationQuitting) return;
 
             Stopwatch eventWatch = Stopwatch.StartNew();
-            EventRecord record = CaptureEvent(label, source);
+            EventRecord record = CaptureEvent(label, source, explicitDirtyWorldBounds);
             if (!explicitDirtyWorldBounds.HasValue && label.StartsWith("heightmap", StringComparison.OrdinalIgnoreCase) &&
                 Time.realtimeSinceStartup - _recentTerrainOperationTime <= 2f)
                 explicitDirtyWorldBounds = _recentTerrainOperationBounds;
@@ -756,6 +757,38 @@ namespace PhysicalWater
             Stopwatch stageWatch = Stopwatch.StartNew();
             CachedSource cached;
             _cache.TryGetValue(record.SourceId, out cached);
+            if (record.AuthoritativeLocalSignal && cached != null && record.HasOldBounds && record.HasNewBounds)
+            {
+                Vector3 knownScanCenter = GetScanCenter();
+                float knownScanRadius = Mathf.Max(8f, PhysicalWaterPlugin.Settings.ValheimGeometryScanRadius.Value);
+                float knownVoxelCellSize = Mathf.Max(0.1f, PhysicalWaterPlugin.Settings.ValheimGeometryCellSize.Value);
+                int knownDirtyPadding = Mathf.Max(0, PhysicalWaterPlugin.Settings.ValheimGeometryDirtyPaddingCells.Value);
+                Source knownSource = cached.Source;
+                knownSource.Revision = knownSource.Revision == int.MaxValue ? 1 : knownSource.Revision + 1;
+                knownSource.CheapRevision = knownSource.Revision;
+                VoxelRegion region = EstimateDirtyRegion(record.NewBounds, true, knownScanCenter, knownScanRadius, knownVoxelCellSize, knownDirtyPadding);
+                report.QueuedJobs = LogChangeAndQueue(
+                    ValheimWorldGeometryChangeKind.MovedOrChanged,
+                    knownSource,
+                    record.OldBounds,
+                    record.NewBounds,
+                    true,
+                    true,
+                    region,
+                    "knowledge-authoritative-local-hit",
+                    cached.Chunks != null ? cached.Chunks.Count : 0,
+                    sdfChunkSize,
+                    knownVoxelCellSize,
+                    false);
+                cached.Source = knownSource;
+                cached.Seen = true;
+                cached.ExplicitlyDirty = false;
+                stageWatch.Stop();
+                report.DirtyDetectionMilliseconds = stageWatch.Elapsed.TotalMilliseconds;
+                report.Applied = true;
+                report.Outcome = "known-local-terrain-change";
+                return report;
+            }
             if (destructive)
             {
                 if (cached == null)
@@ -1613,7 +1646,7 @@ namespace PhysicalWater
             _queueBatchWorstFrameMs = 0.0;
         }
 
-        private EventRecord CaptureEvent(string label, Component source)
+        private EventRecord CaptureEvent(string label, Component source, Bounds? explicitDirtyWorldBounds)
         {
             var record = new EventRecord
             {
@@ -1624,23 +1657,42 @@ namespace PhysicalWater
                 SourceType = source != null ? source.GetType().Name : "unknown"
             };
 
-            GameObject root = source != null ? FindGeometryRoot(source.gameObject) : null;
+            ValheimKnowledgeDatabase.SignalRule signalRule;
+            bool authoritativeLocal = explicitDirtyWorldBounds.HasValue &&
+                                      PhysicalWaterPlugin.ValheimKnowledge != null &&
+                                      PhysicalWaterPlugin.ValheimKnowledge.TryGetSignal(record.Reason, out signalRule) &&
+                                      string.Equals(signalRule.authority, "authoritative-local", StringComparison.Ordinal);
+            record.AuthoritativeLocalSignal = authoritativeLocal;
+            GameObject root = source != null
+                ? (authoritativeLocal ? source.gameObject : FindGeometryRoot(source.gameObject))
+                : null;
             if (root != null)
             {
                 record.Root = root;
                 record.SourceId = BuildSourceId(root);
                 record.Path = HierarchyPath(root.transform);
-                string reason;
-                record.Category = Classify(root, out reason);
-                Bounds bounds;
-                if (TryGetRootBounds(root, out bounds) && HasUsableBounds(bounds))
+                if (authoritativeLocal)
                 {
-                    record.NewBounds = bounds;
+                    record.Category = ValheimWorldGeometryCategory.Terrain;
+                    record.OldBounds = explicitDirtyWorldBounds.Value;
+                    record.NewBounds = explicitDirtyWorldBounds.Value;
+                    record.HasOldBounds = true;
                     record.HasNewBounds = true;
+                }
+                else
+                {
+                    string reason;
+                    record.Category = Classify(root, out reason);
+                    Bounds bounds;
+                    if (TryGetRootBounds(root, out bounds) && HasUsableBounds(bounds))
+                    {
+                        record.NewBounds = bounds;
+                        record.HasNewBounds = true;
+                    }
                 }
 
                 CachedSource cached;
-                if (_cache.TryGetValue(record.SourceId, out cached))
+                if (!authoritativeLocal && _cache.TryGetValue(record.SourceId, out cached))
                 {
                     record.OldBounds = cached.Source.Bounds;
                     record.HasOldBounds = true;
@@ -2284,6 +2336,11 @@ namespace PhysicalWater
         private static ValheimWorldGeometryCategory Classify(GameObject root, out string reason)
         {
             reason = string.Empty;
+            if (TryClassifyKnownAsset(root, out ValheimWorldGeometryCategory knownCategory))
+            {
+                reason = "Valheim knowledge asset-cache hit";
+                return knownCategory;
+            }
             if (IsVanillaLiquidHierarchy(root))
             {
                 reason = "vanilla water/ocean/liquid hierarchy excluded";
@@ -2338,6 +2395,18 @@ namespace PhysicalWater
                 return ValheimWorldGeometryCategory.ParticleOrEffect;
             }
             return ValheimWorldGeometryCategory.SolidBarrier;
+        }
+
+        private static bool TryClassifyKnownAsset(GameObject root, out ValheimWorldGeometryCategory category)
+        {
+            category = ValheimWorldGeometryCategory.Unsupported;
+            if (root == null || PhysicalWaterPlugin.ValheimKnowledge == null) return false;
+            ZNetView view = root.GetComponentInParent<ZNetView>();
+            if (view == null) view = root.GetComponentInChildren<ZNetView>(true);
+            if (view == null) return false;
+            ValheimKnowledgeDatabase.AssetRule rule;
+            return PhysicalWaterPlugin.ValheimKnowledge.TryGetAsset(SafePrefabName(view), out rule) &&
+                   Enum.TryParse(rule.category, false, out category);
         }
 
         private static bool CanFeedSdf(ValheimWorldGeometryCategory category)
