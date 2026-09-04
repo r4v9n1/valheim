@@ -46,6 +46,8 @@ namespace PhysicalWater
     internal struct ValheimPceGeometryChange
     {
         internal string SourceId;
+        internal string AssetClassId;
+        internal bool DatabaseHit;
         internal ValheimWorldGeometryCategory Category;
         internal ValheimWorldGeometryChangeKind ChangeKind;
         internal Bounds OldWorldBounds;
@@ -72,6 +74,8 @@ namespace PhysicalWater
         private sealed class Source
         {
             internal string Id;
+            internal string AssetClassId;
+            internal bool DatabaseHit;
             internal string Path;
             internal string RootType;
             internal ValheimWorldGeometryCategory Category;
@@ -1427,6 +1431,8 @@ namespace PhysicalWater
                 PceGeometryChanged?.Invoke(new ValheimPceGeometryChange
                 {
                     SourceId = source.Id,
+                    AssetClassId = source.AssetClassId,
+                    DatabaseHit = source.DatabaseHit,
                     Category = source.Category,
                     ChangeKind = changeKind,
                     OldWorldBounds = oldBounds,
@@ -2319,11 +2325,20 @@ namespace PhysicalWater
             string reason;
             ValheimWorldGeometryCategory category = Classify(root, out reason);
             Transform t = root.transform;
+            string primaryType = PrimaryType(root);
+            ValheimKnowledgeDatabase.TypeRule typeRule;
+            bool typeDatabaseHit = PhysicalWaterPlugin.ValheimKnowledge != null &&
+                                   PhysicalWaterPlugin.ValheimKnowledge.TryGetType(primaryType, out typeRule);
             return new Source
             {
                 Id = BuildSourceId(root),
+                AssetClassId = "type:" + primaryType,
+                // Terrain has a complete database recipe backed by the
+                // prepared heightfield cache. Other type rules classify an
+                // unknown object but do not constitute an asset-geometry hit.
+                DatabaseHit = typeDatabaseHit && category == ValheimWorldGeometryCategory.Terrain,
                 Path = HierarchyPath(t),
-                RootType = PrimaryType(root),
+                RootType = primaryType,
                 Category = category,
                 Kind = ValheimWorldGeometryKind.Unsupported,
                 Position = t.position,
@@ -2354,6 +2369,8 @@ namespace PhysicalWater
             source = new Source
             {
                 Id = BuildSourceId(root),
+                AssetClassId = rule.assetId,
+                DatabaseHit = true,
                 Path = HierarchyPath(transform),
                 RootType = rule.observedRootType,
                 Category = category,

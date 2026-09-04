@@ -41,6 +41,7 @@ namespace PhysicalWater
         private readonly Dictionary<int, int> _coverageGeometryRevisions = new Dictionary<int, int>();
         private readonly Dictionary<int, int> _appliedGeometryRevisions = new Dictionary<int, int>();
         private readonly Dictionary<int, int> _preparedGeometryRevisions = new Dictionary<int, int>();
+        private readonly LiquidCoreNerveTelemetry _nerveTelemetry = new LiquidCoreNerveTelemetry();
         private AssetBundle _bundle;
         private ComputeShader _macShader;
         private ComputeShader _flipShader;
@@ -933,6 +934,7 @@ namespace PhysicalWater
                     _removedGeometryRootIds,
                     out ProbeColonyCausalGeometryBatch causalBatch))
             {
+                long applyStartTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
                 var applyWatch = System.Diagnostics.Stopwatch.StartNew();
                 VolumetricFiniteSolidUpdateDiagnostics causalUpdate = _streaming.SynchronizeGeometryDelta(
                     causalBatch.Generation,
@@ -948,6 +950,22 @@ namespace PhysicalWater
                 double totalNerveMilliseconds = ProbeColonyCausalGeometrySignalQueue.ElapsedMilliseconds(
                     causalBatch.EarliestEventTimestamp,
                     solverReadyTimestamp);
+                IReadOnlyList<ProbeColonyCausalGeometrySignal> drainedSignals = pce.LastDrainedCausalGeometrySignals;
+                pce.MarkCausalGeometryApplied(
+                    drainedSignals,
+                    causalBatch.Generation,
+                    causalBatch.DirtyWorldBounds,
+                    causalBatch.DirtyWorldBounds);
+                _nerveTelemetry.RecordBatch(
+                    drainedSignals,
+                    applyStartTimestamp,
+                    solverReadyTimestamp,
+                    applyWatch.Elapsed.TotalMilliseconds,
+                    causalUpdate,
+                    _domain.MacDomain.LastSolidSdfUploadCells,
+                    _domain.MacDomain.LastSolidCutCellUploadCells,
+                    _domain.MacDomain.LastSolidApertureUploadFaces,
+                    _domain.MacDomain.LastSolidUploadBytes);
                 _observedGeometryGeneration = causalBatch.Generation;
                 PhysicalWaterPlugin.Log.LogInfo(
                     "PW_PCE_LC_NERVE geometryReady=True, generation=" + causalBatch.Generation +

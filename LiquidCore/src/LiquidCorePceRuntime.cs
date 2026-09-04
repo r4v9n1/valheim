@@ -6,6 +6,27 @@ using UnityEngine;
 
 namespace PhysicalWater
 {
+    internal sealed class SourceRuntimeRecord
+    {
+        internal string SourceId;
+        internal string AssetClassId;
+        internal uint AuthoritativeRevision;
+        internal Vector3 Position;
+        internal Quaternion Rotation;
+        internal Vector3 Scale;
+        internal Bounds WorldBounds;
+        internal Vector3Int PceTileMin;
+        internal Vector3Int PceTileMax;
+        internal int PceOccupancyHandle;
+        internal int LcPreparedGeometryHandle;
+        internal Bounds SdfDependencyRegion;
+        internal Bounds CutCellDependencyRegion;
+        internal int GpuResidentRegionHandle;
+        internal uint LastAppliedLcRevision;
+        internal long LastAppliedGeneration;
+        internal bool DatabaseHit;
+    }
+
     internal sealed class LiquidCorePceRuntime : MonoBehaviour
     {
         private readonly ProbeColonyWorld _world = new ProbeColonyWorld();
@@ -15,6 +36,7 @@ namespace PhysicalWater
         private ProbeColonyChangeQueue _queue;
         private readonly ProbeColonyCausalGeometrySignalQueue _causalSignals = new ProbeColonyCausalGeometrySignalQueue();
         private readonly Dictionary<string, ValheimPceGeometryChange> _activeSources = new Dictionary<string, ValheimPceGeometryChange>();
+        private readonly Dictionary<string, SourceRuntimeRecord> _sourceRuntimeRecords = new Dictionary<string, SourceRuntimeRecord>();
         // The Valheim adapter publishes a root-level digest for the exact
         // ready snapshot. Retain that digest at the PCE boundary; individual
         // event revisions are source-level and cannot represent overlapping
@@ -26,6 +48,8 @@ namespace PhysicalWater
         private readonly Dictionary<int, GameObject> _snapshotPceRoots = new Dictionary<int, GameObject>();
         private readonly Dictionary<int, int> _snapshotPceRevisions = new Dictionary<int, int>();
         private int _publishedEvents;
+        private int _nextSourceRuntimeHandle;
+        private int _directQueueBypasses;
         internal static LiquidCorePceRuntime Instance { get; private set; }
 
         internal ProbeColonyWorld World => _world;
@@ -62,11 +86,13 @@ namespace PhysicalWater
 
         private void OnGeometryChanged(ValheimPceGeometryChange change)
         {
+            SourceRuntimeRecord runtimeRecord = ResolveSourceRuntimeRecord(change);
             VolumetricWorldGeometryVoxelRegion region = new VolumetricWorldGeometryVoxelRegion { Min = change.DirtyMin, Max = change.DirtyMax, Valid = true };
             VolumetricWorldGeometryCategory pceCategory = ToPceCategory(change.Category);
             bool accepted = _causalSignals.Publish(new ProbeColonyCausalGeometrySignal
             {
                 SourceId = change.SourceId,
+                AssetClassId = runtimeRecord.AssetClassId,
                 ChangeKind = change.ChangeKind == ValheimWorldGeometryChangeKind.Added
                     ? VolumetricWorldGeometryChangeKind.Added
                     : change.ChangeKind == ValheimWorldGeometryChangeKind.Removed
@@ -74,6 +100,9 @@ namespace PhysicalWater
                         : VolumetricWorldGeometryChangeKind.MovedOrChanged,
                 Category = pceCategory,
                 SourceRevision = change.Revision,
+                SourceRuntimeHandle = runtimeRecord.PceOccupancyHandle,
+                DependencyHandle = runtimeRecord.LcPreparedGeometryHandle,
+                DatabaseHit = runtimeRecord.DatabaseHit,
                 Generation = change.Generation,
                 Root = change.Root,
                 RootInstanceId = change.RootInstanceId,
@@ -94,20 +123,28 @@ namespace PhysicalWater
                 return;
             }
             _publishedEvents++;
-            PhysicalWaterPlugin.Log.LogInfo("LiquidCore PCE geometry event #" + _publishedEvents + ": source=" + change.SourceId + ", category=" + change.Category + ", change=" + change.ChangeKind + ", revision=" + change.Revision + ", kind=" + change.Kind + ", root=" + change.RootType + ", region=" + change.DirtyMin + ".." + change.DirtyMax + ".");
+            if (runtimeRecord.DatabaseHit) _directQueueBypasses++;
+            PhysicalWaterPlugin.Log.LogInfo("LiquidCore PCE geometry event #" + _publishedEvents + ": source=" + change.SourceId + ", asset=" + runtimeRecord.AssetClassId + ", database=" + (runtimeRecord.DatabaseHit ? "hit" : "miss") + ", directQueueBypass=" + runtimeRecord.DatabaseHit + ", directQueueBypasses=" + _directQueueBypasses + ", category=" + change.Category + ", change=" + change.ChangeKind + ", revision=" + change.Revision + ", kind=" + change.Kind + ", root=" + change.RootType + ", region=" + change.DirtyMin + ".." + change.DirtyMax + ".");
             if (change.ChangeKind == ValheimWorldGeometryChangeKind.Removed)
             {
-                _events.PublishRemoved(change.SourceId, pceCategory, region, change.Revision);
+                // Known callbacks already updated the shared runtime record and
+                // published the direct LC delta above. Do not mirror that same
+                // event into the approximate discovery queue.
+                if (!runtimeRecord.DatabaseHit)
+                    _events.PublishRemoved(change.SourceId, pceCategory, region, change.Revision);
                 _activeSources.Remove(change.SourceId);
                 _geometry.RemoveSource(change.SourceId);
                 return;
             }
 
             _activeSources[change.SourceId] = change;
-            if (change.ChangeKind == ValheimWorldGeometryChangeKind.Added)
-                _events.PublishAdded(change.SourceId, pceCategory, region, change.Revision);
-            else
-                _events.PublishChanged(change.SourceId, pceCategory, region, change.Revision);
+            if (!runtimeRecord.DatabaseHit)
+            {
+                if (change.ChangeKind == ValheimWorldGeometryChangeKind.Added)
+                    _events.PublishAdded(change.SourceId, pceCategory, region, change.Revision);
+                else
+                    _events.PublishChanged(change.SourceId, pceCategory, region, change.Revision);
+            }
             // Do not eagerly materialize the approximate solid occupancy here.
             // A terrain discovery region can cover the entire active window
             // (over one million cells); doing that synchronously from the
@@ -118,6 +155,62 @@ namespace PhysicalWater
         }
 
         internal bool TryGetActiveSource(string sourceId, out ValheimPceGeometryChange change) => _activeSources.TryGetValue(sourceId, out change);
+
+        internal IReadOnlyList<ProbeColonyCausalGeometrySignal> LastDrainedCausalGeometrySignals =>
+            _causalSignals.LastDrainedSignals;
+
+        internal bool TryGetSourceRuntimeRecord(string sourceId, out SourceRuntimeRecord record) =>
+            _sourceRuntimeRecords.TryGetValue(sourceId, out record);
+
+        internal void MarkCausalGeometryApplied(
+            IReadOnlyList<ProbeColonyCausalGeometrySignal> signals,
+            long generation,
+            Bounds sdfDependencyRegion,
+            Bounds cutCellDependencyRegion)
+        {
+            if (signals == null) return;
+            for (int i = 0; i < signals.Count; i++)
+            {
+                ProbeColonyCausalGeometrySignal signal = signals[i];
+                if (!_sourceRuntimeRecords.TryGetValue(signal.SourceId, out SourceRuntimeRecord record)) continue;
+                if (signal.SourceRevision < record.LastAppliedLcRevision) continue;
+                record.LastAppliedLcRevision = signal.SourceRevision;
+                record.LastAppliedGeneration = generation;
+                record.SdfDependencyRegion = sdfDependencyRegion;
+                record.CutCellDependencyRegion = cutCellDependencyRegion;
+                record.GpuResidentRegionHandle = record.LcPreparedGeometryHandle;
+            }
+        }
+
+        private SourceRuntimeRecord ResolveSourceRuntimeRecord(ValheimPceGeometryChange change)
+        {
+            if (!_sourceRuntimeRecords.TryGetValue(change.SourceId, out SourceRuntimeRecord record))
+            {
+                int handle = ++_nextSourceRuntimeHandle;
+                record = new SourceRuntimeRecord
+                {
+                    SourceId = change.SourceId,
+                    PceOccupancyHandle = handle,
+                    LcPreparedGeometryHandle = handle
+                };
+                _sourceRuntimeRecords.Add(change.SourceId, record);
+            }
+
+            record.AssetClassId = string.IsNullOrEmpty(change.AssetClassId) ? "unknown" : change.AssetClassId;
+            record.AuthoritativeRevision = change.Revision;
+            record.WorldBounds = change.HasNewWorldBounds ? change.NewWorldBounds : change.OldWorldBounds;
+            record.PceTileMin = change.DirtyMin;
+            record.PceTileMax = change.DirtyMax;
+            record.DatabaseHit = change.DatabaseHit;
+            if (change.Root != null)
+            {
+                Transform transform = change.Root.transform;
+                record.Position = transform.position;
+                record.Rotation = transform.rotation;
+                record.Scale = transform.lossyScale;
+            }
+            return record;
+        }
 
         internal bool TryConsumeCausalGeometrySignals(
             Bounds worldBounds,

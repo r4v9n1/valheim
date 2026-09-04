@@ -207,6 +207,40 @@ foreach ($requiredAssetDescriptorContract in @(
     }
 }
 
+$pceRuntimePath = Join-Path $PSScriptRoot 'src\LiquidCorePceRuntime.cs'
+$pceRuntimeSource = Get-Content -LiteralPath $pceRuntimePath -Raw
+$nerveTelemetryPath = Join-Path $PSScriptRoot 'src\LiquidCoreNerveTelemetry.cs'
+$nerveTelemetrySource = Get-Content -LiteralPath $nerveTelemetryPath -Raw
+foreach ($requiredSharedRuntimeContract in @(
+    'SourceRuntimeRecord',
+    'AssetClassId',
+    'AuthoritativeRevision',
+    'PceOccupancyHandle',
+    'LcPreparedGeometryHandle',
+    'SdfDependencyRegion',
+    'CutCellDependencyRegion',
+    'GpuResidentRegionHandle',
+    'LastAppliedLcRevision',
+    'if (!runtimeRecord.DatabaseHit)',
+    'LastDrainedCausalGeometrySignals')) {
+    if (!$pceRuntimeSource.Contains($requiredSharedRuntimeContract)) {
+        throw "Shared PCE/LC runtime-record contract is incomplete: $requiredSharedRuntimeContract"
+    }
+}
+foreach ($requiredTelemetryContract in @(
+    'PW_NERVE_EVENT',
+    'EventTimestamp',
+    'ReadyTimestamp',
+    'solverReadyTimestamp',
+    'mean=',
+    'median=',
+    'p95=',
+    'worst=')) {
+    if (!$nerveTelemetrySource.Contains($requiredTelemetryContract)) {
+        throw "Permanent T0/T1/T2 telemetry contract is incomplete: $requiredTelemetryContract"
+    }
+}
+
 if (!(Test-Path -LiteralPath $builtDll -PathType Leaf)) { throw "Build output is missing: $builtDll" }
 $assembly = [Reflection.Assembly]::LoadFile($builtDll)
 $resources = @($assembly.GetManifestResourceNames())
