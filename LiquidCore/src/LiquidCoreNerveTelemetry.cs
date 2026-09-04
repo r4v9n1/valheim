@@ -115,6 +115,8 @@ namespace PhysicalWater
                     ", db=" + (signal.DatabaseHit ? "hit" : "miss") +
                     ", revision=" + signal.SourceRevision +
                     ", handles=" + signal.SourceRuntimeHandle + "/" + signal.DependencyHandle +
+                    ", handoff=shared-runtime/dependency-handles" +
+                    ", copiedGeometryBytes=0" +
                     ", dirty=" + signal.DirtyWorldBounds +
                     ", ticks=" + signal.EventTimestamp + "/" + signal.ReadyTimestamp + "/" + solverReadyTimestamp +
                     ", sensing=" + sensing.ToString("F3", CultureInfo.InvariantCulture) +

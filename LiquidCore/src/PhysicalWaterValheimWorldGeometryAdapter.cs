@@ -2488,6 +2488,7 @@ namespace PhysicalWater
             if (PhysicalWaterPlugin.ValheimKnowledge.ContainsAsset(assetId)) return;
             Component[] components = source.Root.GetComponentsInChildren<Component>(true);
             var componentTypeSet = new HashSet<string>(StringComparer.Ordinal);
+            var colliderTypeSet = new HashSet<string>(StringComparer.Ordinal);
             bool destructible = false;
             bool buildPiece = false;
             bool door = false;
@@ -2496,6 +2497,7 @@ namespace PhysicalWater
                 if (components[i] == null) continue;
                 string typeName = components[i].GetType().Name;
                 componentTypeSet.Add(typeName);
+                if (components[i] is Collider) colliderTypeSet.Add(typeName);
                 destructible |= Matches(typeName, "Destructible", "MineRock", "MineRock5", "WearNTear");
                 buildPiece |= Matches(typeName, "Piece", "WearNTear");
                 door |= Matches(typeName, "Door");
@@ -2503,6 +2505,9 @@ namespace PhysicalWater
             string[] componentTypes = new string[componentTypeSet.Count];
             componentTypeSet.CopyTo(componentTypes);
             Array.Sort(componentTypes, StringComparer.Ordinal);
+            string[] colliderTypes = new string[colliderTypeSet.Count];
+            colliderTypeSet.CopyTo(colliderTypes);
+            Array.Sort(colliderTypes, StringComparer.Ordinal);
             Bounds localBounds = WorldBoundsToLocalBounds(source.Root.transform, source.Bounds);
             string signature = source.Kind + ":" + source.Colliders + ":" + source.MeshColliders + ":" +
                                source.PrimitiveColliders + ":" + source.TriggerColliders + ":" +
@@ -2522,6 +2527,7 @@ namespace PhysicalWater
                 source.MeshTriangles,
                 signature,
                 componentTypes,
+                colliderTypes,
                 localBounds.center,
                 localBounds.size,
                 destructible,

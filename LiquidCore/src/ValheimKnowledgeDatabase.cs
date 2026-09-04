@@ -245,6 +245,7 @@ namespace PhysicalWater
             int meshTriangles,
             string geometrySignature,
             string[] componentTypes,
+            string[] colliderTypes,
             Vector3 localBoundsCenter,
             Vector3 localBoundsSize,
             bool destructible,
@@ -268,6 +269,7 @@ namespace PhysicalWater
                 meshTriangles = meshTriangles,
                 geometrySignature = geometrySignature,
                 componentTypes = componentTypes,
+                colliderTypes = colliderTypes,
                 localBoundsCenter = new[] { localBoundsCenter.x, localBoundsCenter.y, localBoundsCenter.z },
                 localBoundsSize = new[] { localBoundsSize.x, localBoundsSize.y, localBoundsSize.z },
                 destructible = destructible,
@@ -276,6 +278,7 @@ namespace PhysicalWater
             };
             _assets.Add(assetId, rule);
             _learnedAssets.Add(rule);
+            if (HasReusableGeometryDescriptor(rule)) ReusableGeometryDescriptorCount++;
             _learnedDirty = true;
             return true;
         }
@@ -369,14 +372,31 @@ namespace PhysicalWater
                 {
                     AssetRule rule = overlay.observedAssets[i];
                     if (rule == null || string.IsNullOrEmpty(rule.assetId) || _assets.ContainsKey(rule.assetId)) continue;
+                    NormalizeLearnedAssetRule(rule);
                     _assets.Add(rule.assetId, rule);
                     _learnedAssets.Add(rule);
+                    if (HasReusableGeometryDescriptor(rule)) ReusableGeometryDescriptorCount++;
                 }
             }
             catch (Exception ex)
             {
                 PhysicalWaterPlugin.Log?.LogWarning("LiquidCore ignored invalid learned Valheim knowledge: " + ex.Message);
             }
+        }
+
+        private static void NormalizeLearnedAssetRule(AssetRule rule)
+        {
+            if (rule == null || (rule.colliderTypes != null && rule.colliderTypes.Length > 0)) return;
+            if (rule.meshColliderCount > 0 && rule.primitiveColliderCount > 0)
+                rule.colliderTypes = new[] { "MeshCollider", "PrimitiveCollider" };
+            else if (rule.meshColliderCount > 0)
+                rule.colliderTypes = new[] { "MeshCollider" };
+            else if (string.Equals(rule.geometryKind, "BoxCollider", StringComparison.Ordinal) ||
+                     string.Equals(rule.geometryKind, "SphereCollider", StringComparison.Ordinal) ||
+                     string.Equals(rule.geometryKind, "CapsuleCollider", StringComparison.Ordinal))
+                rule.colliderTypes = new[] { rule.geometryKind };
+            else if (rule.primitiveColliderCount > 0)
+                rule.colliderTypes = new[] { "PrimitiveCollider" };
         }
 
         private static string HashFile(string path)
