@@ -81,6 +81,7 @@ namespace PhysicalWater
             internal Quaternion Rotation;
             internal Vector3 Scale;
             internal int CheapRevision;
+            internal int GeometryHash;
             internal int Revision;
             internal int Colliders;
             internal int MeshColliders;
@@ -206,6 +207,7 @@ namespace PhysicalWater
         }
 
         private readonly Dictionary<string, CachedSource> _cache = new Dictionary<string, CachedSource>();
+        private readonly Dictionary<string, int> _lastSourceRevisions = new Dictionary<string, int>();
         private readonly Dictionary<string, EventRecord> _eventBySource = new Dictionary<string, EventRecord>();
         private readonly Dictionary<int, Source> _scanRoots = new Dictionary<int, Source>();
         private readonly Dictionary<ChunkKey, ChunkState> _chunkCache = new Dictionary<ChunkKey, ChunkState>();
@@ -786,8 +788,12 @@ namespace PhysicalWater
                 float knownVoxelCellSize = Mathf.Max(0.1f, PhysicalWaterPlugin.Settings.ValheimGeometryCellSize.Value);
                 int knownDirtyPadding = Mathf.Max(0, PhysicalWaterPlugin.Settings.ValheimGeometryDirtyPaddingCells.Value);
                 Source knownSource = cached.Source;
-                knownSource.Revision = knownSource.Revision == int.MaxValue ? 1 : knownSource.Revision + 1;
-                knownSource.CheapRevision = knownSource.Revision;
+                knownSource.Revision = NextSourceRevision(knownSource.Revision);
+                _lastSourceRevisions[knownSource.Id] = knownSource.Revision;
+                // The causal terrain callback deliberately avoids hashing the
+                // complete heightfield. Mark the cached hash unknown so a
+                // future low-frequency consistency scan can establish it.
+                knownSource.GeometryHash = int.MinValue;
                 VoxelRegion region = EstimateDirtyRegion(record.NewBounds, true, knownScanCenter, knownScanRadius, knownVoxelCellSize, knownDirtyPadding);
                 report.QueuedJobs = LogChangeAndQueue(
                     ValheimWorldGeometryChangeKind.MovedOrChanged,
@@ -824,10 +830,13 @@ namespace PhysicalWater
                 float cellSize = Mathf.Max(0.1f, PhysicalWaterPlugin.Settings.ValheimGeometryCellSize.Value);
                 int padding = Mathf.Max(0, PhysicalWaterPlugin.Settings.ValheimGeometryDirtyPaddingCells.Value);
                 VoxelRegion region = EstimateDirtyRegion(cached.Source.Bounds, true, center, radius, cellSize, padding);
+                Source removedSource = cached.Source;
+                removedSource.Revision = NextSourceRevision(removedSource.Revision);
+                _lastSourceRevisions[removedSource.Id] = removedSource.Revision;
                 report.QueuedJobs = LogChangeAndQueue(
                     ValheimWorldGeometryChangeKind.Removed,
-                    cached.Source,
-                    cached.Source.Bounds,
+                    removedSource,
+                    removedSource.Bounds,
                     default(Bounds),
                     true,
                     false,
@@ -1184,6 +1193,8 @@ namespace PhysicalWater
                 removed++;
                 Encapsulate(ref dirtyBounds, ref hasDirty, cached.Source.Bounds);
                 VoxelRegion region = EstimateDirtyRegion(cached.Source.Bounds, true, center, radius, cellSize, padding);
+                cached.Source.Revision = NextSourceRevision(cached.Source.Revision);
+                _lastSourceRevisions[cached.Source.Id] = cached.Source.Revision;
                 queuedJobs += LogChangeAndQueue(ValheimWorldGeometryChangeKind.Removed, cached.Source, cached.Source.Bounds, default(Bounds), true, false, region, "remove", cached.Chunks != null ? cached.Chunks.Count : 0, sdfChunkSize, cellSize);
             }
             for (int i = 0; i < _removed.Count; i++) RemoveCachedSource(_removed[i]);
@@ -2315,7 +2326,7 @@ namespace PhysicalWater
             };
         }
 
-        private static void FinalizeSource(Source source, CachedSource cached)
+        private void FinalizeSource(Source source, CachedSource cached)
         {
             if (source.Colliders > 1)
             {
@@ -2347,13 +2358,30 @@ namespace PhysicalWater
                 cached.Source.CheapRevision == source.CheapRevision &&
                 !BoundsChanged(cached.Source.Bounds, source.Bounds))
             {
+                source.GeometryHash = cached.Source.GeometryHash;
                 source.Revision = cached.Source.Revision;
             }
             else
             {
-                source.Revision = ComputeRevision(source);
+                source.GeometryHash = ComputeRevision(source);
+                bool sameAuthoritativeState = cached != null &&
+                                              cached.Source.GeometryHash != int.MinValue &&
+                                              cached.Source.GeometryHash == source.GeometryHash &&
+                                              !BoundsChanged(cached.Source.Bounds, source.Bounds);
+                int previousRevision = cached != null
+                    ? cached.Source.Revision
+                    : (_lastSourceRevisions.TryGetValue(source.Id, out int retainedRevision) ? retainedRevision : 0);
+                source.Revision = sameAuthoritativeState
+                    ? cached.Source.Revision
+                    : NextSourceRevision(previousRevision);
             }
+            _lastSourceRevisions[source.Id] = source.Revision;
             LearnAssetKnowledge(source);
+        }
+
+        private static int NextSourceRevision(int revision)
+        {
+            return revision <= 0 || revision == int.MaxValue ? 1 : revision + 1;
         }
 
         private static void LearnAssetKnowledge(Source source)

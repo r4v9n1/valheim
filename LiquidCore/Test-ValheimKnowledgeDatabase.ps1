@@ -147,6 +147,20 @@ if ($fastPathIndex -lt 0 -or $rediscoveryIndex -lt 0 -or $fastPathIndex -gt $red
 foreach ($required in @('knowledge-authoritative-local-hit', 'EstimateDirtyRegion(record.NewBounds', 'record.OldBounds', 'record.NewBounds')) {
     if (!$adapterSource.Contains($required)) { throw "Terrain fast-path contract missing: $required" }
 }
+$causalQueuePath = Join-Path $PSScriptRoot '..\..\..\workspace\LiquidCore\UnityPhysicalOcean\Runtime\ProbeColonyCausalGeometrySignals.cs'
+$causalQueueSource = Get-Content -LiteralPath $causalQueuePath -Raw
+foreach ($requiredRevisionCacheContract in @(
+    'internal int GeometryHash;',
+    '_lastSourceRevisions',
+    'NextSourceRevision(knownSource.Revision)',
+    'removedSource.Revision = NextSourceRevision',
+    'cached.Source.Revision = NextSourceRevision',
+    '_acceptedSourceRevisions',
+    'RevisionCacheHits++')) {
+    if (!$adapterSource.Contains($requiredRevisionCacheContract) -and !$causalQueueSource.Contains($requiredRevisionCacheContract)) {
+        throw "Authoritative SourceID + revision cache contract is incomplete: $requiredRevisionCacheContract"
+    }
+}
 
 if (!(Test-Path -LiteralPath $builtDll -PathType Leaf)) { throw "Build output is missing: $builtDll" }
 $assembly = [Reflection.Assembly]::LoadFile($builtDll)
@@ -221,6 +235,8 @@ $lookupNanoseconds = $watch.Elapsed.TotalMilliseconds * 1000000.0 / 100000.0
     TerrainFastPathBeforeRediscovery = $true
     DirectStreamedLifecycleBridge = $true
     CompiledLifecycleBridgeVerified = $true
+    MonotonicInstanceRevisionContract = $true
+    PersistentPceRevisionCache = $true
     FailedLiveFullRootCells = $fullRootCells
     CandidateLocalCells = $localCells
     DirtyCellReduction = [math]::Round($reduction, 2)

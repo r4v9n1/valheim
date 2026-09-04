@@ -62,11 +62,9 @@ namespace PhysicalWater
 
         private void OnGeometryChanged(ValheimPceGeometryChange change)
         {
-            _publishedEvents++;
-            PhysicalWaterPlugin.Log.LogInfo("LiquidCore PCE geometry event #" + _publishedEvents + ": source=" + change.SourceId + ", category=" + change.Category + ", change=" + change.ChangeKind + ", revision=" + change.Revision + ", kind=" + change.Kind + ", root=" + change.RootType + ", region=" + change.DirtyMin + ".." + change.DirtyMax + ".");
             VolumetricWorldGeometryVoxelRegion region = new VolumetricWorldGeometryVoxelRegion { Min = change.DirtyMin, Max = change.DirtyMax, Valid = true };
             VolumetricWorldGeometryCategory pceCategory = ToPceCategory(change.Category);
-            _causalSignals.Publish(new ProbeColonyCausalGeometrySignal
+            bool accepted = _causalSignals.Publish(new ProbeColonyCausalGeometrySignal
             {
                 SourceId = change.SourceId,
                 ChangeKind = change.ChangeKind == ValheimWorldGeometryChangeKind.Added
@@ -86,6 +84,17 @@ namespace PhysicalWater
                 EventTimestamp = change.EventTimestamp,
                 ReadyTimestamp = change.ReadyTimestamp
             });
+            if (!accepted)
+            {
+                if (PhysicalWaterPlugin.Settings != null && PhysicalWaterPlugin.Settings.Diagnostics.Value)
+                    PhysicalWaterPlugin.Log.LogInfo(
+                        "LiquidCore PCE instance-cache reuse: source=" + change.SourceId +
+                        ", revision=" + change.Revision +
+                        "; no probe update or LC geometry signal emitted.");
+                return;
+            }
+            _publishedEvents++;
+            PhysicalWaterPlugin.Log.LogInfo("LiquidCore PCE geometry event #" + _publishedEvents + ": source=" + change.SourceId + ", category=" + change.Category + ", change=" + change.ChangeKind + ", revision=" + change.Revision + ", kind=" + change.Kind + ", root=" + change.RootType + ", region=" + change.DirtyMin + ".." + change.DirtyMax + ".");
             if (change.ChangeKind == ValheimWorldGeometryChangeKind.Removed)
             {
                 _events.PublishRemoved(change.SourceId, pceCategory, region, change.Revision);
