@@ -8,6 +8,28 @@ using UnityEngine;
 
 namespace PhysicalWater
 {
+    internal sealed class PhysicalWaterDeferredFillGate
+    {
+        internal bool Pending { get; private set; }
+
+        internal void Queue()
+        {
+            Pending = true;
+        }
+
+        internal bool TryConsume(bool geometryReady)
+        {
+            if (!geometryReady || !Pending) return false;
+            Pending = false;
+            return true;
+        }
+
+        internal void Clear()
+        {
+            Pending = false;
+        }
+    }
+
     internal sealed class PhysicalWaterDevE1Runtime : MonoBehaviour
     {
         internal static PhysicalWaterDevE1Runtime Instance { get; private set; }
@@ -62,6 +84,7 @@ namespace PhysicalWater
         private long _preparedGeometryGeneration = -1;
         private int _preparedGeometryStateRevision = int.MinValue;
         private bool _preparedGeometryIsInitial;
+        private readonly PhysicalWaterDeferredFillGate _deferredFill = new PhysicalWaterDeferredFillGate();
 
         // Full field probes are intentionally explicit (F11) because their GPU
         // downloads serialize the render and simulation queues. Never schedule
@@ -358,9 +381,19 @@ namespace PhysicalWater
             if (!ReadyForCommand(args, false)) return;
             if (_appliedGeometryStateRevision == int.MinValue)
             {
-                Reply(args, "E1 geometry coverage is still preparing; no fluid was spawned.");
-                if (args == null && Player.m_localPlayer != null)
-                    Player.m_localPlayer.Message(MessageHud.MessageType.TopLeft, "PhysicalWater E1 geometry is still preparing.");
+                if (args == null || args.Length <= 1)
+                {
+                    _deferredFill.Queue();
+                    const string queued = "E1 geometry coverage is still preparing; the 216m3 fill request is queued and will run once geometry is ready.";
+                    Reply(args, queued);
+                    PhysicalWaterPlugin.Log.LogInfo("PW_E3_F7_QUEUED geometryReady=False, pendingDefaultFill=True.");
+                    if (Player.m_localPlayer != null)
+                        Player.m_localPlayer.Message(MessageHud.MessageType.TopLeft, queued);
+                }
+                else
+                {
+                    Reply(args, "E1 geometry coverage is still preparing; explicit parameterized fill was not consumed. Retry after PW_E3_F6_READY.");
+                }
                 return;
             }
             Vector3 worldPlayer = Player.m_localPlayer != null
@@ -400,6 +433,7 @@ namespace PhysicalWater
         private void ClearCommand(Terminal.ConsoleEventArgs args)
         {
             if (!ReadyForCommand(args, false)) return;
+            _deferredFill.Clear();
             _streaming.ClearFluid();
             Reply(args, "E3 fluid cleared. particles=0, initialVolume=0, streaming window remains allocated.");
             PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devE3 fluid cleared explicitly; no automatic refill is enabled.");
@@ -992,6 +1026,11 @@ namespace PhysicalWater
                     applyWatch.Elapsed.TotalMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "ms, initial=" +
                     wasInitialPreparation + ": " + preparedUpdate + ".");
                 if (preparedUpdate.ParticlesBefore > 0) RequestGeometrySafety(appliedGeneration);
+                if (_deferredFill.TryConsume(_appliedGeometryStateRevision != int.MinValue))
+                {
+                    PhysicalWaterPlugin.Log.LogInfo("PW_E3_F7_DEQUEUED geometryReady=True, pendingDefaultFill=False; executing preserved 216m3 request.");
+                    FillBoxCommand(null);
+                }
                 return;
             }
             // PCE publishes only a completed causal generation. Consuming that
@@ -1288,6 +1327,7 @@ namespace PhysicalWater
             _preparedGeometryStateRevision = int.MinValue;
             _preparedGeometryIsInitial = false;
             _preparedGeometryRevisions.Clear();
+            _deferredFill.Clear();
             _coverageWindowOrigin = new Vector3(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
         }
 
