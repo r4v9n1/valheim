@@ -90,6 +90,9 @@ namespace PhysicalWater
         private int _preparedGeometryStateRevision = int.MinValue;
         private bool _preparedGeometryIsInitial;
         private readonly PhysicalWaterDeferredFillGate _deferredFill = new PhysicalWaterDeferredFillGate();
+        private readonly PhysicalWaterOneHitTerrainTruth _oneHitTerrainTruth = new PhysicalWaterOneHitTerrainTruth();
+
+        internal PhysicalWaterOneHitTerrainTruth OneHitTerrainTruth => _oneHitTerrainTruth;
 
         // Full field probes are intentionally explicit (F11) because their GPU
         // downloads serialize the render and simulation queues. Never schedule
@@ -149,12 +152,17 @@ namespace PhysicalWater
             if (!_domain.Paused && _streaming.HasDeferredStep && _streaming.TryCompleteDeferredStep())
             {
                 substeps++;
+                _oneHitTerrainTruth.OnStepCompleted();
             }
             // Complete the current authoritative substep before testing the
             // PCE handoff. Checking only at the start of Update starved dynamic
             // geometry indefinitely because the deferred pipeline normally
             // remained occupied across frame boundaries.
-            if (!_streaming.HasDeferredStep) SynchronizeGeometryIfReady();
+            if (!_streaming.HasDeferredStep)
+            {
+                _oneHitTerrainTruth.TryArm(_domain);
+                SynchronizeGeometryIfReady();
+            }
             // The GPU field copy and CPU pressure graph no longer occupy one
             // uninterrupted Update. Begin one authoritative substep, render
             // while its CPU projection runs, then finalize it on a later frame.
@@ -946,6 +954,7 @@ namespace PhysicalWater
                     if (signal.RootInstanceId == 0 || signal.PreparedGeometry == null) continue;
                     _changedPreparedGeometry[signal.RootInstanceId] = signal.PreparedGeometry;
                 }
+                bool oneHitApply = _oneHitTerrainTruth.BeforeLcGeometryApply(drainedSignals, causalBatch);
                 VolumetricFiniteSolidUpdateDiagnostics causalUpdate = _streaming.SynchronizeGeometryDelta(
                     causalBatch.Generation,
                     _changedGeometryRoots,
@@ -953,6 +962,7 @@ namespace PhysicalWater
                     causalBatch.DirtyWorldBounds,
                     _changedPreparedGeometry,
                     synchronizeDiagnostics: false);
+                if (oneHitApply) _oneHitTerrainTruth.AfterLcGeometryApply(causalUpdate);
                 applyWatch.Stop();
                 long solverReadyTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
                 double lcResponseMilliseconds = ProbeColonyCausalGeometrySignalQueue.ElapsedMilliseconds(

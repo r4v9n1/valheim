@@ -47,9 +47,14 @@ namespace PhysicalWater
             if (modifier.m_smooth) radius = Mathf.Max(radius, modifier.m_smoothRadius);
             if (modifier.m_paintCleared) radius = Mathf.Max(radius, modifier.m_paintRadius);
             float vertical = 8f + Mathf.Abs(modifier.m_levelOffset) + Mathf.Abs(modifier.m_raiseDelta);
-            Heightmap heightmap = Heightmap.FindHeightmap(__instance.transform.position);
+            Heightmap heightmap = Heightmap.FindHeightmap(pos);
             ValheimGeometryHeightmapEventState.RegisterTerrainOperation(
                 heightmap,
+                new Bounds(pos, new Vector3(2f * radius, 2f * vertical, 2f * radius)));
+            PhysicalWaterDevE1Runtime.Instance?.OneHitTerrainTruth?.OnTerrainOperationPrefix(
+                heightmap,
+                pos,
+                modifier,
                 new Bounds(pos, new Vector3(2f * radius, 2f * vertical, 2f * radius)));
         }
     }
@@ -59,6 +64,7 @@ namespace PhysicalWater
     {
         private static void Postfix(Heightmap __instance)
         {
+            PhysicalWaterDevE1Runtime.Instance?.OneHitTerrainTruth?.OnHeightmapRegenerated(__instance);
             bool poke = ValheimGeometryHeightmapEventState.ConsumePoke(__instance);
             if (ValheimGeometryHeightmapEventState.TryConsumeTerrainOperation(__instance, out Bounds dirtyWorldBounds))
             {
