@@ -123,6 +123,7 @@ namespace PhysicalWater
 
         private void OnDestroy()
         {
+            ValheimKnowledge?.FlushLearnedAssets();
             if (_harmony != null)
             {
                 try

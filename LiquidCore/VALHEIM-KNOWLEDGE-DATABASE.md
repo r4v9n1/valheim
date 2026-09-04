@@ -8,7 +8,7 @@ The current inventory is keyed to Steam build `21981559`, assembly SHA-256 `3b26
 - 12 authoritative or consistency signal contracts;
 - 7 prefabs observed in retained LiquidCore live traces.
 
-The observed-prefab list is deliberately incremental. Unknown assets remain on the existing safe runtime-inspection path and can be learned without invalidating known entries. No broad prefab scan is performed on normal startup.
+The observed-prefab list is deliberately incremental. Unknown assets remain on the existing safe runtime-inspection path once; the completed classification and geometry facts are then retained in `BepInEx/config/LiquidCore/valheim-knowledge-learned-v1.json` and reused on later instances/startups. The learned overlay is accepted only for the same schema, Valheim assembly, and mod-set fingerprints. No broad prefab scan is performed on normal startup.
 
 ## Cache contract
 

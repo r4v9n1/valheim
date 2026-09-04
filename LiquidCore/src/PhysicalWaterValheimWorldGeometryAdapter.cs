@@ -2331,6 +2331,75 @@ namespace PhysicalWater
             {
                 source.Revision = ComputeRevision(source);
             }
+            LearnAssetKnowledge(source);
+        }
+
+        private static void LearnAssetKnowledge(Source source)
+        {
+            if (source == null || source.Root == null || PhysicalWaterPlugin.ValheimKnowledge == null) return;
+            ZNetView view = source.Root.GetComponentInParent<ZNetView>();
+            if (view == null) view = source.Root.GetComponentInChildren<ZNetView>(true);
+            if (view == null) return;
+            string assetId = SafePrefabName(view);
+            if (PhysicalWaterPlugin.ValheimKnowledge.ContainsAsset(assetId)) return;
+            Component[] components = source.Root.GetComponentsInChildren<Component>(true);
+            var componentTypeSet = new HashSet<string>(StringComparer.Ordinal);
+            bool destructible = false;
+            bool buildPiece = false;
+            bool door = false;
+            for (int i = 0; i < components.Length; i++)
+            {
+                if (components[i] == null) continue;
+                string typeName = components[i].GetType().Name;
+                componentTypeSet.Add(typeName);
+                destructible |= Matches(typeName, "Destructible", "MineRock", "MineRock5", "WearNTear");
+                buildPiece |= Matches(typeName, "Piece", "WearNTear");
+                door |= Matches(typeName, "Door");
+            }
+            string[] componentTypes = new string[componentTypeSet.Count];
+            componentTypeSet.CopyTo(componentTypes);
+            Array.Sort(componentTypes, StringComparer.Ordinal);
+            Bounds localBounds = WorldBoundsToLocalBounds(source.Root.transform, source.Bounds);
+            string signature = source.Kind + ":" + source.Colliders + ":" + source.MeshColliders + ":" +
+                               source.PrimitiveColliders + ":" + source.TriggerColliders + ":" +
+                               source.MeshVertices + ":" + source.MeshTriangles + ":" +
+                               Quantize(localBounds.size.x) + ":" + Quantize(localBounds.size.y) + ":" + Quantize(localBounds.size.z) + ":" +
+                               string.Join(",", componentTypes);
+            PhysicalWaterPlugin.ValheimKnowledge.LearnAsset(
+                assetId,
+                source.RootType,
+                source.Category.ToString(),
+                source.Kind.ToString(),
+                source.Colliders,
+                source.MeshColliders,
+                source.PrimitiveColliders,
+                source.TriggerColliders,
+                source.MeshVertices,
+                source.MeshTriangles,
+                signature,
+                componentTypes,
+                localBounds.center,
+                localBounds.size,
+                destructible,
+                buildPiece,
+                door);
+        }
+
+        private static Bounds WorldBoundsToLocalBounds(Transform root, Bounds worldBounds)
+        {
+            Vector3 minimum = new Vector3(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
+            Vector3 maximum = new Vector3(float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity);
+            Vector3 c = worldBounds.center;
+            Vector3 e = worldBounds.extents;
+            for (int x = -1; x <= 1; x += 2)
+            for (int y = -1; y <= 1; y += 2)
+            for (int z = -1; z <= 1; z += 2)
+            {
+                Vector3 local = root.InverseTransformPoint(c + Vector3.Scale(e, new Vector3(x, y, z)));
+                minimum = Vector3.Min(minimum, local);
+                maximum = Vector3.Max(maximum, local);
+            }
+            return new Bounds((minimum + maximum) * 0.5f, maximum - minimum);
         }
 
         private static ValheimWorldGeometryCategory Classify(GameObject root, out string reason)

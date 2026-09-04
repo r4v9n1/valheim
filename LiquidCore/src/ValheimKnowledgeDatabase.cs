@@ -69,11 +69,27 @@ namespace PhysicalWater
             public string geometryKind;
             public string source;
             public bool precompute;
+            public int colliderCount;
+            public int meshColliderCount;
+            public int primitiveColliderCount;
+            public int triggerColliderCount;
+            public int meshVertices;
+            public int meshTriangles;
+            public string geometrySignature;
+            public string[] componentTypes;
+            public float[] localBoundsCenter;
+            public float[] localBoundsSize;
+            public bool destructible;
+            public bool buildPiece;
+            public bool door;
         }
 
         private readonly Dictionary<string, TypeRule> _types = new Dictionary<string, TypeRule>(StringComparer.Ordinal);
         private readonly Dictionary<string, SignalRule> _signals = new Dictionary<string, SignalRule>(StringComparer.Ordinal);
         private readonly Dictionary<string, AssetRule> _assets = new Dictionary<string, AssetRule>(StringComparer.Ordinal);
+        private readonly List<AssetRule> _learnedAssets = new List<AssetRule>();
+        private string _learnedPath;
+        private bool _learnedDirty;
 
         internal Document Data { get; private set; }
         internal bool Loaded { get; private set; }
@@ -111,6 +127,7 @@ namespace PhysicalWater
                     throw new InvalidOperationException("installed mod-set fingerprint does not match the database");
 
                 database.Index();
+                database.LoadLearnedAssets();
                 database.Loaded = true;
             }
             catch (Exception ex)
@@ -155,6 +172,84 @@ namespace PhysicalWater
             return found;
         }
 
+        internal bool ContainsAsset(string assetId)
+        {
+            return Loaded && !string.IsNullOrEmpty(assetId) && _assets.ContainsKey(assetId);
+        }
+
+        internal bool LearnAsset(
+            string assetId,
+            string rootType,
+            string category,
+            string geometryKind,
+            int colliderCount,
+            int meshColliderCount,
+            int primitiveColliderCount,
+            int triggerColliderCount,
+            int meshVertices,
+            int meshTriangles,
+            string geometrySignature,
+            string[] componentTypes,
+            Vector3 localBoundsCenter,
+            Vector3 localBoundsSize,
+            bool destructible,
+            bool buildPiece,
+            bool door)
+        {
+            if (!Loaded || string.IsNullOrEmpty(assetId) || _assets.ContainsKey(assetId)) return false;
+            var rule = new AssetRule
+            {
+                assetId = assetId,
+                observedRootType = rootType,
+                category = category,
+                geometryKind = geometryKind,
+                source = "runtime-learned",
+                precompute = true,
+                colliderCount = colliderCount,
+                meshColliderCount = meshColliderCount,
+                primitiveColliderCount = primitiveColliderCount,
+                triggerColliderCount = triggerColliderCount,
+                meshVertices = meshVertices,
+                meshTriangles = meshTriangles,
+                geometrySignature = geometrySignature,
+                componentTypes = componentTypes,
+                localBoundsCenter = new[] { localBoundsCenter.x, localBoundsCenter.y, localBoundsCenter.z },
+                localBoundsSize = new[] { localBoundsSize.x, localBoundsSize.y, localBoundsSize.z },
+                destructible = destructible,
+                buildPiece = buildPiece,
+                door = door
+            };
+            _assets.Add(assetId, rule);
+            _learnedAssets.Add(rule);
+            _learnedDirty = true;
+            return true;
+        }
+
+        internal void FlushLearnedAssets()
+        {
+            if (!Loaded || !_learnedDirty || string.IsNullOrEmpty(_learnedPath)) return;
+            try
+            {
+                string directory = Path.GetDirectoryName(_learnedPath);
+                if (!Directory.Exists(directory)) Directory.CreateDirectory(directory);
+                var overlay = new Document
+                {
+                    schemaVersion = Data.schemaVersion,
+                    databaseId = Data.databaseId + "-learned",
+                    generatedUtc = DateTime.UtcNow.ToString("O"),
+                    valheim = Data.valheim,
+                    modSet = Data.modSet,
+                    observedAssets = _learnedAssets.ToArray()
+                };
+                File.WriteAllText(_learnedPath, JsonUtility.ToJson(overlay, true));
+                _learnedDirty = false;
+            }
+            catch (Exception ex)
+            {
+                PhysicalWaterPlugin.Log?.LogWarning("LiquidCore could not persist learned Valheim knowledge: " + ex.Message);
+            }
+        }
+
         internal string Summary()
         {
             return !Loaded || Data == null
@@ -181,6 +276,31 @@ namespace PhysicalWater
                 rows.Add(relative + "|" + info.Length + "|" + HashFile(files[i]));
             }
             return HashBytes(Encoding.UTF8.GetBytes(string.Join("\n", rows.ToArray())));
+        }
+
+        private void LoadLearnedAssets()
+        {
+            _learnedPath = Path.Combine(Paths.ConfigPath, "LiquidCore", "valheim-knowledge-learned-v1.json");
+            if (!File.Exists(_learnedPath)) return;
+            try
+            {
+                Document overlay = JsonUtility.FromJson<Document>(File.ReadAllText(_learnedPath));
+                if (overlay == null || overlay.schemaVersion != Data.schemaVersion || overlay.valheim == null || overlay.modSet == null ||
+                    !string.Equals(overlay.valheim.assemblySha256, Data.valheim.assemblySha256, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(overlay.modSet.fingerprint, Data.modSet.fingerprint, StringComparison.OrdinalIgnoreCase)) return;
+                if (overlay.observedAssets == null) return;
+                for (int i = 0; i < overlay.observedAssets.Length; i++)
+                {
+                    AssetRule rule = overlay.observedAssets[i];
+                    if (rule == null || string.IsNullOrEmpty(rule.assetId) || _assets.ContainsKey(rule.assetId)) continue;
+                    _assets.Add(rule.assetId, rule);
+                    _learnedAssets.Add(rule);
+                }
+            }
+            catch (Exception ex)
+            {
+                PhysicalWaterPlugin.Log?.LogWarning("LiquidCore ignored invalid learned Valheim knowledge: " + ex.Message);
+            }
         }
 
         private static string HashFile(string path)
