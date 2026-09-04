@@ -145,11 +145,29 @@ namespace PhysicalWater
                     update.Geometry.SynchronizationMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "/" +
                     update.Geometry.DiagnosticsMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "/" +
                     update.Geometry.UploadMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "ms" +
+                    ", geometryPct[occupancy/sdf/cutTotal/capacity/aperture/metadata/pack/stage/dispatch/sync/diagnostics]=" +
+                    Percent(update.Geometry.OccupancyMilliseconds, update.Geometry.TotalMilliseconds) + "/" +
+                    Percent(update.Geometry.SdfMilliseconds, update.Geometry.TotalMilliseconds) + "/" +
+                    Percent(update.Geometry.CutCellBuildTotalMilliseconds, update.Geometry.TotalMilliseconds) + "/" +
+                    Percent(update.Geometry.CutCellCapacityMilliseconds, update.Geometry.TotalMilliseconds) + "/" +
+                    Percent(update.Geometry.ApertureMilliseconds, update.Geometry.TotalMilliseconds) + "/" +
+                    Percent(update.Geometry.PressureBoundaryMetadataMilliseconds, update.Geometry.TotalMilliseconds) + "/" +
+                    Percent(update.Geometry.UploadPackingMilliseconds, update.Geometry.TotalMilliseconds) + "/" +
+                    Percent(update.Geometry.UploadStagingMilliseconds, update.Geometry.TotalMilliseconds) + "/" +
+                    Percent(update.Geometry.UploadDispatchMilliseconds, update.Geometry.TotalMilliseconds) + "/" +
+                    Percent(update.Geometry.SynchronizationMilliseconds, update.Geometry.TotalMilliseconds) + "/" +
+                    Percent(update.Geometry.DiagnosticsMilliseconds, update.Geometry.TotalMilliseconds) + "%" +
                     ", cells=" + update.Geometry.ChangedCells + "/" + update.Geometry.DirtyRegionCells +
                     ", dependencies[sdf/cut]=" + update.Geometry.SdfDependencyLocalBounds + "/" + update.Geometry.CutCellDependencyLocalBounds +
                     ", gpu=" + sdfCells + "/" + cutCells + "/" + apertureFaces + "/" + gpuBytes +
                     ", aggregate[" + statistics.Describe() + "].");
             }
+        }
+
+        private static string Percent(double value, double total)
+        {
+            double percentage = total > 0.0 ? value * 100.0 / total : 0.0;
+            return percentage.ToString("F1", CultureInfo.InvariantCulture);
         }
     }
 }
