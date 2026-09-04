@@ -329,7 +329,9 @@ foreach ($requiredImmutableMeshCacheContract in @(
 foreach ($requiredImmutableMeshCacheContract in @(
     'PreparedMeshGeometryCacheHits',
     'TryGetOrCreateMeshGeometry',
-    'MeshVertexCount')) {
+    'MeshVertexCount',
+    'TryGetBvhTopology',
+    'StoreBvhTopology')) {
     if (!$causalQueueSource.Contains($requiredImmutableMeshCacheContract)) {
         throw "Shared immutable mesh cache contract is incomplete: $requiredImmutableMeshCacheContract"
     }
@@ -338,7 +340,9 @@ foreach ($requiredImmutableMeshApplyContract in @(
     '!heightField && PreparedGeometry != null',
     'PreparedGeometry.TryGetOrCreateMeshGeometry',
     'preparedMesh != null ? preparedMesh.Vertices : mesh.vertices',
-    'preparedMesh != null ? preparedMesh.Triangles : mesh.triangles')) {
+    'preparedMesh != null ? preparedMesh.Triangles : mesh.triangles',
+    'TryRebuildCachedBvhBounds',
+    'StoreBvhTopology(preparedMesh)')) {
     if (!$solidGeometrySource.Contains($requiredImmutableMeshApplyContract)) {
         throw "LC immutable mesh-cache apply contract is incomplete: $requiredImmutableMeshApplyContract"
     }
