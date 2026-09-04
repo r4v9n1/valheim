@@ -96,8 +96,8 @@ if (!$databaseSource.Contains('Paths.GameRootPath') -or
 }
 foreach ($requiredCertificationText in @(
     'DataContractJsonSerializer',
-    'MATCH schema=',
-    'database-first serving active',
+    'MATCHED current game/mod/schema fingerprint: schema=',
+    'known assets/terrain rules are being served from the database rather than runtime reinspection',
     'bypass hierarchy/category reinspection on hit',
     'terrainRules=',
     'bypass discovery')) {
@@ -106,6 +106,7 @@ foreach ($requiredCertificationText in @(
     }
 }
 $eventPatchSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'src\PhysicalWaterValheimWorldGeometryPatches.cs') -Raw
+$pluginSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'src\PhysicalWaterPlugin.cs') -Raw
 foreach ($requiredLifecycleBridge in @(
     '[HarmonyPatch(typeof(ZNetScene), "CreateObject", new[] { typeof(ZDO) })]',
     'ValheimGeometryDirtyBridge.Mark("streamed source appeared", view)',
@@ -114,6 +115,15 @@ foreach ($requiredLifecycleBridge in @(
 )) {
     if (!$eventPatchSource.Contains($requiredLifecycleBridge)) {
         throw "Direct streamed lifecycle bridge is incomplete: $requiredLifecycleBridge"
+    }
+}
+foreach ($requiredPatchRegistration in @(
+    'PatchSafely(typeof(ValheimGeometryStreamedSourceAppearedPatch)',
+    'PatchSafely(typeof(ValheimGeometryStreamedSourceDisappearedPatch)',
+    'Logger.LogInfo("Patched " + label + ".")'
+)) {
+    if (!$pluginSource.Contains($requiredPatchRegistration)) {
+        throw "Compiled lifecycle patch is not registered with Harmony: $requiredPatchRegistration"
     }
 }
 foreach ($requiredLifecycleFilter in @(

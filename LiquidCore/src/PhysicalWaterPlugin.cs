@@ -88,6 +88,8 @@ namespace PhysicalWater
                 PatchSafely(typeof(ValheimGeometryHeightmapPokePatch), "devD6 heightmap poke dirty marker");
                 PatchSafely(typeof(ValheimGeometryPiecePlacedPatch), "devD6 placed-piece geometry dirty marker");
                 PatchSafely(typeof(ValheimGeometryNetworkDestroyedPatch), "devD6 authoritative network-geometry destroy marker");
+                PatchSafely(typeof(ValheimGeometryStreamedSourceAppearedPatch), "PCE streamed-source appearance nerve");
+                PatchSafely(typeof(ValheimGeometryStreamedSourceDisappearedPatch), "PCE streamed-source disappearance nerve");
                 PatchSafely(typeof(ValheimGeometryDoorStatePatch), "devD6 door/gate geometry dirty marker");
                 PatchSafely(typeof(ValheimGeometryDestructibleDestroyedPatch), "devD6 destructible geometry dirty marker");
                 PatchSafely(typeof(ValheimGeometryMineRockHiddenPatch), "devD6 mine-rock geometry dirty marker");
@@ -183,6 +185,7 @@ namespace PhysicalWater
             try
             {
                 _harmony.CreateClassProcessor(patchType).Patch();
+                Logger.LogInfo("Patched " + label + ".");
             }
             catch (Exception ex)
             {

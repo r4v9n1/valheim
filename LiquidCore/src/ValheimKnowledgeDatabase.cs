@@ -286,11 +286,11 @@ namespace PhysicalWater
             bool terrainReady = _signals.TryGetValue("heightmap terrain operation/regenerate", out terrain) &&
                                 terrain != null && terrain.immediate &&
                                 string.Equals(terrain.authority, "authoritative-local", StringComparison.Ordinal);
-            return "MATCH schema=" + Data.schemaVersion +
+            return "MATCHED current game/mod/schema fingerprint: schema=" + Data.schemaVersion +
                    ", steamBuild=" + Data.valheim.steamBuildId +
                    ", assemblySha256=" + Data.valheim.assemblySha256 +
                    ", modSetSha256=" + Data.modSet.fingerprint +
-                   "; database-first serving active: knownAssetClassifications=" + _assets.Count +
+                   "; known assets/terrain rules are being served from the database rather than runtime reinspection: knownAssetClassifications=" + _assets.Count +
                    " bypass hierarchy/category reinspection on hit, terrainRules=" + (terrainReady ? "authoritative-local/immediate" : "INVALID") +
                    " bypass discovery; collider geometry still uses cached instance data or safe inspection, and unknown assets retain inspection-and-learn fallback";
         }
