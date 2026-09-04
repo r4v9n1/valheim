@@ -134,6 +134,7 @@ namespace PhysicalWater
             internal long Timestamp;
             internal GameObject Root;
             internal bool AuthoritativeLocalSignal;
+            internal ValheimKnowledgeDatabase.AssetRule KnownAssetRule;
         }
 
         private sealed class DeferredEvent
@@ -150,6 +151,8 @@ namespace PhysicalWater
             internal double ClassificationMilliseconds;
             internal double RevisionHashMilliseconds;
             internal double DirtyDetectionMilliseconds;
+            internal bool DatabasePrepared;
+            internal int HierarchyScans;
         }
 
         private sealed class ChunkState
@@ -743,6 +746,8 @@ namespace PhysicalWater
                                                 ", queuedImmediateScan=" + (queuedImmediateScan ? "True" : "False") +
                                                 ", targetedEvent=" + (targeted.Applied ? "True" : "False") +
                                                 ", targetedOutcome=" + Safe(targeted.Outcome) +
+                                                ", databasePrepared=" + targeted.DatabasePrepared +
+                                                ", hierarchyScans=" + targeted.HierarchyScans +
                                                 ", targetedQueuedJobs=" + targeted.QueuedJobs +
                                                 ", eventClassificationMs=" + targeted.ClassificationMilliseconds.ToString("F3") +
                                                 ", eventRevisionHashMs=" + targeted.RevisionHashMilliseconds.ToString("F3") +
@@ -773,7 +778,12 @@ namespace PhysicalWater
 
         private TargetedEventReport TryApplyTargetedEvent(EventRecord record, bool destructive, float discoveryTileSize, float sdfChunkSize)
         {
-            var report = new TargetedEventReport { Outcome = "discovery-fallback" };
+            var report = new TargetedEventReport
+            {
+                Outcome = "discovery-fallback",
+                DatabasePrepared = record != null && (record.AuthoritativeLocalSignal || record.KnownAssetRule != null),
+                HierarchyScans = record != null && (record.AuthoritativeLocalSignal || record.KnownAssetRule != null) ? 0 : 1
+            };
             if (record == null || string.IsNullOrEmpty(record.SourceId) || _activeChunks.Count == 0) return report;
 
             bool intersectsActive = (record.HasOldBounds && BoundsIntersectsActiveChunk(record.OldBounds, discoveryTileSize)) ||
@@ -866,7 +876,10 @@ namespace PhysicalWater
                 return report;
             }
 
-            Source source = CreateSource(record.Root);
+            Source source;
+            if (record.KnownAssetRule == null ||
+                !TryCreateSourceFromKnownAssetRule(record.Root, record.KnownAssetRule, out source))
+                source = CreateSource(record.Root);
             if (!source.AssetDescriptorHydrated)
             {
                 Collider[] colliders = record.Root.GetComponentsInChildren<Collider>(true);
@@ -1707,12 +1720,18 @@ namespace PhysicalWater
                                       PhysicalWaterPlugin.ValheimKnowledge.TryGetSignal(record.Reason, out signalRule) &&
                                       string.Equals(signalRule.authority, "authoritative-local", StringComparison.Ordinal);
             record.AuthoritativeLocalSignal = authoritativeLocal;
-            GameObject root = source != null
-                ? (authoritativeLocal ? source.gameObject : FindGeometryRoot(source.gameObject))
-                : null;
+            GameObject root = null;
+            ValheimKnowledgeDatabase.AssetRule knownAssetRule = null;
+            if (source != null)
+            {
+                if (authoritativeLocal) root = source.gameObject;
+                else if (!TryResolveKnownAssetEvent(source, out root, out knownAssetRule))
+                    root = FindGeometryRoot(source.gameObject);
+            }
             if (root != null)
             {
                 record.Root = root;
+                record.KnownAssetRule = knownAssetRule;
                 record.SourceId = BuildSourceId(root);
                 record.Path = HierarchyPath(root.transform);
                 if (authoritativeLocal)
@@ -1726,9 +1745,12 @@ namespace PhysicalWater
                 else
                 {
                     string reason;
-                    record.Category = Classify(root, out reason);
-                    Bounds bounds;
-                    if ((TryGetKnownAssetWorldBounds(root, out bounds) || TryGetRootBounds(root, out bounds)) && HasUsableBounds(bounds))
+                    record.Category = knownAssetRule != null && Enum.TryParse(knownAssetRule.category, false, out ValheimWorldGeometryCategory knownCategory)
+                        ? knownCategory
+                        : Classify(root, out reason);
+                    Bounds bounds = default(Bounds);
+                    bool knownBounds = knownAssetRule != null && TryGetKnownAssetWorldBounds(root, knownAssetRule, out bounds);
+                    if ((knownBounds || TryGetRootBounds(root, out bounds)) && HasUsableBounds(bounds))
                     {
                         record.NewBounds = bounds;
                         record.HasNewBounds = true;
@@ -2360,6 +2382,16 @@ namespace PhysicalWater
             if (view == null) return false;
             ValheimKnowledgeDatabase.AssetRule rule;
             if (!PhysicalWaterPlugin.ValheimKnowledge.TryGetReusableGeometryAsset(SafePrefabName(view), out rule)) return false;
+            return TryCreateSourceFromKnownAssetRule(root, rule, out source);
+        }
+
+        private static bool TryCreateSourceFromKnownAssetRule(
+            GameObject root,
+            ValheimKnowledgeDatabase.AssetRule rule,
+            out Source source)
+        {
+            source = null;
+            if (root == null || rule == null) return false;
             ValheimWorldGeometryCategory category;
             if (!Enum.TryParse(rule.category, false, out category)) return false;
             Transform transform = root.transform;
@@ -2392,6 +2424,21 @@ namespace PhysicalWater
                 AssetDescriptorHydrated = true,
                 AssetDescriptorHash = rule.geometrySignature.GetHashCode()
             };
+            return true;
+        }
+
+        private static bool TryResolveKnownAssetEvent(
+            Component source,
+            out GameObject root,
+            out ValheimKnowledgeDatabase.AssetRule rule)
+        {
+            root = null;
+            rule = null;
+            if (source == null || PhysicalWaterPlugin.ValheimKnowledge == null) return false;
+            ZNetView view = source.GetComponentInParent<ZNetView>();
+            if (view == null || !PhysicalWaterPlugin.ValheimKnowledge.TryGetReusableGeometryAsset(SafePrefabName(view), out rule))
+                return false;
+            root = view.gameObject;
             return true;
         }
 
@@ -2977,6 +3024,16 @@ namespace PhysicalWater
             if (view == null) return false;
             ValheimKnowledgeDatabase.AssetRule rule;
             if (!PhysicalWaterPlugin.ValheimKnowledge.TryGetReusableGeometryAsset(SafePrefabName(view), out rule)) return false;
+            return TryGetKnownAssetWorldBounds(root, rule, out bounds);
+        }
+
+        private static bool TryGetKnownAssetWorldBounds(
+            GameObject root,
+            ValheimKnowledgeDatabase.AssetRule rule,
+            out Bounds bounds)
+        {
+            bounds = default(Bounds);
+            if (root == null || rule == null) return false;
             var localBounds = new Bounds(
                 new Vector3(rule.localBoundsCenter[0], rule.localBoundsCenter[1], rule.localBoundsCenter[2]),
                 new Vector3(rule.localBoundsSize[0], rule.localBoundsSize[1], rule.localBoundsSize[2]));

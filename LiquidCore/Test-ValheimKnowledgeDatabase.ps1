@@ -162,8 +162,16 @@ if ($eventPatchSource.Contains('GetField("m_instances"') -or
     $eventPatchSource.Contains('AccessTools.Field(typeof(ZNetScene), "m_instances")')) {
     throw 'Streamed lifecycle bridge must not enumerate ZNetScene.m_instances.'
 }
-$fastPathIndex = $adapterSource.IndexOf('record.AuthoritativeLocalSignal && cached != null', [StringComparison]::Ordinal)
-$rediscoveryIndex = $adapterSource.IndexOf('Source source = CreateSource(record.Root);', [StringComparison]::Ordinal)
+$targetedMethodStart = $adapterSource.IndexOf('private TargetedEventReport TryApplyTargetedEvent(', [StringComparison]::Ordinal)
+$targetedMethodEnd = if ($targetedMethodStart -ge 0) {
+    $adapterSource.IndexOf("`n        private ", $targetedMethodStart + 1, [StringComparison]::Ordinal)
+} else { -1 }
+if ($targetedMethodStart -lt 0 -or $targetedMethodEnd -lt 0) {
+    throw 'Could not isolate TryApplyTargetedEvent for terrain fast-path verification.'
+}
+$targetedMethodSource = $adapterSource.Substring($targetedMethodStart, $targetedMethodEnd - $targetedMethodStart)
+$fastPathIndex = $targetedMethodSource.IndexOf('record.AuthoritativeLocalSignal && cached != null', [StringComparison]::Ordinal)
+$rediscoveryIndex = $targetedMethodSource.IndexOf('CreateSource(record.Root)', [StringComparison]::Ordinal)
 if ($fastPathIndex -lt 0 -or $rediscoveryIndex -lt 0 -or $fastPathIndex -gt $rediscoveryIndex) {
     throw "Known local terrain path does not precede runtime rediscovery."
 }
@@ -199,6 +207,10 @@ foreach ($requiredPreparedTerrainCacheContract in @(
 foreach ($requiredAssetDescriptorContract in @(
     'TryGetReusableGeometryAsset',
     'TryCreateSourceFromKnownAsset',
+    'TryCreateSourceFromKnownAssetRule',
+    'TryResolveKnownAssetEvent',
+    'KnownAssetRule',
+    'HierarchyScans',
     'AssetDescriptorHydrated',
     'Valheim knowledge reusable geometry-descriptor hit',
     'if (!source.AssetDescriptorHydrated)')) {
