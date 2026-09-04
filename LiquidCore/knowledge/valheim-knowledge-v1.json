@@ -236,6 +236,11 @@
       "canFeedSdf": true,
       "precompute": "recipe-only",
       "runtimeInspection": "changed height samples in signaled bounds",
+      "dependencyRule": "refresh current authoritative Heightmap participation before selecting the geometry path; stale or empty prior-revision dependencies are not path authority; mixed or genuinely uncovered changed geometry requires conservative generic fallback",
+      "tileEdgeRule": "intersecting Heightmap tiles jointly participate; unchanged padded SDF columns do not require Heightmap coverage and do not disqualify the analytic path",
+      "monotonicContract": "pure lowering: occupancy never increases, open capacity and apertures never decrease; pure raising: occupancy never decreases, open capacity and apertures never increase",
+      "firstEditRule": "the first valid edit after creation, cache recreation, rebase, or stream reactivation must refresh dependencies and may use the analytic Heightmap path without history from a prior edit",
+      "validatedRecipeRevision": "heightmap-analytic-v2-first-edit-20260904",
       "stateFields": [
         "m_heights",
         "m_width",
@@ -250,6 +255,11 @@
       "canFeedSdf": true,
       "precompute": "recipe-only",
       "runtimeInspection": "changed height samples in signaled bounds",
+      "dependencyRule": "publish the current authoritative Heightmap revision and compact operation bounds through PCE and DNA; LiquidCore refreshes dependencies before path selection",
+      "tileEdgeRule": "operation bounds may span multiple Heightmap dependency regions and all intersecting current tiles participate",
+      "monotonicContract": "DoOperation lowering and raising retain the Heightmap operation-local monotonic occupancy, capacity, and aperture rules",
+      "firstEditRule": "no discovery queue or previous-edit dependency state is required for the first causal terrain operation",
+      "validatedRecipeRevision": "heightmap-analytic-v2-first-edit-20260904",
       "stateFields": [
         "m_operations",
         "m_modifiedHeight",

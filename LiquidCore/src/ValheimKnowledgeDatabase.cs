@@ -47,6 +47,11 @@ namespace PhysicalWater
             public string precompute;
             public string runtimeInspection;
             public string[] stateFields;
+            [OptionalField] public string dependencyRule;
+            [OptionalField] public string tileEdgeRule;
+            [OptionalField] public string monotonicContract;
+            [OptionalField] public string firstEditRule;
+            [OptionalField] public string validatedRecipeRevision;
         }
 
         [Serializable]
