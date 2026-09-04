@@ -79,7 +79,6 @@ namespace PhysicalWater
             if (geometryAdapterRequired)
             {
                 PatchSafely(typeof(ValheimGeometryTerrainOperationPatch), "devD6 terrain geometry dirty marker");
-                PatchSafely(typeof(ValheimGeometryTerrainInternalOperationPatch), "devD6 terrain internal geometry dirty marker");
                 PatchSafely(typeof(ValheimGeometryHeightmapRegeneratePatch), "devD6 heightmap regenerate dirty marker");
                 PatchSafely(typeof(ValheimGeometryHeightmapPokePatch), "devD6 heightmap poke dirty marker");
                 PatchSafely(typeof(ValheimGeometryPiecePlacedPatch), "devD6 placed-piece geometry dirty marker");

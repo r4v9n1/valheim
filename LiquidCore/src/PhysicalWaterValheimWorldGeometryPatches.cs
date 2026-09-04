@@ -35,37 +35,21 @@ namespace PhysicalWater
         }
     }
 
+    [HarmonyPatch(typeof(TerrainComp), "DoOperation")]
     internal static class ValheimGeometryTerrainOperationPatch
     {
-        private static MethodBase TargetMethod()
+        private static void Prefix(TerrainComp __instance, Vector3 pos, TerrainOp.Settings modifier)
         {
-            return AccessTools.Method(typeof(TerrainComp), "ApplyOperation");
-        }
-
-        private static void Postfix(TerrainComp __instance)
-        {
-            ValheimGeometryDirtyBridge.Mark("terrain operation", __instance);
-        }
-    }
-
-    internal static class ValheimGeometryTerrainInternalOperationPatch
-    {
-        private static MethodBase TargetMethod()
-        {
-            return AccessTools.Method(typeof(TerrainComp), "InternalDoOperation");
-        }
-
-        private static void Postfix(TerrainComp __instance, Vector3 pos, TerrainOp.Settings modifier)
-        {
+            if (__instance == null || modifier == null) return;
             float radius = 0.5f;
             if (modifier.m_level) radius = Mathf.Max(radius, modifier.m_levelRadius);
             if (modifier.m_raise) radius = Mathf.Max(radius, modifier.m_raiseRadius);
             if (modifier.m_smooth) radius = Mathf.Max(radius, modifier.m_smoothRadius);
             if (modifier.m_paintCleared) radius = Mathf.Max(radius, modifier.m_paintRadius);
             float vertical = 8f + Mathf.Abs(modifier.m_levelOffset) + Mathf.Abs(modifier.m_raiseDelta);
-            ValheimGeometryDirtyBridge.Mark(
-                "terrain internal operation",
-                __instance,
+            Heightmap heightmap = Heightmap.FindHeightmap(__instance.transform.position);
+            ValheimGeometryHeightmapEventState.RegisterTerrainOperation(
+                heightmap,
                 new Bounds(pos, new Vector3(2f * radius, 2f * vertical, 2f * radius)));
         }
     }
@@ -75,11 +59,17 @@ namespace PhysicalWater
     {
         private static void Postfix(Heightmap __instance)
         {
-            ValheimGeometryDirtyBridge.Mark(
-                ValheimGeometryHeightmapEventState.ConsumePoke(__instance)
-                    ? "heightmap poke/regenerate"
-                    : "heightmap regenerate",
-                __instance);
+            bool poke = ValheimGeometryHeightmapEventState.ConsumePoke(__instance);
+            if (ValheimGeometryHeightmapEventState.TryConsumeTerrainOperation(__instance, out Bounds dirtyWorldBounds))
+            {
+                ValheimGeometryDirtyBridge.Mark(
+                    poke ? "heightmap terrain operation/regenerate" : "heightmap terrain operation",
+                    __instance,
+                    dirtyWorldBounds);
+                return;
+            }
+
+            ValheimGeometryDirtyBridge.Mark(poke ? "heightmap poke/regenerate" : "heightmap regenerate", __instance);
         }
     }
 
@@ -95,6 +85,7 @@ namespace PhysicalWater
     internal static class ValheimGeometryHeightmapEventState
     {
         private static readonly HashSet<int> PendingPokes = new HashSet<int>();
+        private static readonly Dictionary<int, Bounds> PendingTerrainOperations = new Dictionary<int, Bounds>();
 
         internal static void RegisterPoke(Heightmap heightmap)
         {
@@ -104,6 +95,43 @@ namespace PhysicalWater
         internal static bool ConsumePoke(Heightmap heightmap)
         {
             return heightmap != null && PendingPokes.Remove(heightmap.GetInstanceID());
+        }
+
+        internal static void RegisterTerrainOperation(Heightmap heightmap, Bounds dirtyWorldBounds)
+        {
+            if (heightmap == null) return;
+            RegisterTerrainOperation(heightmap.GetInstanceID(), dirtyWorldBounds);
+        }
+
+        internal static void RegisterTerrainOperation(int heightmapId, Bounds dirtyWorldBounds)
+        {
+            if (heightmapId == 0) return;
+            if (PendingTerrainOperations.TryGetValue(heightmapId, out Bounds pending))
+            {
+                pending.Encapsulate(dirtyWorldBounds);
+                PendingTerrainOperations[heightmapId] = pending;
+            }
+            else
+            {
+                PendingTerrainOperations.Add(heightmapId, dirtyWorldBounds);
+            }
+        }
+
+        internal static bool TryConsumeTerrainOperation(Heightmap heightmap, out Bounds dirtyWorldBounds)
+        {
+            if (heightmap == null)
+            {
+                dirtyWorldBounds = default(Bounds);
+                return false;
+            }
+            return TryConsumeTerrainOperation(heightmap.GetInstanceID(), out dirtyWorldBounds);
+        }
+
+        internal static bool TryConsumeTerrainOperation(int heightmapId, out Bounds dirtyWorldBounds)
+        {
+            if (!PendingTerrainOperations.TryGetValue(heightmapId, out dirtyWorldBounds)) return false;
+            PendingTerrainOperations.Remove(heightmapId);
+            return true;
         }
     }
 
