@@ -951,11 +951,21 @@ namespace PhysicalWater
                     causalBatch.EarliestEventTimestamp,
                     solverReadyTimestamp);
                 IReadOnlyList<ProbeColonyCausalGeometrySignal> drainedSignals = pce.LastDrainedCausalGeometrySignals;
+                Bounds sdfDependencyWorld = causalUpdate.Geometry.SdfDependencyLocalBounds;
+                sdfDependencyWorld.center += _domain.WorldOrigin;
+                Bounds cutCellDependencyWorld = causalUpdate.Geometry.CutCellDependencyLocalBounds;
+                cutCellDependencyWorld.center += _domain.WorldOrigin;
                 pce.MarkCausalGeometryApplied(
                     drainedSignals,
                     causalBatch.Generation,
-                    causalBatch.DirtyWorldBounds,
-                    causalBatch.DirtyWorldBounds);
+                    sdfDependencyWorld,
+                    cutCellDependencyWorld,
+                    cutCellDependencyWorld,
+                    sdfDependencyWorld,
+                    _domain.MacDomain.LastSolidSdfUploadCells,
+                    _domain.MacDomain.LastSolidCutCellUploadCells,
+                    _domain.MacDomain.LastSolidApertureUploadFaces,
+                    _domain.MacDomain.LastSolidUploadBytes);
                 _nerveTelemetry.RecordBatch(
                     drainedSignals,
                     applyStartTimestamp,

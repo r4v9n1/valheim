@@ -126,6 +126,7 @@ namespace PhysicalWater
                     "ms, total=" + total.ToString("F3", CultureInfo.InvariantCulture) +
                     "ms, full=" + update.Geometry.FullRebuild +
                     ", cells=" + update.Geometry.ChangedCells + "/" + update.Geometry.DirtyRegionCells +
+                    ", dependencies[sdf/cut]=" + update.Geometry.SdfDependencyLocalBounds + "/" + update.Geometry.CutCellDependencyLocalBounds +
                     ", gpu=" + sdfCells + "/" + cutCells + "/" + apertureFaces + "/" + gpuBytes +
                     ", aggregate[" + statistics.Describe() + "].");
             }

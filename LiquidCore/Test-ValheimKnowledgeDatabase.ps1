@@ -219,7 +219,13 @@ foreach ($requiredSharedRuntimeContract in @(
     'LcPreparedGeometryHandle',
     'SdfDependencyRegion',
     'CutCellDependencyRegion',
+    'ApertureDependencyRegion',
+    'GpuResidentRegion',
     'GpuResidentRegionHandle',
+    'SdfCellsUpdated',
+    'CutCellsUpdated',
+    'ApertureFacesUpdated',
+    'GpuBytesPatched',
     'LastAppliedLcRevision',
     'if (!runtimeRecord.DatabaseHit)',
     'LastDrainedCausalGeometrySignals')) {

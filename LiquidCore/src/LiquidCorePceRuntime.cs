@@ -21,7 +21,13 @@ namespace PhysicalWater
         internal int LcPreparedGeometryHandle;
         internal Bounds SdfDependencyRegion;
         internal Bounds CutCellDependencyRegion;
+        internal Bounds ApertureDependencyRegion;
+        internal Bounds GpuResidentRegion;
         internal int GpuResidentRegionHandle;
+        internal int SdfCellsUpdated;
+        internal int CutCellsUpdated;
+        internal int ApertureFacesUpdated;
+        internal int GpuBytesPatched;
         internal uint LastAppliedLcRevision;
         internal long LastAppliedGeneration;
         internal bool DatabaseHit;
@@ -166,7 +172,13 @@ namespace PhysicalWater
             IReadOnlyList<ProbeColonyCausalGeometrySignal> signals,
             long generation,
             Bounds sdfDependencyRegion,
-            Bounds cutCellDependencyRegion)
+            Bounds cutCellDependencyRegion,
+            Bounds apertureDependencyRegion,
+            Bounds gpuResidentRegion,
+            int sdfCellsUpdated,
+            int cutCellsUpdated,
+            int apertureFacesUpdated,
+            int gpuBytesPatched)
         {
             if (signals == null) return;
             for (int i = 0; i < signals.Count; i++)
@@ -178,7 +190,13 @@ namespace PhysicalWater
                 record.LastAppliedGeneration = generation;
                 record.SdfDependencyRegion = sdfDependencyRegion;
                 record.CutCellDependencyRegion = cutCellDependencyRegion;
+                record.ApertureDependencyRegion = apertureDependencyRegion;
+                record.GpuResidentRegion = gpuResidentRegion;
                 record.GpuResidentRegionHandle = record.LcPreparedGeometryHandle;
+                record.SdfCellsUpdated = sdfCellsUpdated;
+                record.CutCellsUpdated = cutCellsUpdated;
+                record.ApertureFacesUpdated = apertureFacesUpdated;
+                record.GpuBytesPatched = gpuBytesPatched;
             }
         }
 
