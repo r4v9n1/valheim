@@ -75,6 +75,8 @@ namespace PhysicalWater
         private int _telemetryPreviousGc1;
         private int _telemetryPreviousGc2;
         private long _telemetryPreviousManagedMemory;
+        private long _telemetryPreviousWallTimestamp;
+        private double _telemetryPreviousSimulatedSeconds;
         private long _observedGeometryGeneration = -1;
         private int _appliedGeometryStateRevision = int.MinValue;
         private float _nextCausalGeometryApplyTime;
@@ -1183,13 +1185,25 @@ namespace PhysicalWater
             int gc2 = GC.CollectionCount(2);
             long managedMemory = GC.GetTotalMemory(false);
             VolumetricSolidGeometryUpdateDiagnostics geometry = _domain.Geometry.LastUpdate;
+            long wallTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+            double simulatedSeconds = mac != null ? mac.Diagnostics.SimulatedSeconds : 0.0;
+            double realSeconds = _telemetryPreviousWallTimestamp > 0
+                ? (wallTimestamp - _telemetryPreviousWallTimestamp) / (double)System.Diagnostics.Stopwatch.Frequency
+                : 0.0;
+            double simulatedDelta = simulatedSeconds - _telemetryPreviousSimulatedSeconds;
+            double simulationWallRatio = realSeconds > 1e-9 ? simulatedDelta / realSeconds : 0.0;
+            double meanFrameMilliseconds = _telemetryFrameSum / frameCount;
             PhysicalWaterPlugin.Log.LogInfo(
                 "PhysicalWater devE3 nonblocking telemetry: paused=" + _domain.Paused +
                 ", particles=" + _domain.ParticleCount +
                 ", substeps=" + _lastSubsteps +
                 ", activeCpuMs=" + _lastSimulationCpuMs.ToString("F3") +
                 ", intervalFrames=" + _telemetryFrameCount +
-                ", frameMs[mean/p95]=" + (_telemetryFrameSum / frameCount).ToString("F3") + "/" + frameP95.ToString("F3") +
+                ", frameMs[mean/p95]=" + meanFrameMilliseconds.ToString("F3") + "/" + frameP95.ToString("F3") +
+                ", fpsMean=" + (meanFrameMilliseconds > 1e-9 ? 1000.0 / meanFrameMilliseconds : 0.0).ToString("F2", CultureInfo.InvariantCulture) +
+                ", throughput[real/sim/ratio]=" + realSeconds.ToString("F3", CultureInfo.InvariantCulture) + "/" +
+                simulatedDelta.ToString("F3", CultureInfo.InvariantCulture) + "/" +
+                simulationWallRatio.ToString("F3", CultureInfo.InvariantCulture) +
                 ", simulationCpuMeanMs=" + (_telemetryActiveCpuSum / frameCount).ToString("F3") +
                 ", solverStepMeanMs=" + (_telemetrySolverSum / solverSteps).ToString("F3") +
                 ", pressureMeanMs=" + (_telemetryPressureSum / solverSteps).ToString("F3") +
@@ -1201,12 +1215,17 @@ namespace PhysicalWater
                 (_telemetryWorkerQueueSum / solverSteps).ToString("F3") + "/" +
                 (_telemetryWorkerExecutionSum / solverSteps).ToString("F3") + "/" +
                 (_telemetryReadbackStagesSum / solverSteps).ToString("F2") +
+                ", projection[cells/downloadBytes/fallbacksTotal]=" +
+                (mac != null ? mac.LastCutCellHotPathTimings.ProjectionCells.ToString(CultureInfo.InvariantCulture) : "0") + "/" +
+                (mac != null ? (mac.LastCutCellHotPathTimings.DownloadFloats * sizeof(float)).ToString(CultureInfo.InvariantCulture) : "0") + "/" +
+                (mac != null ? mac.ProjectionFallbackCount.ToString(CultureInfo.InvariantCulture) : "0") +
                 ", ownership[requests/bytes]=" + (streaming.AsyncOwnershipRequests - _telemetryPreviousOwnershipRequests) + "/" + (streaming.OwnershipReadbackBytes - _telemetryPreviousOwnershipBytes) +
                 ", managedMemory[bytes/delta]=" + managedMemory + "/" + (managedMemory - _telemetryPreviousManagedMemory) +
                 ", gc[0/1/2]=" + (gc0 - _telemetryPreviousGc0) + "/" + (gc1 - _telemetryPreviousGc1) + "/" + (gc2 - _telemetryPreviousGc2) +
                 ", regions[active/dormant]=" + streaming.ActiveRegions + "/" + streaming.DormantRegions +
                 ", geometry[generation/changed/totalMs]=" + _domain.AppliedGeometryGeneration + "/" + geometry.ChangedCells + "/" + geometry.TotalMilliseconds.ToString("F3") +
                 ", simulatedSeconds=" + (mac != null ? mac.Diagnostics.SimulatedSeconds.ToString("F3") : "n/a") +
+                ", projectionCache=(" + (mac != null ? mac.LastProjectionCacheForensics.ToString() : "unavailable") + ")" +
                 ", flipTiming=(" + _domain.FlipDomain.LastStepTimings + ")" +
                 ", macTiming=(" + (mac != null ? mac.LastStepTimings.ToString() : "n/a") + ")" +
                 ", streaming=(" + streaming + ")" +
@@ -1257,6 +1276,10 @@ namespace PhysicalWater
             _telemetryPreviousGc1 = gc1;
             _telemetryPreviousGc2 = gc2;
             _telemetryPreviousManagedMemory = managedMemory;
+            _telemetryPreviousWallTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+            _telemetryPreviousSimulatedSeconds = _domain != null && _domain.MacDomain != null
+                ? _domain.MacDomain.Diagnostics.SimulatedSeconds
+                : 0.0;
         }
 
         private void LoadAssets()
