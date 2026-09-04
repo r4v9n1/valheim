@@ -319,6 +319,30 @@ foreach ($requiredPreparedGeometryContract in @(
         throw "Prepared geometry handoff contract is incomplete: $requiredPreparedGeometryContract"
     }
 }
+foreach ($requiredImmutableMeshCacheContract in @(
+    'MeshVertexCount = recipe.meshVertexCount',
+    'MeshTriangleCount = recipe.meshTriangleCount')) {
+    if (!$pceRuntimeSource.Contains($requiredImmutableMeshCacheContract)) {
+        throw "Database mesh-fingerprint handoff is incomplete: $requiredImmutableMeshCacheContract"
+    }
+}
+foreach ($requiredImmutableMeshCacheContract in @(
+    'PreparedMeshGeometryCacheHits',
+    'TryGetOrCreateMeshGeometry',
+    'MeshVertexCount')) {
+    if (!$causalQueueSource.Contains($requiredImmutableMeshCacheContract)) {
+        throw "Shared immutable mesh cache contract is incomplete: $requiredImmutableMeshCacheContract"
+    }
+}
+foreach ($requiredImmutableMeshApplyContract in @(
+    '!heightField && PreparedGeometry != null',
+    'PreparedGeometry.TryGetOrCreateMeshGeometry',
+    'preparedMesh != null ? preparedMesh.Vertices : mesh.vertices',
+    'preparedMesh != null ? preparedMesh.Triangles : mesh.triangles')) {
+    if (!$solidGeometrySource.Contains($requiredImmutableMeshApplyContract)) {
+        throw "LC immutable mesh-cache apply contract is incomplete: $requiredImmutableMeshApplyContract"
+    }
+}
 foreach ($requiredPreparedApplyContract in @(
     'TryRebuildPreparedSources',
     'VolumetricPreparedGeometryDescriptor preparedGeometry',
@@ -421,6 +445,7 @@ $lookupNanoseconds = $watch.Elapsed.TotalMilliseconds * 1000000.0 / 100000.0
     MonotonicInstanceRevisionContract = $true
     PersistentPceRevisionCache = $true
     LocalPreparedTerrainCache = $true
+    SharedImmutableMeshGeometryCache = $true
     PceDormantSourceMaterializationEliminated = $true
     FailedLiveFullRootCells = $fullRootCells
     CandidateLocalCells = $localCells

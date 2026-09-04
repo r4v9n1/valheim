@@ -254,7 +254,10 @@ namespace PhysicalWater
                 {
                     TransformChildIndices = recipe.transformChildIndices,
                     ColliderComponentIndex = recipe.colliderComponentIndex,
-                    ColliderType = recipe.colliderType
+                    ColliderType = recipe.colliderType,
+                    MeshName = recipe.meshName,
+                    MeshVertexCount = recipe.meshVertexCount,
+                    MeshTriangleCount = recipe.meshTriangleCount
                 };
             }
             cached = new VolumetricPreparedGeometryDescriptor
