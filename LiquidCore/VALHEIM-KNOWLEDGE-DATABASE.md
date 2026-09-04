@@ -2,7 +2,7 @@
 
 `knowledge/valheim-knowledge-v1.json` is the versioned machine-readable contract shared by the Valheim adapter, PCE, and LiquidCore geometry path. It is embedded into `LiquidCore.dll`; startup rejects it safely when the schema, installed `assembly_valheim.dll`, or relevant mod-set fingerprint differs.
 
-The current inventory is keyed to Steam build `21981559`, assembly SHA-256 `3b26c8512778f6e0664b5af2a26f3c30993a00f584c1e76d9123a742b67e2004`, 809 assembly classes, and the recorded nine-plugin mod set. It contains:
+The current inventory is keyed to Steam build `21981559`, assembly SHA-256 `3b26c8512778f6e0664b5af2a26f3c30993a00f584c1e76d9123a742b67e2004`, 809 assembly classes, and the recorded eight-plugin mod set (`95daa4f9c5988f4eb0ccb9dd82c2399d03b5df0fdfcdec99582c2b2454f1a081`). It contains:
 
 - 10 geometry-relevant Valheim type rules;
 - 12 authoritative or consistency signal contracts;
@@ -33,3 +33,9 @@ For a local terrain operation, `TerrainComp.DoOperation` supplies exact operatio
 ```
 
 Run `Test-ValheimKnowledgeDatabase.ps1` to verify the installed game/build/mod fingerprints, embedded resource, signal rules, and terrain fast-path ordering.
+
+On a valid startup LiquidCore emits an explicit `MATCH` certificate containing
+the schema, Steam build, installed assembly hash, and mod-set hash. The same
+line confirms that known assets bypass runtime reinspection on cache hit and
+that the authoritative local terrain rule bypasses discovery. Unknown assets
+alone retain the safe inspection-and-learn fallback.

@@ -21,14 +21,14 @@ if (!$buildMatch.Success -or $buildMatch.Groups['id'].Value -ne $database.valhei
     throw "Steam build fingerprint mismatch."
 }
 
-$pluginRows = Get-ChildItem -LiteralPath $pluginRoot -Filter '*.dll' -File -Recurse |
+$pluginRows = @(Get-ChildItem -LiteralPath $pluginRoot -Filter '*.dll' -File -Recurse |
     Where-Object { $_.Name -ne 'LiquidCore.dll' } |
-    Sort-Object { $_.FullName.Substring($pluginRoot.Length + 1) } |
     ForEach-Object {
         $relative = $_.FullName.Substring($pluginRoot.Length + 1).Replace('\', '/')
         $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
         "$relative|$($_.Length)|$hash"
-    }
+    })
+[Array]::Sort($pluginRows, [StringComparer]::Ordinal)
 $canonicalModSet = $pluginRows -join "`n"
 $sha = [Security.Cryptography.SHA256]::Create()
 try {
@@ -42,6 +42,23 @@ if ($null -eq $terrainRule -or $terrainRule.authority -ne 'authoritative-local' 
 }
 
 $adapterSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'src\PhysicalWaterValheimWorldGeometryAdapter.cs') -Raw
+$databaseSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'src\ValheimKnowledgeDatabase.cs') -Raw
+if (!$databaseSource.Contains('Paths.GameRootPath') -or
+    !$databaseSource.Contains('"assembly_valheim.dll"') -or
+    $databaseSource.Contains('HashFile(typeof(TerrainComp).Assembly.Location)')) {
+    throw "Runtime database validity must use the immutable installed-game assembly fingerprint."
+}
+foreach ($requiredCertificationText in @(
+    'DataContractJsonSerializer',
+    'MATCH schema=',
+    'database-first serving active',
+    'bypass runtime reinspection on hit',
+    'terrainRules=',
+    'bypass discovery')) {
+    if (!$databaseSource.Contains($requiredCertificationText)) {
+        throw "Startup database certification is incomplete: $requiredCertificationText"
+    }
+}
 $fastPathIndex = $adapterSource.IndexOf('record.AuthoritativeLocalSignal && cached != null', [StringComparison]::Ordinal)
 $rediscoveryIndex = $adapterSource.IndexOf('Source source = CreateSource(record.Root);', [StringComparison]::Ordinal)
 if ($fastPathIndex -lt 0 -or $rediscoveryIndex -lt 0 -or $fastPathIndex -gt $rediscoveryIndex) {

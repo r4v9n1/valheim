@@ -11,8 +11,8 @@
   },
   "modSet": {
     "fingerprintAlgorithm": "sha256(relative-path|length|sha256, ordinal path order, LiquidCore excluded)",
-    "fingerprint": "e5a76ab4774b6dda6647183de34e4b6df09afcca81256d49756b9f671249d62a",
-    "pluginCount": 9
+    "fingerprint": "95daa4f9c5988f4eb0ccb9dd82c2399d03b5df0fdfcdec99582c2b2454f1a081",
+    "pluginCount": 8
   },
   "cacheContract": {
     "asset": "assetId -> immutable prefab/type geometry knowledge",

@@ -54,6 +54,10 @@
       <HintPath>$(BepInExCoreDir)\0Harmony.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="System.Runtime.Serialization">
+      <HintPath>$(GameManagedDir)\System.Runtime.Serialization.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="assembly_valheim">
       <HintPath>$(GameManagedDir)\assembly_valheim.dll</HintPath>
       <Private>false</Private>

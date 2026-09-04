@@ -44,6 +44,8 @@ namespace PhysicalWater
             Settings = new PhysicalWaterSettings(Config);
             ValheimKnowledge = ValheimKnowledgeDatabase.LoadEmbedded();
             Logger.LogInfo("LiquidCore Valheim knowledge database: " + ValheimKnowledge.Summary() + ".");
+            if (ValheimKnowledge.Loaded)
+                Logger.LogInfo("LiquidCore Valheim knowledge database fingerprint: " + ValheimKnowledge.StartupCertification() + ".");
             bool legacyReplacementEnabled = Settings.Enabled.Value && !Settings.StageE1Enabled.Value;
             if (Settings.Enabled.Value && Settings.StageE1Enabled.Value)
             {

@@ -2,21 +2,23 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
 using System.Security.Cryptography;
 using System.Text;
 using BepInEx;
 using UnityEngine;
 
-#pragma warning disable 0649 // JsonUtility populates serialized fields from the embedded database.
+#pragma warning disable 0649 // DataContractJsonSerializer populates serialized fields from the embedded database.
 namespace PhysicalWater
 {
-    internal sealed class ValheimKnowledgeDatabase
+    public sealed class ValheimKnowledgeDatabase
     {
         internal const int SupportedSchemaVersion = 1;
         internal const string ResourceName = "PhysicalWater.knowledge.valheim-knowledge-v1.json";
 
         [Serializable]
-        internal sealed class Document
+        public sealed class Document
         {
             public int schemaVersion;
             public string databaseId;
@@ -29,11 +31,13 @@ namespace PhysicalWater
             public AssetRule[] observedAssets;
         }
 
-        [Serializable] internal sealed class ValheimIdentity { public string steamAppId; public string steamBuildId; public string assemblyName; public string assemblySha256; public int assemblyClassCount; }
-        [Serializable] internal sealed class ModSetIdentity { public string fingerprintAlgorithm; public string fingerprint; public int pluginCount; }
-        [Serializable] internal sealed class CacheContract { public string asset; public string instance; public string prepared; public string reuse; public string invalidate; public string remove; }
+        // Keep database DTOs public so the runtime serializer can populate the
+        // complete nested document and its incrementally learned overlay.
+        [Serializable] public sealed class ValheimIdentity { public string steamAppId; public string steamBuildId; public string assemblyName; public string assemblySha256; public int assemblyClassCount; }
+        [Serializable] public sealed class ModSetIdentity { public string fingerprintAlgorithm; public string fingerprint; public int pluginCount; }
+        [Serializable] public sealed class CacheContract { public string asset; public string instance; public string prepared; public string reuse; public string invalidate; public string remove; }
         [Serializable]
-        internal sealed class TypeRule
+        public sealed class TypeRule
         {
             public string type;
             public string category;
@@ -46,7 +50,7 @@ namespace PhysicalWater
         }
 
         [Serializable]
-        internal sealed class SignalRule
+        public sealed class SignalRule
         {
             public string eventLabel;
             public string ownerType;
@@ -61,7 +65,7 @@ namespace PhysicalWater
         }
 
         [Serializable]
-        internal sealed class AssetRule
+        public sealed class AssetRule
         {
             public string assetId;
             public string observedRootType;
@@ -69,19 +73,19 @@ namespace PhysicalWater
             public string geometryKind;
             public string source;
             public bool precompute;
-            public int colliderCount;
-            public int meshColliderCount;
-            public int primitiveColliderCount;
-            public int triggerColliderCount;
-            public int meshVertices;
-            public int meshTriangles;
-            public string geometrySignature;
-            public string[] componentTypes;
-            public float[] localBoundsCenter;
-            public float[] localBoundsSize;
-            public bool destructible;
-            public bool buildPiece;
-            public bool door;
+            [OptionalField] public int colliderCount;
+            [OptionalField] public int meshColliderCount;
+            [OptionalField] public int primitiveColliderCount;
+            [OptionalField] public int triggerColliderCount;
+            [OptionalField] public int meshVertices;
+            [OptionalField] public int meshTriangles;
+            [OptionalField] public string geometrySignature;
+            [OptionalField] public string[] componentTypes;
+            [OptionalField] public float[] localBoundsCenter;
+            [OptionalField] public float[] localBoundsSize;
+            [OptionalField] public bool destructible;
+            [OptionalField] public bool buildPiece;
+            [OptionalField] public bool door;
         }
 
         private readonly Dictionary<string, TypeRule> _types = new Dictionary<string, TypeRule>(StringComparer.Ordinal);
@@ -109,17 +113,30 @@ namespace PhysicalWater
                     if (stream == null) throw new InvalidOperationException("missing embedded resource " + ResourceName);
                     using (var reader = new StreamReader(stream))
                     {
-                        database.Data = JsonUtility.FromJson<Document>(reader.ReadToEnd());
+                        database.Data = DeserializeDocument(reader.ReadToEnd());
                     }
                 }
 
                 if (database.Data == null || database.Data.schemaVersion != SupportedSchemaVersion)
                     throw new InvalidOperationException("unsupported schema version");
 
-                string gameAssemblyHash = HashFile(typeof(TerrainComp).Assembly.Location);
+                // Key persistent knowledge to the installed game artifact, not the
+                // assembly image already loaded through BepInEx. A preloader may
+                // rewrite/load an image whose bytes are no longer the immutable
+                // Steam installation fingerprint used to build this database.
+                string installedGameAssembly = Path.Combine(
+                    Paths.GameRootPath,
+                    "valheim_Data",
+                    "Managed",
+                    "assembly_valheim.dll");
+                string gameAssemblyHash = HashFile(installedGameAssembly);
                 if (database.Data.valheim == null ||
                     !string.Equals(gameAssemblyHash, database.Data.valheim.assemblySha256, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException("installed Valheim assembly fingerprint does not match the database");
+                    throw new InvalidOperationException(
+                        "installed Valheim assembly fingerprint does not match the database" +
+                        "; path=" + installedGameAssembly +
+                        "; actual=" + gameAssemblyHash +
+                        "; expected=" + (database.Data.valheim != null ? database.Data.valheim.assemblySha256 : "<missing>"));
 
                 string modSetFingerprint = ComputeModSetFingerprint(Paths.PluginPath);
                 if (database.Data.modSet == null ||
@@ -241,7 +258,8 @@ namespace PhysicalWater
                     modSet = Data.modSet,
                     observedAssets = _learnedAssets.ToArray()
                 };
-                File.WriteAllText(_learnedPath, JsonUtility.ToJson(overlay, true));
+                using (var stream = File.Create(_learnedPath))
+                    new DataContractJsonSerializer(typeof(Document)).WriteObject(stream, overlay);
                 _learnedDirty = false;
             }
             catch (Exception ex)
@@ -257,6 +275,24 @@ namespace PhysicalWater
                 : "loaded=True, schema=" + Data.schemaVersion +
                   ", steamBuild=" + (Data.valheim != null ? Data.valheim.steamBuildId : "unknown") +
                   ", types=" + _types.Count + ", signals=" + _signals.Count + ", assets=" + _assets.Count;
+        }
+
+        internal string StartupCertification()
+        {
+            if (!Loaded || Data == null || Data.valheim == null || Data.modSet == null)
+                return "fingerprint match unavailable; database-first serving inactive";
+
+            SignalRule terrain;
+            bool terrainReady = _signals.TryGetValue("heightmap terrain operation/regenerate", out terrain) &&
+                                terrain != null && terrain.immediate &&
+                                string.Equals(terrain.authority, "authoritative-local", StringComparison.Ordinal);
+            return "MATCH schema=" + Data.schemaVersion +
+                   ", steamBuild=" + Data.valheim.steamBuildId +
+                   ", assemblySha256=" + Data.valheim.assemblySha256 +
+                   ", modSetSha256=" + Data.modSet.fingerprint +
+                   "; database-first serving active: knownAssets=" + _assets.Count +
+                   " bypass runtime reinspection on hit, terrainRules=" + (terrainReady ? "authoritative-local/immediate" : "INVALID") +
+                   " bypass discovery; unknown assets retain safe inspection fallback";
         }
 
         private static string ComputeModSetFingerprint(string pluginRoot)
@@ -284,7 +320,7 @@ namespace PhysicalWater
             if (!File.Exists(_learnedPath)) return;
             try
             {
-                Document overlay = JsonUtility.FromJson<Document>(File.ReadAllText(_learnedPath));
+                Document overlay = DeserializeDocument(File.ReadAllText(_learnedPath));
                 if (overlay == null || overlay.schemaVersion != Data.schemaVersion || overlay.valheim == null || overlay.modSet == null ||
                     !string.Equals(overlay.valheim.assemblySha256, Data.valheim.assemblySha256, StringComparison.OrdinalIgnoreCase) ||
                     !string.Equals(overlay.modSet.fingerprint, Data.modSet.fingerprint, StringComparison.OrdinalIgnoreCase)) return;
@@ -308,6 +344,12 @@ namespace PhysicalWater
             using (FileStream stream = File.OpenRead(path))
             using (SHA256 sha = SHA256.Create())
                 return ToHex(sha.ComputeHash(stream));
+        }
+
+        private static Document DeserializeDocument(string json)
+        {
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(json)))
+                return (Document)new DataContractJsonSerializer(typeof(Document)).ReadObject(stream);
         }
 
         private static string HashBytes(byte[] bytes)
