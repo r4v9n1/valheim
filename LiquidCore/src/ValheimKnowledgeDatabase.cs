@@ -81,11 +81,18 @@ namespace PhysicalWater
             [OptionalField] public int meshTriangles;
             [OptionalField] public string geometrySignature;
             [OptionalField] public string[] componentTypes;
+            [OptionalField] public string[] colliderTypes;
             [OptionalField] public float[] localBoundsCenter;
             [OptionalField] public float[] localBoundsSize;
+            [OptionalField] public string staticClass;
             [OptionalField] public bool destructible;
             [OptionalField] public bool buildPiece;
             [OptionalField] public bool door;
+            [OptionalField] public string[] stateFields;
+            [OptionalField] public string[] authoritativeCallbacks;
+            [OptionalField] public string pceRule;
+            [OptionalField] public string liquidCoreRule;
+            [OptionalField] public bool runtimeInspectionRequired;
         }
 
         private readonly Dictionary<string, TypeRule> _types = new Dictionary<string, TypeRule>(StringComparer.Ordinal);
@@ -101,6 +108,9 @@ namespace PhysicalWater
         internal int AssetCacheMisses { get; private set; }
         internal int SignalCacheHits { get; private set; }
         internal int SignalCacheMisses { get; private set; }
+        internal int ReusableGeometryDescriptorCount { get; private set; }
+        internal int GeometryDescriptorCacheHits { get; private set; }
+        internal int GeometryDescriptorCacheMisses { get; private set; }
 
         internal static ValheimKnowledgeDatabase LoadEmbedded()
         {
@@ -164,7 +174,11 @@ namespace PhysicalWater
                     if (rule != null && !string.IsNullOrEmpty(rule.eventLabel)) _signals[rule.eventLabel] = rule;
             if (Data.observedAssets != null)
                 foreach (AssetRule rule in Data.observedAssets)
-                    if (rule != null && !string.IsNullOrEmpty(rule.assetId)) _assets[rule.assetId] = rule;
+                    if (rule != null && !string.IsNullOrEmpty(rule.assetId))
+                    {
+                        _assets[rule.assetId] = rule;
+                        if (HasReusableGeometryDescriptor(rule)) ReusableGeometryDescriptorCount++;
+                    }
         }
 
         internal bool TryGetSignal(string eventLabel, out SignalRule rule)
@@ -192,6 +206,30 @@ namespace PhysicalWater
         internal bool ContainsAsset(string assetId)
         {
             return Loaded && !string.IsNullOrEmpty(assetId) && _assets.ContainsKey(assetId);
+        }
+
+        internal bool TryGetReusableGeometryAsset(string assetId, out AssetRule rule)
+        {
+            rule = null;
+            bool found = Loaded && !string.IsNullOrEmpty(assetId) && _assets.TryGetValue(assetId, out rule) &&
+                         HasReusableGeometryDescriptor(rule);
+            if (found) GeometryDescriptorCacheHits++;
+            else
+            {
+                GeometryDescriptorCacheMisses++;
+                rule = null;
+            }
+            return found;
+        }
+
+        private static bool HasReusableGeometryDescriptor(AssetRule rule)
+        {
+            return rule != null && rule.precompute && !rule.runtimeInspectionRequired &&
+                   rule.colliderCount > rule.triggerColliderCount &&
+                   rule.localBoundsCenter != null && rule.localBoundsCenter.Length == 3 &&
+                   rule.localBoundsSize != null && rule.localBoundsSize.Length == 3 &&
+                   !string.IsNullOrEmpty(rule.geometrySignature) &&
+                   rule.colliderTypes != null && rule.colliderTypes.Length > 0;
         }
 
         internal bool LearnAsset(
@@ -274,7 +312,8 @@ namespace PhysicalWater
                 ? "loaded=False"
                 : "loaded=True, schema=" + Data.schemaVersion +
                   ", steamBuild=" + (Data.valheim != null ? Data.valheim.steamBuildId : "unknown") +
-                  ", types=" + _types.Count + ", signals=" + _signals.Count + ", assets=" + _assets.Count;
+                  ", types=" + _types.Count + ", signals=" + _signals.Count + ", assets=" + _assets.Count +
+                  ", reusableGeometryDescriptors=" + ReusableGeometryDescriptorCount;
         }
 
         internal string StartupCertification()
@@ -291,8 +330,9 @@ namespace PhysicalWater
                    ", assemblySha256=" + Data.valheim.assemblySha256 +
                    ", modSetSha256=" + Data.modSet.fingerprint +
                    "; known assets/terrain rules are being served from the database rather than runtime reinspection: knownAssetClassifications=" + _assets.Count +
-                   " bypass hierarchy/category reinspection on hit, terrainRules=" + (terrainReady ? "authoritative-local/immediate" : "INVALID") +
-                   " bypass discovery; collider geometry still uses cached instance data or safe inspection, and unknown assets retain inspection-and-learn fallback";
+                   " bypass hierarchy/category reinspection on hit, reusableAssetGeometry=" + ReusableGeometryDescriptorCount +
+                   " descriptors bypass collider/component hierarchy reinspection on immutable cache hits, terrainRules=" + (terrainReady ? "authoritative-local/immediate" : "INVALID") +
+                   " bypass discovery; stateful and unknown assets retain targeted safe inspection fallback";
         }
 
         private static string ComputeModSetFingerprint(string pluginRoot)

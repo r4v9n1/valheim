@@ -6,10 +6,11 @@ The current inventory is keyed to Steam build `21981559`, assembly SHA-256 `3b26
 
 - 10 geometry-relevant Valheim type rules;
 - 12 authoritative or consistency signal contracts;
-- 7 prefabs observed in retained LiquidCore live traces.
+- 876 fingerprinted network-solid prefab descriptors, including collider types/counts, local bounds, geometry signatures, component/state flags, authoritative callbacks, and PCE/LC handling rules;
+- 802 immutable/intact-state geometry descriptors that can bypass collider/component hierarchy reinspection;
 - 11 assembly type contracts and 15 callback contracts verified directly against the fingerprinted installed assembly.
 
-The observed-prefab list is deliberately incremental. Unknown assets remain on the existing safe runtime-inspection path once; the completed classification and geometry facts are then retained in `BepInEx/config/LiquidCore/valheim-knowledge-learned-v1.json` and reused on later instances/startups. The learned overlay is accepted only for the same schema, Valheim assembly, and mod-set fingerprints. No broad prefab scan is performed on normal startup.
+The embedded prefab inventory is produced by the opt-in `Update-ValheimKnowledgeAssets.ps1` workflow from a fingerprint-matched Valheim resource census. The expensive census is disabled during normal startup. Unknown assets remain on the existing safe runtime-inspection path once; completed facts are retained in `BepInEx/config/LiquidCore/valheim-knowledge-learned-v1.json` and reused only for the same schema, Valheim assembly, and mod-set fingerprints.
 
 ## Cache contract
 
@@ -38,9 +39,9 @@ Run `Test-ValheimKnowledgeDatabase.ps1` to verify the installed game/build/mod f
 On a valid startup LiquidCore emits an explicit `MATCH` certificate containing
 the schema, Steam build, installed assembly hash, and mod-set hash. The same
 line confirms that known-asset classification bypasses hierarchy/category
-reinspection on cache hit and that the authoritative local terrain rule
-bypasses discovery. Collider geometry still comes from retained instance data
-or safe inspection until a complete learned descriptor exists; unknown assets
-retain the safe inspection-and-learn fallback.
+reinspection, reusable immutable/intact-state descriptors bypass collider and
+component hierarchy reinspection, and the authoritative local terrain rule
+bypasses discovery. Stateful MineRock/door geometry and unknown assets retain
+the targeted safe inspection fallback.
 
 Streamed-source appearance is delivered directly from `ZNetScene.CreateObject`. Disappearance uses the shared `ZNetView.ResetZDO` lifecycle point while identity and hierarchy data are still intact; Valheim calls it from explicit destruction, ZDO destruction, stream-out removal, and scene shutdown. PCE therefore adds or removes the exact source contribution without enumerating `ZNetScene.m_instances` or waiting for root rediscovery. The consistency scanner remains a safety fallback for callbacks that cannot supply an active source.

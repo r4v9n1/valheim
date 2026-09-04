@@ -53,6 +53,12 @@ namespace PhysicalWater
             }
 
             _harmony = new Harmony(PluginGuid);
+            if (ValheimKnowledgeInventoryExporter.Enabled)
+            {
+                PatchRequired(typeof(ValheimKnowledgeInventoryZNetScenePatch), "opt-in fingerprinted Valheim prefab knowledge inventory");
+                PatchRequired(typeof(ValheimKnowledgeInventoryStartupPatch), "opt-in fingerprinted loaded-resource knowledge inventory fallback");
+                Logger.LogInfo("LiquidCore opt-in Valheim knowledge inventory armed; normal startup never performs this scan.");
+            }
             if (legacyReplacementEnabled)
             {
                 PatchRequired(typeof(FloatingGetLiquidLevelPatch), "Floating.GetLiquidLevel water-height override");

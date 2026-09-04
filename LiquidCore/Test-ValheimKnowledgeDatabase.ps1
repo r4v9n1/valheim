@@ -87,6 +87,28 @@ if ($null -eq $terrainRule -or $terrainRule.authority -ne 'authoritative-local' 
     throw "Authoritative terrain rule is missing or unsafe."
 }
 
+$assets = @($database.observedAssets)
+$reusableAssets = @($assets | Where-Object { $_.precompute -and !$_.runtimeInspectionRequired })
+if ($assets.Count -lt 800 -or $reusableAssets.Count -lt 700) {
+    throw "Fingerprint prefab inventory is incomplete: assets=$($assets.Count), reusable=$($reusableAssets.Count)."
+}
+foreach ($asset in $assets | Where-Object precompute) {
+    if ($asset.colliderCount -le $asset.triggerColliderCount -or
+        @($asset.colliderTypes).Count -eq 0 -or
+        @($asset.localBoundsCenter).Count -ne 3 -or
+        @($asset.localBoundsSize).Count -ne 3 -or
+        [string]::IsNullOrWhiteSpace($asset.geometrySignature) -or
+        @($asset.componentTypes).Count -eq 0 -or
+        [string]::IsNullOrWhiteSpace($asset.pceRule) -or
+        [string]::IsNullOrWhiteSpace($asset.liquidCoreRule)) {
+        throw "Incomplete reusable asset descriptor: $($asset.assetId)"
+    }
+}
+$locationProxy = $assets | Where-Object assetId -eq 'LocationProxy'
+if ($null -eq $locationProxy -or $locationProxy.precompute -or !$locationProxy.runtimeInspectionRequired) {
+    throw 'LocationProxy must remain a classified runtime-expanded hierarchy, not false precomputed geometry.'
+}
+
 $adapterSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'src\PhysicalWaterValheimWorldGeometryAdapter.cs') -Raw
 $databaseSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'src\ValheimKnowledgeDatabase.cs') -Raw
 if (!$databaseSource.Contains('Paths.GameRootPath') -or
@@ -99,6 +121,7 @@ foreach ($requiredCertificationText in @(
     'MATCHED current game/mod/schema fingerprint: schema=',
     'known assets/terrain rules are being served from the database rather than runtime reinspection',
     'bypass hierarchy/category reinspection on hit',
+    'descriptors bypass collider/component hierarchy reinspection on immutable cache hits',
     'terrainRules=',
     'bypass discovery')) {
     if (!$databaseSource.Contains($requiredCertificationText)) {
@@ -173,6 +196,16 @@ foreach ($requiredPreparedTerrainCacheContract in @(
         throw "LC prepared terrain-region cache contract is incomplete: $requiredPreparedTerrainCacheContract"
     }
 }
+foreach ($requiredAssetDescriptorContract in @(
+    'TryGetReusableGeometryAsset',
+    'TryCreateSourceFromKnownAsset',
+    'AssetDescriptorHydrated',
+    'Valheim knowledge reusable geometry-descriptor hit',
+    'if (!source.AssetDescriptorHydrated)')) {
+    if (!$databaseSource.Contains($requiredAssetDescriptorContract) -and !$adapterSource.Contains($requiredAssetDescriptorContract)) {
+        throw "Reusable prefab geometry path is incomplete: $requiredAssetDescriptorContract"
+    }
+}
 
 if (!(Test-Path -LiteralPath $builtDll -PathType Leaf)) { throw "Build output is missing: $builtDll" }
 $assembly = [Reflection.Assembly]::LoadFile($builtDll)
@@ -242,6 +275,7 @@ $lookupNanoseconds = $watch.Elapsed.TotalMilliseconds * 1000000.0 / 100000.0
     TypeRules = @($database.typeRules).Count
     SignalRules = @($database.signalRules).Count
     ObservedAssets = @($database.observedAssets).Count
+    ReusableAssetGeometryDescriptors = $reusableAssets.Count
     EmbeddedResource = $true
     EmbeddedAssemblyContracts = $true
     TerrainFastPathBeforeRediscovery = $true

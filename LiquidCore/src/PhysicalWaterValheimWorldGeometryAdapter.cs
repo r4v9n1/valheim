@@ -89,6 +89,8 @@ namespace PhysicalWater
             internal int TriggerColliders;
             internal int MeshVertices;
             internal int MeshTriangles;
+            internal bool AssetDescriptorHydrated;
+            internal int AssetDescriptorHash;
             internal bool NonUniformScale;
             internal bool CanFeedSdf;
             internal string RejectionReason;
@@ -861,12 +863,15 @@ namespace PhysicalWater
             }
 
             Source source = CreateSource(record.Root);
-            Collider[] colliders = record.Root.GetComponentsInChildren<Collider>(true);
-            for (int i = 0; i < colliders.Length; i++)
+            if (!source.AssetDescriptorHydrated)
             {
-                Collider collider = colliders[i];
-                if (collider == null || !collider.enabled) continue;
-                AccumulateCollider(source, collider);
+                Collider[] colliders = record.Root.GetComponentsInChildren<Collider>(true);
+                for (int i = 0; i < colliders.Length; i++)
+                {
+                    Collider collider = colliders[i];
+                    if (collider == null || !collider.enabled) continue;
+                    AccumulateCollider(source, collider);
+                }
             }
             stageWatch.Stop();
             report.ClassificationMilliseconds = stageWatch.Elapsed.TotalMilliseconds;
@@ -1717,7 +1722,7 @@ namespace PhysicalWater
                     string reason;
                     record.Category = Classify(root, out reason);
                     Bounds bounds;
-                    if (TryGetRootBounds(root, out bounds) && HasUsableBounds(bounds))
+                    if ((TryGetKnownAssetWorldBounds(root, out bounds) || TryGetRootBounds(root, out bounds)) && HasUsableBounds(bounds))
                     {
                         record.NewBounds = bounds;
                         record.HasNewBounds = true;
@@ -2060,12 +2065,15 @@ namespace PhysicalWater
                 {
                     stageWatch.Restart();
                     source = CreateSource(root);
-                    Collider[] sourceColliders = root.GetComponentsInChildren<Collider>(true);
-                    for (int colliderIndex = 0; colliderIndex < sourceColliders.Length; colliderIndex++)
+                    if (!source.AssetDescriptorHydrated)
                     {
-                        Collider sourceCollider = sourceColliders[colliderIndex];
-                        if (sourceCollider == null || !sourceCollider.enabled) continue;
-                        AccumulateCollider(source, sourceCollider);
+                        Collider[] sourceColliders = root.GetComponentsInChildren<Collider>(true);
+                        for (int colliderIndex = 0; colliderIndex < sourceColliders.Length; colliderIndex++)
+                        {
+                            Collider sourceCollider = sourceColliders[colliderIndex];
+                            if (sourceCollider == null || !sourceCollider.enabled) continue;
+                            AccumulateCollider(source, sourceCollider);
+                        }
                     }
                     stageWatch.Stop();
                     profile.ClassificationMilliseconds += stageWatch.Elapsed.TotalMilliseconds;
@@ -2306,6 +2314,8 @@ namespace PhysicalWater
 
         private Source CreateSource(GameObject root)
         {
+            Source known;
+            if (TryCreateSourceFromKnownAsset(root, out known)) return known;
             string reason;
             ValheimWorldGeometryCategory category = Classify(root, out reason);
             Transform t = root.transform;
@@ -2326,17 +2336,84 @@ namespace PhysicalWater
             };
         }
 
+        private static bool TryCreateSourceFromKnownAsset(GameObject root, out Source source)
+        {
+            source = null;
+            if (root == null || PhysicalWaterPlugin.ValheimKnowledge == null) return false;
+            ZNetView view = root.GetComponentInParent<ZNetView>();
+            if (view == null) view = root.GetComponentInChildren<ZNetView>(true);
+            if (view == null) return false;
+            ValheimKnowledgeDatabase.AssetRule rule;
+            if (!PhysicalWaterPlugin.ValheimKnowledge.TryGetReusableGeometryAsset(SafePrefabName(view), out rule)) return false;
+            ValheimWorldGeometryCategory category;
+            if (!Enum.TryParse(rule.category, false, out category)) return false;
+            Transform transform = root.transform;
+            Bounds localBounds = new Bounds(
+                new Vector3(rule.localBoundsCenter[0], rule.localBoundsCenter[1], rule.localBoundsCenter[2]),
+                new Vector3(rule.localBoundsSize[0], rule.localBoundsSize[1], rule.localBoundsSize[2]));
+            source = new Source
+            {
+                Id = BuildSourceId(root),
+                Path = HierarchyPath(transform),
+                RootType = rule.observedRootType,
+                Category = category,
+                Kind = GeometryKindFromAssetRule(rule),
+                Bounds = LocalBoundsToWorldBounds(transform, localBounds),
+                Position = transform.position,
+                Rotation = transform.rotation,
+                Scale = transform.lossyScale,
+                NonUniformScale = IsNonUniform(transform.lossyScale),
+                CanFeedSdf = CanFeedSdf(category),
+                RejectionReason = "Valheim knowledge reusable geometry-descriptor hit",
+                Root = root,
+                Colliders = rule.colliderCount,
+                MeshColliders = rule.meshColliderCount,
+                PrimitiveColliders = rule.primitiveColliderCount,
+                TriggerColliders = rule.triggerColliderCount,
+                MeshVertices = rule.meshVertices,
+                MeshTriangles = rule.meshTriangles,
+                AssetDescriptorHydrated = true,
+                AssetDescriptorHash = rule.geometrySignature.GetHashCode()
+            };
+            return true;
+        }
+
+        private static ValheimWorldGeometryKind GeometryKindFromAssetRule(ValheimKnowledgeDatabase.AssetRule rule)
+        {
+            if (rule.colliderCount > 1) return ValheimWorldGeometryKind.CompoundColliderHierarchy;
+            if (rule.meshColliderCount > 0) return ValheimWorldGeometryKind.MeshCollider;
+            if (rule.colliderTypes != null && rule.colliderTypes.Length == 1)
+            {
+                if (rule.colliderTypes[0] == "BoxCollider") return ValheimWorldGeometryKind.BoxCollider;
+                if (rule.colliderTypes[0] == "SphereCollider") return ValheimWorldGeometryKind.SphereCollider;
+                if (rule.colliderTypes[0] == "CapsuleCollider") return ValheimWorldGeometryKind.CapsuleCollider;
+            }
+            return ValheimWorldGeometryKind.Unsupported;
+        }
+
+        private static Bounds LocalBoundsToWorldBounds(Transform root, Bounds localBounds)
+        {
+            Bounds world = new Bounds(root.TransformPoint(localBounds.center), Vector3.zero);
+            Vector3 center = localBounds.center;
+            Vector3 extents = localBounds.extents;
+            for (int x = -1; x <= 1; x += 2)
+            for (int y = -1; y <= 1; y += 2)
+            for (int z = -1; z <= 1; z += 2)
+                world.Encapsulate(root.TransformPoint(center + Vector3.Scale(extents, new Vector3(x, y, z))));
+            return world;
+        }
+
         private void FinalizeSource(Source source, CachedSource cached)
         {
-            if (source.Colliders > 1)
+            if (!source.AssetDescriptorHydrated && source.Colliders > 1)
             {
                 source.Kind = ValheimWorldGeometryKind.CompoundColliderHierarchy;
             }
-            else if (source.MeshColliders > 0)
+            else if (!source.AssetDescriptorHydrated && source.MeshColliders > 0)
             {
                 source.Kind = HasComponentInParents(source.Root, "Heightmap") ? ValheimWorldGeometryKind.HeightmapCollisionMesh : ValheimWorldGeometryKind.MeshCollider;
             }
-            else if (source.PrimitiveColliders > 0)
+            else if (!source.AssetDescriptorHydrated && source.PrimitiveColliders > 0)
             {
                 if (source.Root.GetComponentInChildren<BoxCollider>(true) != null) source.Kind = ValheimWorldGeometryKind.BoxCollider;
                 else if (source.Root.GetComponentInChildren<SphereCollider>(true) != null) source.Kind = ValheimWorldGeometryKind.SphereCollider;
@@ -2579,6 +2656,12 @@ namespace PhysicalWater
             {
                 int hash = 23;
                 hash = HashTransform(hash, source.Root.transform);
+                if (source.AssetDescriptorHydrated)
+                {
+                    hash = hash * 31 + source.AssetDescriptorHash;
+                    hash = hash * 31 + source.Colliders;
+                    return hash;
+                }
                 Collider[] colliders = source.Root.GetComponentsInChildren<Collider>(true);
                 hash = hash * 31 + colliders.Length;
                 for (int i = 0; i < colliders.Length; i++)
@@ -2860,6 +2943,22 @@ namespace PhysicalWater
                 }
             }
             return hasBounds;
+        }
+
+        private static bool TryGetKnownAssetWorldBounds(GameObject root, out Bounds bounds)
+        {
+            bounds = default(Bounds);
+            if (root == null || PhysicalWaterPlugin.ValheimKnowledge == null) return false;
+            ZNetView view = root.GetComponentInParent<ZNetView>();
+            if (view == null) view = root.GetComponentInChildren<ZNetView>(true);
+            if (view == null) return false;
+            ValheimKnowledgeDatabase.AssetRule rule;
+            if (!PhysicalWaterPlugin.ValheimKnowledge.TryGetReusableGeometryAsset(SafePrefabName(view), out rule)) return false;
+            var localBounds = new Bounds(
+                new Vector3(rule.localBoundsCenter[0], rule.localBoundsCenter[1], rule.localBoundsCenter[2]),
+                new Vector3(rule.localBoundsSize[0], rule.localBoundsSize[1], rule.localBoundsSize[2]));
+            bounds = LocalBoundsToWorldBounds(root.transform, localBounds);
+            return true;
         }
 
         private static void Encapsulate(ref Bounds dst, ref bool hasDst, Bounds value)

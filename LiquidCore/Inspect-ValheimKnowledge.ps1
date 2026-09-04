@@ -18,6 +18,7 @@ if ([string]::IsNullOrWhiteSpace($Query)) {
         TypeRules = @($database.typeRules).Count
         SignalRules = @($database.signalRules).Count
         ObservedAssets = @($database.observedAssets).Count
+        ReusableGeometryDescriptors = @($database.observedAssets | Where-Object { $_.precompute -and !$_.runtimeInspectionRequired }).Count
     } | Format-List
     return
 }
