@@ -66,7 +66,23 @@ namespace PhysicalWater
                     Instance._pendingWorldKey = null;
                     return;
                 }
-                streaming.RestorePersistedState(Instance._pending);
+                if (!streaming.TryRestorePersistedState(
+                        Instance._pending, out string rejectionReason))
+                {
+                    // Restore is deterministic for an unchanged snapshot and
+                    // domain. Retrying a rejected transaction each frame cannot
+                    // make an invariant true; it only repeats synchronous GPU
+                    // validation and used to leave its pre-validation particles
+                    // visible. Consume the snapshot for this world lifecycle.
+                    Instance._ignoredSnapshotWorldKey = Instance._pendingWorldKey;
+                    string rejectedWorldKey = Instance._pendingWorldKey;
+                    Instance._pending = null;
+                    Instance._pendingWorldKey = null;
+                    PhysicalWaterPlugin.Log.LogWarning(
+                        "LiquidCore Phase 5 snapshot transaction rejected once and rolled back to zero fluid: world=" +
+                        rejectedWorldKey + ", reason=" + rejectionReason + ".");
+                    return;
+                }
                 PhysicalWaterPlugin.Log.LogInfo(
                     "LiquidCore Phase 5 world state restored: world=" + Instance._pendingWorldKey +
                     ", particles=" + Instance._pending.Particles.Length + ".");
@@ -81,18 +97,11 @@ namespace PhysicalWater
             }
             catch (Exception ex)
             {
-                // A snapshot is valid for its saved domain geometry, not for
-                // every future player-centered test window. Retrying that
-                // known-incompatible snapshot every frame only produces
-                // log/CPU churn and can delay explicit finite-domain testing.
-                bool incompatibleDomain = ex is InvalidOperationException &&
-                    ex.Message.StartsWith("Snapshot/domain mismatch", StringComparison.Ordinal);
-                if (incompatibleDomain)
-                {
-                    Instance._ignoredSnapshotWorldKey = Instance._pendingWorldKey;
-                    Instance._pending = null;
-                    Instance._pendingWorldKey = null;
-                }
+                // This path now means the restore transaction itself could not
+                // guarantee rollback. Do not repeat an indeterminate mutation.
+                Instance._ignoredSnapshotWorldKey = Instance._pendingWorldKey;
+                Instance._pending = null;
+                Instance._pendingWorldKey = null;
                 PhysicalWaterPlugin.Log.LogWarning(
                     "LiquidCore Phase 5 snapshot was not applied; the new domain remains unchanged: " + ex.Message);
             }
