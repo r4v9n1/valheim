@@ -1,3 +1,10 @@
+## 0.6.0-devE3.2-rc3
+
+- Uses the exact persistent liquid ledger to build one dominant free-surface head per XZ column, allowing gravity-driven flow through every connected submerged face instead of comparing incompatible per-cell cut-volume estimates.
+- Removes the unused full-resolution 3D particle scalar, filtering, normal, and temporal passes from the authoritative gravity-aligned production renderer. Surface velocity now samples the MAC field directly; the legacy 3D reconstruction path remains intact for non-authoritative modes.
+- The production visual, hydrostatic, corrected basin, live-scale waterline, captured live surface/performance, dynamic dig/raise, adversarial terrain, player interaction, automated showcase, and complete production suites pass with exact volume preservation. Manual Valheim acceptance remains required.
+- Assembly `0.6.0.22`.
+
 ## 0.6.0-devE3.2-probe5
 
 - Retains the deferred cut-cell projection crop across transient liquid-bound changes, expanding immediately and shrinking only after eight identical tight bounds. The focused 4,096-particle A/B reduces reproduced safety fallbacks from `40/40` to `2/40` and mean readback stages from `3.0` to `1.1` with bit-identical pressure/liquid fields and exact `216.000000 m3` volume.
