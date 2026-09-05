@@ -30,6 +30,12 @@
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricStreamingDomain.cs" Link="Volumetric\VolumetricStreamingDomain.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricFluidStateSnapshot.cs" Link="Volumetric\VolumetricFluidStateSnapshot.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricWorldGeometryAdapter.cs" Link="Volumetric\VolumetricWorldGeometryAdapter.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricContainerTransferLedger.cs" Link="Volumetric\VolumetricContainerTransferLedger.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\LiquidCoreWaterBodyRegistry.cs" Link="Volumetric\LiquidCoreWaterBodyRegistry.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\LiquidCoreWaterBodyRegistryPublisher.cs" Link="Volumetric\LiquidCoreWaterBodyRegistryPublisher.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\LiquidCoreMicroVolumeConsolidation.cs" Link="Volumetric\LiquidCoreMicroVolumeConsolidation.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\LiquidCorePlayerWaterInteraction.cs" Link="Volumetric\LiquidCorePlayerWaterInteraction.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\CodyCatchmentCache.cs" Link="Cody\CodyCatchmentCache.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyContract.cs" Link="Probes\ProbeColonyContract.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyGeometryBridge.cs" Link="Probes\ProbeColonyGeometryBridge.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyChangeQueue.cs" Link="Probes\ProbeColonyChangeQueue.cs" />
@@ -37,6 +43,7 @@
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyCausalGeometrySignals.cs" Link="Probes\ProbeColonyCausalGeometrySignals.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyRuntime.cs" Link="Probes\ProbeColonyRuntime.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyDiscoverySchedule.cs" Link="Probes\ProbeColonyDiscoverySchedule.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyCatchmentTopology.cs" Link="Probes\ProbeColonyCatchmentTopology.cs" />
   </ItemGroup>
 
   <ItemGroup>

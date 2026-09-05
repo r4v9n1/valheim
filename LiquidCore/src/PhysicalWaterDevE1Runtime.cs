@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using R4V9N1.PhysicalOcean.Cody;
 using R4V9N1.PhysicalOcean.Probes;
 using R4V9N1.PhysicalOcean.Volumetric;
 using UnityEngine;
@@ -32,6 +33,37 @@ namespace PhysicalWater
 
     internal sealed class PhysicalWaterDevE1Runtime : MonoBehaviour
     {
+        private sealed class LiveMvcTopology : ILiquidCoreResolvedCatchmentTopology
+        {
+            private readonly VolumetricCutCellCatchmentTopology _cutCells;
+            private readonly ProbeColonyCatchmentTopology _pce;
+
+            internal LiveMvcTopology(VolumetricFiniteDomainController domain, LiquidCorePceRuntime pceRuntime)
+            {
+                if (pceRuntime == null) throw new ArgumentNullException(nameof(pceRuntime));
+                _cutCells = new VolumetricCutCellCatchmentTopology(
+                    domain, 4096, pceRuntime.ClassifySubGridObstacle);
+                VolumetricWaterSettings settings = domain.MacDomain.Settings;
+                _pce = new ProbeColonyCatchmentTopology(
+                    pceRuntime.World, new Vector3Int(32, 32, 32), settings.CellSize, domain.WorldOrigin);
+            }
+
+            public bool HasPhysicalOpenPath(LiquidCoreWaterBodyRecord source,
+                LiquidCoreWaterBodyRecord destination, CodyDrainageExit exit) =>
+                _cutCells.HasPhysicalOpenPath(source, destination, exit) ||
+                _pce.HasPhysicalOpenPath(source, destination, exit);
+
+            public bool IsSubGridSpillPlausible(LiquidCoreWaterBodyRecord source,
+                LiquidCoreWaterBodyRecord destination, CodyDrainageExit exit) =>
+                TryResolveSubGridSpill(source, destination, exit, out _);
+
+            public bool TryResolveSubGridSpill(LiquidCoreWaterBodyRecord source,
+                LiquidCoreWaterBodyRecord destination, CodyDrainageExit exit,
+                out CodyDrainageExit resolved) =>
+                _cutCells.TryResolveSubGridSpill(source, destination, exit, out resolved) ||
+                _pce.TryResolveSubGridSpill(source, destination, exit, out resolved);
+        }
+
         internal static PhysicalWaterDevE1Runtime Instance { get; private set; }
 
         private readonly List<GameObject> _geometryRoots = new List<GameObject>();
@@ -91,6 +123,23 @@ namespace PhysicalWater
         private bool _preparedGeometryIsInitial;
         private readonly PhysicalWaterDeferredFillGate _deferredFill = new PhysicalWaterDeferredFillGate();
         private readonly PhysicalWaterOneHitTerrainTruth _oneHitTerrainTruth = new PhysicalWaterOneHitTerrainTruth();
+        private VolumetricWaterSample _latestPlayerWaterSample;
+        private bool _hasLatestPlayerWaterSample;
+        private float _latestPlayerWaterSampleTime;
+        private float _nextPlayerWaterQueryTime;
+        private float _lastFiniteWaterSurfaceHeight;
+        private Vector3 _previousPlayerForward;
+        private readonly LiquidCorePlayerWaterInteractionState _playerInteraction = new LiquidCorePlayerWaterInteractionState();
+        private LiquidCoreMicroVolumeConsolidation _microVolumeConsolidation;
+        private long _microVolumeGeometryRevision = long.MinValue;
+        private long _completedSimulationSteps;
+        private long _deferredMvcRefreshStep = -1;
+        private readonly HashSet<ulong> _pendingMvcBodies = new HashSet<ulong>();
+        private readonly HashSet<ulong> _deferredMvcBodies = new HashSet<ulong>();
+        private readonly List<ulong> _mvcBodyScratch = new List<ulong>();
+        private readonly List<LiquidCoreMicroSpillConnection> _microSpillScratch = new List<LiquidCoreMicroSpillConnection>();
+        private readonly List<ulong> _retiredMicroSpillScratch = new List<ulong>();
+        private LiquidCorePceRuntime _subscribedCodyRuntime;
 
         internal PhysicalWaterOneHitTerrainTruth OneHitTerrainTruth => _oneHitTerrainTruth;
 
@@ -105,7 +154,8 @@ namespace PhysicalWater
             LoadAssets();
             PhysicalWaterPlugin.Log.LogInfo(
                 "PhysicalWater devE3 finite streaming test mode active. Global ocean replacement OFF. " +
-                "Vanilla-water suppression OFF. Swimming/buoyancy/ships/fish OFF. Explicit finite fluid only.");
+                "Vanilla-water suppression OFF. Finite local-player liquid-level feed and presentation interaction ON; " +
+                "ship/fish/object buoyancy replacement remains OFF. Explicit finite fluid only.");
             PhysicalWaterPlugin.Log.LogInfo(
                 "PhysicalWater devE3 explicit test controls: console pw_e3_* (pw_e1_* aliases retained); " +
                 "F6=create domain, F7=initialize a 216m3 local basin waterline, F8=clear, F9=status, F10=pause, F11=raw/live field probe, F12=capture terrain fixture; " +
@@ -143,6 +193,7 @@ namespace PhysicalWater
             if (TestChordDown(KeyCode.J)) ApplyTerrainTestDelta(-1f, "lower");
             if (TestChordDown(KeyCode.K)) ApplyTerrainTestDelta(1f, "raise");
             if (_streaming == null || _domain == null || !_domain.Initialized) return;
+            RequestPlayerWaterSample();
 
             float fixedDt = 1f / 30f;
             _accumulator = Mathf.Min(_accumulator + Time.deltaTime, fixedDt * 3f);
@@ -152,7 +203,9 @@ namespace PhysicalWater
             if (!_domain.Paused && _streaming.HasDeferredStep && _streaming.TryCompleteDeferredStep())
             {
                 substeps++;
+                _completedSimulationSteps++;
                 _oneHitTerrainTruth.OnStepCompleted();
+                AdvanceMicroSpillConnections(fixedDt);
             }
             // Complete the current authoritative substep before testing the
             // PCE handoff. Checking only at the start of Update starved dynamic
@@ -173,6 +226,7 @@ namespace PhysicalWater
             _lastSubsteps = substeps;
             _lastSimulationCpuMs = (float)watch.Elapsed.TotalMilliseconds;
             AccumulateTelemetry(substeps);
+            RequestDeferredMvcRefreshIfReady();
 
             if (Time.unscaledTime >= _nextTelemetryTime)
             {
@@ -180,6 +234,65 @@ namespace PhysicalWater
                 LogTelemetry();
             }
 
+        }
+
+        private void RequestPlayerWaterSample()
+        {
+            Player player = Player.m_localPlayer;
+            if (player == null || Time.unscaledTime < _nextPlayerWaterQueryTime || _domain.MacDomain.WaterQueryPending) return;
+            _nextPlayerWaterQueryTime = Time.unscaledTime + 0.05f;
+            VolumetricFiniteDomainController requestedDomain = _domain;
+            Vector3 position = player.transform.position;
+            requestedDomain.RequestWaterSamplesAsync(new[] { position }, samples =>
+            {
+                if (_domain != requestedDomain || samples == null || samples.Length != 1) return;
+                _latestPlayerWaterSample = samples[0];
+                _hasLatestPlayerWaterSample = true;
+                _latestPlayerWaterSampleTime = Time.unscaledTime;
+                UpdatePlayerPresentationInteraction(player, samples[0]);
+            });
+        }
+
+        private void UpdatePlayerPresentationInteraction(Player player, VolumetricWaterSample sample)
+        {
+            if (player == null || _domain == null) return;
+            Vector3 position = player.transform.position;
+            bool inFiniteWater = sample.HasWaterColumn &&
+                                 sample.SurfaceHeight > position.y - 1.75f &&
+                                 sample.SurfaceHeight < position.y + 3.5f;
+            Rigidbody body = player.GetComponent<Rigidbody>();
+            float speed = body != null
+                ? new Vector2(body.linearVelocity.x, body.linearVelocity.z).magnitude
+                : 0f;
+            Vector3 forward = player.transform.forward;
+            float turning = _previousPlayerForward.sqrMagnitude > 0.5f
+                ? Vector3.Angle(_previousPlayerForward, forward)
+                : 0f;
+            _previousPlayerForward = forward;
+
+            float depth = inFiniteWater ? Mathf.Max(0f, sample.SurfaceHeight - position.y) : 0f;
+            LiquidCorePlayerWaterInteraction interaction = _playerInteraction.Evaluate(inFiniteWater, depth, speed, turning);
+
+            if (interaction.Kind != LiquidCorePlayerWaterInteractionKind.None)
+            {
+                float surface = sample.HasWaterColumn ? sample.SurfaceHeight : _lastFiniteWaterSurfaceHeight;
+                _domain.SetPresentationInteraction(
+                    new Vector3(position.x, surface, position.z),
+                    interaction.Strength,
+                    interaction.Radius,
+                    Time.time);
+            }
+            if (inFiniteWater) _lastFiniteWaterSurfaceHeight = sample.SurfaceHeight;
+        }
+
+        internal bool TryGetLatestPlayerWaterSample(Vector3 position, out VolumetricWaterSample sample)
+        {
+            sample = _latestPlayerWaterSample;
+            if (!_hasLatestPlayerWaterSample || Time.unscaledTime - _latestPlayerWaterSampleTime > 0.35f ||
+                !sample.HasWaterColumn) return false;
+            Vector2 delta = new Vector2(position.x - sample.Position.x, position.z - sample.Position.z);
+            return delta.sqrMagnitude <= 4f && sample.SurfaceHeight > position.y - 1.75f &&
+                   sample.SurfaceHeight < position.y + 3.5f;
         }
 
         private static bool TestChordDown(KeyCode key)
@@ -330,7 +443,11 @@ namespace PhysicalWater
                 {
                     // Per-cell pre/post divergence reconstruction is diagnostic
                     // only; the PCG residual remains available in live telemetry.
-                    EnableCutCellDivergenceDiagnostics = false
+                    EnableCutCellDivergenceDiagnostics = false,
+                    // LC's fixed-point cell ledger, not marker deposition, owns
+                    // every cubic metre in the live finite-water domain.
+                    UsePersistentGridVolumeAuthority = true,
+                    PersistentGridMarkerMaintenanceIntervalSteps = 30
                 },
                 new VolumetricStreamingSettings
                 {
@@ -353,6 +470,8 @@ namespace PhysicalWater
                 });
             double initializeMs = createWatch.Elapsed.TotalMilliseconds;
             _domain = _streaming.Domain;
+            _domain.WaterBodyPublisher.Published += OnWaterBodyRegistryPublished;
+            BindCodyRuntime(LiquidCorePceRuntime.Instance);
             _accumulator = 0f;
             // Do not issue a blocking full-field diagnostic readback in the
             // same frame as F6 resource creation. The newly-created domain is
@@ -986,6 +1105,7 @@ namespace PhysicalWater
                     _domain.MacDomain.LastSolidCutCellUploadCells,
                     _domain.MacDomain.LastSolidApertureUploadFaces,
                     _domain.MacDomain.LastSolidUploadBytes);
+                pce.QueueCodyCatchmentCoverage(_domain, _geometryCoverageBounds);
                 _nerveTelemetry.RecordBatch(
                     drainedSignals,
                     applyStartTimestamp,
@@ -1070,6 +1190,7 @@ namespace PhysicalWater
                 pce.DiscardCausalGeometrySignalsThrough(appliedGeneration);
                 adapter.ReleaseCausalGeometryCoverage();
                 _nextCausalGeometryApplyTime = 0f;
+                pce.QueueCodyCatchmentCoverage(_domain, _geometryCoverageBounds);
                 string readyMarker = wasInitialPreparation ? "PW_E3_F6_READY" : "PW_E3_GEOMETRY_READY";
                 PhysicalWaterPlugin.Log.LogInfo(
                     readyMarker + " geometryReady=True, fillReady=True, simulationPaused=False; prepared causal solid synchronization apply=" +
@@ -1159,6 +1280,7 @@ namespace PhysicalWater
                 _preparedGeometryRevisions.Clear();
                 adapter.ReleaseCausalGeometryCoverage();
                 _nextCausalGeometryApplyTime = 0f;
+                pce.QueueCodyCatchmentCoverage(_domain, _geometryCoverageBounds);
                 PhysicalWaterPlugin.Log.LogInfo(
                     "PW_E3_GEOMETRY_READY geometryReady=True, fillReady=True, simulationPaused=False; precise causal solid synchronization apply=" +
                     applyWatch.Elapsed.TotalMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + "ms, changedRoots=" +
@@ -1224,6 +1346,8 @@ namespace PhysicalWater
             _geometryCoverageBounds.size = coverageSize;
             PhysicalWaterValheimWorldGeometryAdapter adapter = PhysicalWaterValheimWorldGeometryAdapter.Instance;
             if (adapter != null) adapter.RequestCausalGeometryCoverage(_geometryCoverageBounds);
+            LiquidCorePceRuntime pce = LiquidCorePceRuntime.Instance;
+            if (pce != null) pce.WarmCodyCatchments(_geometryCoverageBounds);
             PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devE3 requested causal geometry coverage for current window plus one 24m logical-region margin: " + _geometryCoverageBounds + ".");
         }
 
@@ -1391,14 +1515,183 @@ namespace PhysicalWater
             return true;
         }
 
+        private void BindCodyRuntime(LiquidCorePceRuntime pce)
+        {
+            if (pce == _subscribedCodyRuntime) return;
+            if (_subscribedCodyRuntime != null)
+                _subscribedCodyRuntime.CodyCatchmentPublished -= OnCodyCatchmentPublished;
+            _subscribedCodyRuntime = pce;
+            if (_subscribedCodyRuntime != null)
+                _subscribedCodyRuntime.CodyCatchmentPublished += OnCodyCatchmentPublished;
+        }
+
+        private void OnWaterBodyRegistryPublished(long revision, LiquidCoreWaterBodyRefreshReason reason)
+        {
+            if (_domain == null || !_domain.Initialized) return;
+            BindCodyRuntime(LiquidCorePceRuntime.Instance);
+            IReadOnlyList<ulong> candidates = _domain.WaterBodies.LastMicroBodyCandidateIds;
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                ulong bodyId = candidates[i];
+                if (!_domain.WaterBodies.Records.TryGetValue(bodyId, out LiquidCoreWaterBodyRecord body)) continue;
+                if (body.AgeRevisions < 1)
+                {
+                    _deferredMvcBodies.Add(bodyId);
+                    if (_deferredMvcRefreshStep < 0)
+                        _deferredMvcRefreshStep = _completedSimulationSteps + 30;
+                    continue;
+                }
+                _deferredMvcBodies.Remove(bodyId);
+                EvaluateMicroBody(bodyId, reason.ToString());
+            }
+        }
+
+        private void RequestDeferredMvcRefreshIfReady()
+        {
+            if (_domain == null || _deferredMvcBodies.Count == 0 || _deferredMvcRefreshStep < 0 ||
+                _completedSimulationSteps < _deferredMvcRefreshStep || _domain.WaterBodyPublisher.Pending)
+                return;
+            _deferredMvcRefreshStep = -1;
+            _domain.WaterBodyPublisher.RequestRefresh(LiquidCoreWaterBodyRefreshReason.Explicit);
+        }
+
+        private void OnCodyCatchmentPublished(CodyCatchmentDescriptor descriptor)
+        {
+            if (_domain == null || descriptor == null || _pendingMvcBodies.Count == 0) return;
+            _mvcBodyScratch.Clear();
+            foreach (ulong bodyId in _pendingMvcBodies) _mvcBodyScratch.Add(bodyId);
+            for (int i = 0; i < _mvcBodyScratch.Count; i++)
+            {
+                ulong bodyId = _mvcBodyScratch[i];
+                if (!_domain.WaterBodies.Records.TryGetValue(bodyId, out LiquidCoreWaterBodyRecord body))
+                {
+                    _pendingMvcBodies.Remove(bodyId);
+                    continue;
+                }
+                if (_subscribedCodyRuntime == null ||
+                    !_subscribedCodyRuntime.CodyL1.TryLookup(body.CenterOfMass, out CodyCatchmentDescriptor catchment) ||
+                    catchment.CatchmentId != descriptor.CatchmentId)
+                    continue;
+                EvaluateMicroBody(bodyId, "CODY rebuild published");
+            }
+        }
+
+        private void EvaluateMicroBody(ulong bodyId, string trigger)
+        {
+            if (_domain == null || !_domain.WaterBodies.Records.TryGetValue(bodyId, out LiquidCoreWaterBodyRecord body))
+            {
+                _pendingMvcBodies.Remove(bodyId);
+                return;
+            }
+            if (_domain.MicroSpills.TryGet(bodyId, out LiquidCoreMicroSpillConnection existing) && existing.Valid)
+            {
+                _pendingMvcBodies.Remove(bodyId);
+                return;
+            }
+            if (!EnsureMicroVolumeConsolidation())
+            {
+                _pendingMvcBodies.Add(bodyId);
+                return;
+            }
+            LiquidCoreMicroVolumeEvaluation evaluation;
+            try
+            {
+                evaluation = _microVolumeConsolidation.Evaluate(bodyId);
+            }
+            catch (Exception ex)
+            {
+                _pendingMvcBodies.Add(bodyId);
+                PhysicalWaterPlugin.Log.LogWarning("LiquidCore MVC evaluation preserved body " + bodyId + " after failure: " + ex.Message);
+                return;
+            }
+            if (evaluation.Relation == LiquidCoreCatchmentRelation.PendingCatchment)
+            {
+                _pendingMvcBodies.Add(bodyId);
+                if (_subscribedCodyRuntime != null)
+                    _subscribedCodyRuntime.QueueCodyCatchmentCoverage(_domain, _geometryCoverageBounds);
+            }
+            else
+            {
+                _pendingMvcBodies.Remove(bodyId);
+                if (_subscribedCodyRuntime != null &&
+                    _subscribedCodyRuntime.CodyL1.TryLookup(body.CenterOfMass, out CodyCatchmentDescriptor catchment))
+                    _domain.WaterBodies.SetCatchmentBinding(bodyId,
+                        catchment.CatchmentId + ":" + catchment.GeometryRecipeRevision + ":" + catchment.DependencyRevisionHash);
+            }
+            PhysicalWaterPlugin.Log.LogInfo(
+                "LiquidCore MVC event evaluation: trigger=" + trigger + ", source=" + bodyId +
+                ", relation=" + evaluation.Relation + ", destination=" + evaluation.DestinationBodyId +
+                ", catchment=" + evaluation.CatchmentId + ", conservedAtoms=" + body.VolumeAtoms +
+                ", reason=" + evaluation.Reason + ".");
+        }
+
+        private bool EnsureMicroVolumeConsolidation()
+        {
+            LiquidCorePceRuntime pce = LiquidCorePceRuntime.Instance;
+            if (_domain == null || pce == null || pce.CodyL1 == null) return false;
+            if (_microVolumeConsolidation != null && _microVolumeGeometryRevision == _domain.AppliedGeometryGeneration)
+                return true;
+            var topology = new LiveMvcTopology(_domain, pce);
+            VolumetricWaterSettings settings = _domain.MacDomain.Settings;
+            _microVolumeConsolidation = new LiquidCoreMicroVolumeConsolidation(
+                _domain.WaterBodies,
+                pce.CodyL1,
+                topology,
+                _domain.WorldBounds,
+                settings.CellSize,
+                _domain.WorldOrigin,
+                settings.ResolutionX,
+                settings.ResolutionY,
+                settings.ResolutionZ,
+                minimumCandidateAge: 1,
+                maximumCandidateSpeed: 0.25f,
+                spillLedger: _domain.MicroSpills);
+            _microVolumeGeometryRevision = _domain.AppliedGeometryGeneration;
+            return true;
+        }
+
+        private void AdvanceMicroSpillConnections(float deltaTime)
+        {
+            if (_domain == null || _domain.MicroSpills.Count == 0 || !EnsureMicroVolumeConsolidation()) return;
+            _microSpillScratch.Clear();
+            foreach (LiquidCoreMicroSpillConnection connection in _domain.MicroSpills.Connections)
+                _microSpillScratch.Add(connection);
+            _retiredMicroSpillScratch.Clear();
+            for (int i = 0; i < _microSpillScratch.Count; i++)
+            {
+                LiquidCoreMicroSpillConnection connection = _microSpillScratch[i];
+                try
+                {
+                    _microVolumeConsolidation.AdvanceConnection(_domain, connection, deltaTime);
+                }
+                catch (Exception ex)
+                {
+                    PhysicalWaterPlugin.Log.LogWarning(
+                        "LiquidCore MVC connector deferred without deleting water: source=" + connection.SourceBodyId +
+                        ", inTransitAtoms=" + connection.InTransitAtoms + ", error=" + ex.Message);
+                }
+                if (!connection.Valid && connection.InTransitAtoms == 0)
+                    _retiredMicroSpillScratch.Add(connection.SourceBodyId);
+            }
+            for (int i = 0; i < _retiredMicroSpillScratch.Count; i++)
+                _domain.MicroSpills.Remove(_retiredMicroSpillScratch[i]);
+        }
+
         private void DestroyDomain()
         {
             if (_streaming != null && _streaming.HasDeferredStep)
                 _streaming.CompleteDeferredStepBlocking();
+            if (_domain != null && _domain.WaterBodyPublisher != null)
+                _domain.WaterBodyPublisher.Published -= OnWaterBodyRegistryPublished;
+            if (_subscribedCodyRuntime != null)
+                _subscribedCodyRuntime.CodyCatchmentPublished -= OnCodyCatchmentPublished;
+            _subscribedCodyRuntime = null;
             _streaming = null;
             _domain = null;
             if (_domainObject != null) Destroy(_domainObject);
             _domainObject = null;
+            _hasLatestPlayerWaterSample = false;
+            _playerInteraction.Reset();
             _observedGeometryGeneration = -1;
             _appliedGeometryStateRevision = int.MinValue;
             _appliedGeometryRevisions.Clear();
@@ -1408,6 +1701,14 @@ namespace PhysicalWater
             _preparedGeometryIsInitial = false;
             _preparedGeometryRevisions.Clear();
             _deferredFill.Clear();
+            _microVolumeConsolidation = null;
+            _microVolumeGeometryRevision = long.MinValue;
+            _completedSimulationSteps = 0;
+            _deferredMvcRefreshStep = -1;
+            _pendingMvcBodies.Clear();
+            _deferredMvcBodies.Clear();
+            _microSpillScratch.Clear();
+            _retiredMicroSpillScratch.Clear();
             _coverageWindowOrigin = new Vector3(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
         }
 

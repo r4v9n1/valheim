@@ -115,6 +115,7 @@ namespace PhysicalWater
             if (Settings.StageE1Enabled.Value)
             {
                 PatchSafely(typeof(PhysicalWaterPersistenceWorldSetupPatch), "Valheim world-load persistence boundary");
+                PatchSafely(typeof(CharacterCustomFixedUpdatePatch), "finite LiquidCore player liquid-level feed");
                 _devE1RuntimeObject = new GameObject("R4V9N1_PhysicalWaterDevE1Runtime");
                 DontDestroyOnLoad(_devE1RuntimeObject);
                 _devE1RuntimeObject.AddComponent<PhysicalWaterDevE1Runtime>();
@@ -158,6 +159,15 @@ namespace PhysicalWater
             {
                 Destroy(_worldGeometryAdapterObject);
                 _worldGeometryAdapterObject = null;
+            }
+
+            if (_pceRuntimeObject != null)
+            {
+                // PCE owns the live CODY L1/L2 coordinator. Destroy it during
+                // plugin teardown so its valid L2 descriptors are flushed and
+                // no DontDestroyOnLoad event subscriber survives a reload.
+                Destroy(_pceRuntimeObject);
+                _pceRuntimeObject = null;
             }
 
             if (_devE1RuntimeObject != null)
@@ -442,7 +452,7 @@ namespace PhysicalWater
                 new ConfigDescription("Target budget for a simple event-triggered geometry update.",
                     new AcceptableValueRange<float>(1f, 20f)));
             StageE1Enabled = config.Bind("StageE1", "Enabled", false,
-                "Compatibility switch for the experimental E3 finite streaming APIC/FLIP mode. Does not suppress or query vanilla water and is disabled by default.");
+                "Compatibility switch for the experimental E3 finite streaming APIC/FLIP mode. It preserves vanilla water and adds bounded authoritative finite-water queries for the local player; disabled by default.");
             StageE1RenderSurface = config.Bind("StageE1", "RenderSurface", true,
                 "Render the Stage C reconstructed E1 debug surface for the explicitly created finite domain.");
             StageE1TelemetryInterval = config.Bind("StageE1", "TelemetryInterval", 2f,

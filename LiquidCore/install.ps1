@@ -157,4 +157,4 @@ Write-Host ""
 Write-Host "devE3 safety config written (legacy replacement OFF, finite streaming=$EnableFiniteStreaming):" -ForegroundColor Yellow
 Write-Host $ConfigPath
 Write-Host ""
-Write-Host "LiquidCore 0.6.0-devE3.2-probe5: projection-cache retention and stable shoreline-material candidate; legacy BepInEx/config identity preserved; global replacement, vanilla suppression, player, ship, fish, swimming and buoyancy hooks remain disabled."
+Write-Host "LiquidCore 0.6.0-devE3.2-probe5: authoritative finite-water query and local-player interaction enabled; legacy BepInEx/config identity preserved; global replacement, vanilla suppression, ship, fish and object-buoyancy replacement remain disabled."

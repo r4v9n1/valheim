@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using BepInEx;
+using R4V9N1.PhysicalOcean.Cody;
 using R4V9N1.PhysicalOcean.Probes;
 using R4V9N1.PhysicalOcean.Volumetric;
 using UnityEngine;
@@ -62,15 +65,36 @@ namespace PhysicalWater
         private int _publishedEvents;
         private int _nextSourceRuntimeHandle;
         private int _directQueueBypasses;
+        private const float CodyRegionWorldSize = 24f;
+        // Catchment descriptors have their own semantic schema. Revision 2
+        // requires every represented local/open-region exit to carry the
+        // bounded sub-grid-candidate hint consumed by MVC after physical-path
+        // proof fails. Do not couple this to the Valheim knowledge JSON schema.
+        private const int CodyCatchmentSchemaVersion = 2;
+        private CodyCatchmentCache _codyL1;
+        private CodyCatchmentCache _codyL2;
+        private CodyCatchmentRebuildCoordinator _codyRebuilds;
+        private string _codyL2Path;
+        private bool _codyPersistenceWritable;
+        private bool _codyL2ArtifactRejected;
+        private bool _hasCodyWarmBounds;
+        private Bounds _codyWarmBounds;
+        private readonly List<ulong> _codyInvalidated = new List<ulong>();
+        private VolumetricFiniteDomainController _pendingCodyDomain;
+        private Bounds _pendingCodyCoverageBounds;
+        private long _pendingCodyGeometryRevision = -1;
         internal static LiquidCorePceRuntime Instance { get; private set; }
 
         internal ProbeColonyWorld World => _world;
+        internal CodyCatchmentCache CodyL1 => _codyL1;
+        internal event Action<CodyCatchmentDescriptor> CodyCatchmentPublished;
 
         private void Awake()
         {
             _geometry = new ProbeColonyGeometryBridge(_world, new Vector3Int(32, 32, 32));
             _queue = new ProbeColonyChangeQueue(_world, new Vector3Int(32, 32, 32));
             _events = new ProbeColonyEventBridge(_queue);
+            InitializeCody();
             Instance = this;
             Attach(PhysicalWaterValheimWorldGeometryAdapter.Instance);
             PhysicalWaterPlugin.Log.LogInfo("LiquidCore PCE runtime created. ChunkSize=(32,32,32), event-driven adapter bridge active.");
@@ -86,6 +110,8 @@ namespace PhysicalWater
                 if (_adapter != null) _adapter.PceGeometryChanged += OnGeometryChanged;
             }
             if (_queue.PendingCount > 0) _queue.Drain();
+            if (_codyRebuilds != null) _codyRebuilds.PublishReady();
+            DispatchPendingCodyCoverage();
         }
 
         internal void Attach(PhysicalWaterValheimWorldGeometryAdapter adapter)
@@ -99,6 +125,7 @@ namespace PhysicalWater
         private void OnGeometryChanged(ValheimPceGeometryChange change)
         {
             SourceRuntimeRecord runtimeRecord = ResolveSourceRuntimeRecord(change);
+            ApplyCodyDependencyChange(change);
             VolumetricWorldGeometryVoxelRegion region = new VolumetricWorldGeometryVoxelRegion { Min = change.DirtyMin, Max = change.DirtyMax, Valid = true };
             VolumetricWorldGeometryCategory pceCategory = ToPceCategory(change.Category);
             bool accepted = _causalSignals.Publish(new ProbeColonyCausalGeometrySignal
@@ -166,6 +193,84 @@ namespace PhysicalWater
         }
 
         internal bool TryGetActiveSource(string sourceId, out ValheimPceGeometryChange change) => _activeSources.TryGetValue(sourceId, out change);
+
+        /// <summary>
+        /// Bounded PCE provenance lookup used only after the exact cut-cell
+        /// topology finds a possible sub-grid obstruction. Bounds are a
+        /// conservative fail-closed classifier: any real object source wins
+        /// over overlapping Heightmap ground; unknown geometry is never treated
+        /// as a natural lip.
+        /// </summary>
+        internal LiquidCoreSubGridObstacleClass ClassifySubGridObstacle(Bounds worldCell)
+        {
+            bool naturalGround = false;
+            foreach (ValheimPceGeometryChange source in _activeSources.Values)
+            {
+                if (!source.CanFeedSdf || !source.HasNewWorldBounds ||
+                    !source.NewWorldBounds.Intersects(worldCell)) continue;
+                switch (source.Category)
+                {
+                    case ValheimWorldGeometryCategory.Terrain:
+                        naturalGround = true;
+                        break;
+                    case ValheimWorldGeometryCategory.SolidBarrier:
+                    case ValheimWorldGeometryCategory.ThinBlockingBarrier:
+                    case ValheimWorldGeometryCategory.DynamicSolid:
+                    case ValheimWorldGeometryCategory.Unsupported:
+                        return LiquidCoreSubGridObstacleClass.RealBarrier;
+                }
+            }
+            return naturalGround
+                ? LiquidCoreSubGridObstacleClass.NaturalGround
+                : LiquidCoreSubGridObstacleClass.Unknown;
+        }
+
+        internal int WarmCodyCatchments(Bounds worldBounds)
+        {
+            if (_codyL1 == null || _codyL2 == null) return 0;
+            _codyWarmBounds = worldBounds;
+            _hasCodyWarmBounds = true;
+            _codyL1.Clear();
+            CodyCatchmentDescriptor[] descriptors = _codyL2.CapturePersistentDescriptors();
+            int warmed = 0;
+            for (int i = 0; i < descriptors.Length; i++)
+            {
+                if (!descriptors[i].DependencyBounds.Intersects(worldBounds)) continue;
+                _codyL1.Publish(descriptors[i]);
+                warmed++;
+            }
+            PhysicalWaterPlugin.Log.LogInfo(
+                "LiquidCore CODY L2->L1 window warm: descriptors=" + warmed + "/" + descriptors.Length +
+                ", bounds=" + worldBounds + ".");
+            return warmed;
+        }
+
+        internal void PublishCodyCatchment(CodyCatchmentDescriptor descriptor)
+        {
+            if (_codyL1 == null || _codyL2 == null)
+                throw new InvalidOperationException("CODY runtime is unavailable because its fingerprint was not valid at startup.");
+            _codyL2.Publish(descriptor);
+            if (_hasCodyWarmBounds && descriptor.DependencyBounds.Intersects(_codyWarmBounds))
+                _codyL1.Publish(descriptor);
+            if (!_codyL2ArtifactRejected) _codyPersistenceWritable = true;
+        }
+
+        internal bool RequestCodyCatchmentRebuild(
+            CodyCatchmentDescriptor seed,
+            Func<CodyCatchmentDescriptor> buildFromSnapshot)
+        {
+            if (_codyRebuilds == null)
+                throw new InvalidOperationException("CODY runtime is unavailable because its fingerprint was not valid at startup.");
+            return _codyRebuilds.Request(seed, buildFromSnapshot);
+        }
+
+        internal void QueueCodyCatchmentCoverage(VolumetricFiniteDomainController domain, Bounds worldBounds)
+        {
+            if (_codyRebuilds == null || domain == null || !domain.Initialized) return;
+            _pendingCodyDomain = domain;
+            _pendingCodyCoverageBounds = worldBounds;
+            _pendingCodyGeometryRevision = domain.AppliedGeometryGeneration;
+        }
 
         internal IReadOnlyList<ProbeColonyCausalGeometrySignal> LastDrainedCausalGeometrySignals =>
             _causalSignals.LastDrainedSignals;
@@ -536,8 +641,165 @@ namespace PhysicalWater
 
         private void OnDestroy()
         {
+            FlushCody();
             if (_adapter != null) _adapter.PceGeometryChanged -= OnGeometryChanged;
             if (Instance == this) Instance = null;
+        }
+
+        private void InitializeCody()
+        {
+            ValheimKnowledgeDatabase knowledge = PhysicalWaterPlugin.ValheimKnowledge;
+            if (knowledge == null || !knowledge.Loaded || knowledge.Data == null ||
+                knowledge.Data.valheim == null || knowledge.Data.modSet == null)
+            {
+                PhysicalWaterPlugin.Log.LogWarning("LiquidCore CODY catchment cache disabled because the Valheim knowledge fingerprint is unavailable.");
+                return;
+            }
+            string gameFingerprint = knowledge.Data.valheim.assemblySha256;
+            string modFingerprint = knowledge.Data.modSet.fingerprint;
+            int schemaVersion = CodyCatchmentSchemaVersion;
+            _codyL1 = new CodyCatchmentCache(gameFingerprint, modFingerprint, schemaVersion, CodyRegionWorldSize);
+            _codyL2 = new CodyCatchmentCache(gameFingerprint, modFingerprint, schemaVersion, CodyRegionWorldSize);
+            _codyRebuilds = new CodyCatchmentRebuildCoordinator(_codyL2);
+            _codyRebuilds.Published += OnCodyCatchmentRebuilt;
+            _codyL2Path = Path.Combine(Paths.ConfigPath, "LiquidCore",
+                "cody-catchments-v" + schemaVersion + ".bin");
+            try
+            {
+                int loaded = CodyCatchmentL2Store.Load(_codyL2Path, _codyL2);
+                _codyPersistenceWritable = true;
+                PhysicalWaterPlugin.Log.LogInfo(
+                    "LiquidCore CODY catchment cache ready: game=" + gameFingerprint +
+                    ", mods=" + modFingerprint + ", schema=" + schemaVersion +
+                    ", region=" + CodyRegionWorldSize + "m, L2=" + loaded + ", L1=0.");
+            }
+            catch (Exception ex)
+            {
+                // Fail closed and preserve the rejected artifact for diagnosis.
+                // Do not overwrite it with an empty cache on shutdown.
+                _codyPersistenceWritable = false;
+                _codyL2ArtifactRejected = true;
+                PhysicalWaterPlugin.Log.LogWarning("LiquidCore CODY rejected its L2 cache and will keep an empty L1: " + ex.Message);
+            }
+        }
+
+        private void OnCodyCatchmentRebuilt(CodyCatchmentDescriptor descriptor)
+        {
+            if (_codyL1 != null && _hasCodyWarmBounds && descriptor.DependencyBounds.Intersects(_codyWarmBounds))
+                _codyL1.Publish(descriptor);
+            if (!_codyL2ArtifactRejected) _codyPersistenceWritable = true;
+            CodyCatchmentPublished?.Invoke(descriptor);
+            CodyCatchmentRebuildCoordinatorDiagnostics diagnostics = _codyRebuilds.Diagnostics;
+            PhysicalWaterPlugin.Log.LogInfo(
+                "LiquidCore CODY background rebuild published: catchment=" + descriptor.CatchmentId +
+                ", region=(" + descriptor.RegionX + "," + descriptor.RegionZ + ")" +
+                ", requests/dispatch/coalesced=" + diagnostics.Requests + "/" + diagnostics.Dispatches + "/" + diagnostics.CoalescedRequests +
+                ", published/stale/failed=" + diagnostics.Published + "/" + diagnostics.StaleCompletionsRejected + "/" + diagnostics.Failed + ".");
+        }
+
+        private void DispatchPendingCodyCoverage()
+        {
+            VolumetricFiniteDomainController domain = _pendingCodyDomain;
+            if (_codyRebuilds == null || domain == null || !domain.Initialized || _pendingCodyGeometryRevision < 0) return;
+            // Keep only the latest queued coverage request while an older
+            // bounded batch is running. Once its completions publish/reject,
+            // the retained request snapshots current geometry exactly once.
+            if (_codyRebuilds.PendingCount > 0) return;
+            Bounds requestedBounds = _pendingCodyCoverageBounds;
+            long geometryRevision = _pendingCodyGeometryRevision;
+            _pendingCodyDomain = null;
+            _pendingCodyGeometryRevision = -1;
+
+            Bounds represented = IntersectBounds(requestedBounds, domain.WorldBounds);
+            if (represented.size.x <= 0f || represented.size.z <= 0f) return;
+            VolumetricWaterSettings settings = domain.MacDomain.Settings;
+            byte[] cutU = domain.MacDomain.CaptureCutCellUQuantizedSync();
+            byte[] cutW = domain.MacDomain.CaptureCutCellWQuantizedSync();
+            int minimumRegionX = Mathf.FloorToInt(represented.min.x / CodyRegionWorldSize);
+            int maximumRegionX = Mathf.FloorToInt((represented.max.x - 1e-4f) / CodyRegionWorldSize);
+            int minimumRegionZ = Mathf.FloorToInt(represented.min.z / CodyRegionWorldSize);
+            int maximumRegionZ = Mathf.FloorToInt((represented.max.z - 1e-4f) / CodyRegionWorldSize);
+            int requested = 0;
+            for (int regionZ = minimumRegionZ; regionZ <= maximumRegionZ; regionZ++)
+            for (int regionX = minimumRegionX; regionX <= maximumRegionX; regionX++)
+            {
+                Vector3 regionCenter = new Vector3(
+                    (regionX + 0.5f) * CodyRegionWorldSize,
+                    represented.center.y,
+                    (regionZ + 0.5f) * CodyRegionWorldSize);
+                if (_codyL1.TryLookup(regionCenter, out _)) continue;
+                Bounds dependencyBounds = new Bounds(regionCenter,
+                    new Vector3(CodyRegionWorldSize, represented.size.y, CodyRegionWorldSize));
+                dependencyBounds = IntersectBounds(dependencyBounds, domain.WorldBounds);
+                var dependencies = new List<CodyCatchmentDependency>();
+                foreach (KeyValuePair<string, SourceRuntimeRecord> item in _sourceRuntimeRecords)
+                {
+                    if (!_activeSources.ContainsKey(item.Key) || !item.Value.WorldBounds.Intersects(dependencyBounds)) continue;
+                    dependencies.Add(new CodyCatchmentDependency
+                    {
+                        SourceId = item.Key,
+                        Revision = item.Value.AuthoritativeRevision,
+                        WorldBounds = item.Value.WorldBounds
+                    });
+                }
+                dependencies.Sort((a, b) => string.CompareOrdinal(a.SourceId, b.SourceId));
+                var snapshot = new CodyCatchmentBuildSnapshot
+                {
+                    GameBuildFingerprint = _codyL2.GameBuildFingerprint,
+                    ModFingerprint = _codyL2.ModFingerprint,
+                    SchemaVersion = _codyL2.SchemaVersion,
+                    RegionX = regionX,
+                    RegionZ = regionZ,
+                    RegionWorldSize = CodyRegionWorldSize,
+                    GeometryRecipeRevision = geometryRevision,
+                    ValidatedUtcTicks = DateTime.UtcNow.Ticks,
+                    DependencyBounds = dependencyBounds,
+                    Dependencies = dependencies.ToArray(),
+                    GridWorldOrigin = domain.WorldOrigin,
+                    CellSize = settings.CellSize,
+                    ResolutionX = settings.ResolutionX,
+                    ResolutionY = settings.ResolutionY,
+                    ResolutionZ = settings.ResolutionZ,
+                    CutU = cutU,
+                    CutW = cutW
+                };
+                CodyCatchmentDescriptor seed = CodyCatchmentBuilder.CreateSeed(snapshot);
+                if (_codyRebuilds.Request(seed, () => CodyCatchmentBuilder.Build(snapshot))) requested++;
+            }
+            if (requested > 0)
+                PhysicalWaterPlugin.Log.LogInfo(
+                    "LiquidCore CODY queued " + requested + " bounded catchment rebuild(s) from geometry revision " +
+                    geometryRevision + "; cut-cell snapshot was deferred beyond the causal terrain-apply frame.");
+        }
+
+        private void ApplyCodyDependencyChange(ValheimPceGeometryChange change)
+        {
+            if (_codyL1 == null || _codyL2 == null || string.IsNullOrWhiteSpace(change.SourceId)) return;
+            Bounds dirty = change.HasNewWorldBounds ? change.NewWorldBounds : change.OldWorldBounds;
+            if (change.HasOldWorldBounds && change.HasNewWorldBounds) dirty.Encapsulate(change.OldWorldBounds);
+            _codyInvalidated.Clear();
+            int l2Invalidated = _codyL2.ApplyDependencyChange(change.SourceId, change.Revision, dirty, _codyInvalidated);
+            int l1Invalidated = _codyL1.ApplyDependencyChange(change.SourceId, change.Revision, dirty);
+            if (l2Invalidated == 0 && l1Invalidated == 0) return;
+            if (!_codyL2ArtifactRejected) _codyPersistenceWritable = true;
+            PhysicalWaterPlugin.Log.LogInfo(
+                "LiquidCore DNA invalidated CODY catchments directly: source=" + change.SourceId +
+                ", revision=" + change.Revision + ", L1/L2=" + l1Invalidated + "/" + l2Invalidated +
+                ", affected=" + string.Join(",", _codyInvalidated.ConvertAll(id => id.ToString()).ToArray()) + ".");
+        }
+
+        private void FlushCody()
+        {
+            if (!_codyPersistenceWritable || _codyL2 == null || string.IsNullOrEmpty(_codyL2Path)) return;
+            try
+            {
+                int saved = CodyCatchmentL2Store.Save(_codyL2Path, _codyL2);
+                PhysicalWaterPlugin.Log.LogInfo("LiquidCore CODY L2 persisted " + saved + " valid catchment descriptors.");
+            }
+            catch (Exception ex)
+            {
+                PhysicalWaterPlugin.Log.LogWarning("LiquidCore CODY could not persist its L2 cache: " + ex.Message);
+            }
         }
     }
 }

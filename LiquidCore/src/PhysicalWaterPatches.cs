@@ -813,6 +813,24 @@ namespace PhysicalWater
         {
             try
             {
+                PhysicalWaterDevE1Runtime finite = PhysicalWaterDevE1Runtime.Instance;
+                if (PhysicalWaterPlugin.Settings.StageE1Enabled.Value)
+                {
+                    if (__instance != null && __instance.IsPlayer() && __instance == Player.m_localPlayer && finite != null)
+                    {
+                        Vector3 finitePosition = __instance.transform.position;
+                        float finiteSurface = Floating.GetLiquidLevel(finitePosition, 1f, LiquidType.Water);
+                        if (finite.TryGetLatestPlayerWaterSample(finitePosition,
+                            out R4V9N1.PhysicalOcean.Volumetric.VolumetricWaterSample sample))
+                            finiteSurface = Mathf.Max(finiteSurface, sample.SurfaceHeight);
+                        __instance.SetLiquidLevel(finiteSurface, LiquidType.Water, finite);
+                    }
+                    // Finite mode coexists with vanilla oceans. Feed their maximum
+                    // explicitly so leaving an LC body cannot leave a stale level
+                    // and cannot suppress a legitimate vanilla-water level.
+                    return;
+                }
+
                 PhysicalWaterSystem system = PhysicalWaterSystem.Instance;
                 if (!PhysicalWaterSystem.IsEnabled() ||
                     system == null ||
@@ -1299,4 +1317,3 @@ namespace PhysicalWater
         }
     }
 }
-
