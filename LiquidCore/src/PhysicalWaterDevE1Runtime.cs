@@ -127,6 +127,7 @@ namespace PhysicalWater
         private bool _hasLatestPlayerWaterSample;
         private float _latestPlayerWaterSampleTime;
         private float _nextPlayerWaterQueryTime;
+        private float _nextPlayerPresentationPulseTime;
         private float _lastFiniteWaterSurfaceHeight;
         private Vector3 _previousPlayerForward;
         private readonly LiquidCorePlayerWaterInteractionState _playerInteraction = new LiquidCorePlayerWaterInteractionState();
@@ -273,7 +274,14 @@ namespace PhysicalWater
             float depth = inFiniteWater ? Mathf.Max(0f, sample.SurfaceHeight - position.y) : 0f;
             LiquidCorePlayerWaterInteraction interaction = _playerInteraction.Evaluate(inFiniteWater, depth, speed, turning);
 
-            if (interaction.Kind != LiquidCorePlayerWaterInteractionKind.None)
+            bool boundaryPulse = interaction.Kind == LiquidCorePlayerWaterInteractionKind.Enter ||
+                                 interaction.Kind == LiquidCorePlayerWaterInteractionKind.Exit;
+            float pulseInterval = interaction.Kind == LiquidCorePlayerWaterInteractionKind.Swim
+                ? 0.45f
+                : interaction.Kind == LiquidCorePlayerWaterInteractionKind.Wade ? 0.60f : 0.35f;
+            bool emitPulse = interaction.Kind != LiquidCorePlayerWaterInteractionKind.None &&
+                             (boundaryPulse || Time.unscaledTime >= _nextPlayerPresentationPulseTime);
+            if (emitPulse)
             {
                 float surface = sample.HasWaterColumn ? sample.SurfaceHeight : _lastFiniteWaterSurfaceHeight;
                 _domain.SetPresentationInteraction(
@@ -281,6 +289,7 @@ namespace PhysicalWater
                     interaction.Strength,
                     interaction.Radius,
                     Time.time);
+                _nextPlayerPresentationPulseTime = Time.unscaledTime + pulseInterval;
             }
             if (inFiniteWater) _lastFiniteWaterSurfaceHeight = sample.SurfaceHeight;
         }
@@ -1691,6 +1700,7 @@ namespace PhysicalWater
             if (_domainObject != null) Destroy(_domainObject);
             _domainObject = null;
             _hasLatestPlayerWaterSample = false;
+            _nextPlayerPresentationPulseTime = 0f;
             _playerInteraction.Reset();
             _observedGeometryGeneration = -1;
             _appliedGeometryStateRevision = int.MinValue;
