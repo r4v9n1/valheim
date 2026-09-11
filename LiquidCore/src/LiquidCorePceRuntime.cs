@@ -50,6 +50,12 @@ namespace PhysicalWater
         internal long GeometryRevision;
         internal string DependencyRevisionHash;
         internal long EstimatedCompactGeometryBytes;
+        // Immutable main-thread capture used by worker-side streaming closure.
+        // It contains only deterministic base-terrain column heights plus a
+        // one-column exterior ring needed to classify world-boundary exits.
+        internal int TerrainColumnsX;
+        internal int TerrainColumnsZ;
+        internal float[] TerrainColumnHeights;
         // Partition bounds and revisions are retained; provisional dense
         // descriptors are intentionally not retained. Streaming closure
         // reloads deterministic base geometry and owns only the completed
@@ -1080,6 +1086,12 @@ namespace PhysicalWater
                 EstimatedCompactGeometryBytes = EstimateBaseWorldCompactGeometryBytes(
                     sourceBounds, partitionBounds.Length, cellSize)
             };
+            if (!TryInitializeBaseTerrainHeightSnapshot(_baseWorldPceBootstrapJob, out error))
+            {
+                _baseWorldPceBootstrapJob = null;
+                ReportBaseWorldBootstrapGate("base-terrain-snapshot-unavailable");
+                return;
+            }
             PhysicalWaterPlugin.Log.LogInfo(
                 "LiquidCore complete base-world PCE bootstrap started: bounds=" +
                 sourceBounds.min + ".." + sourceBounds.max + ", partitions=" + partitionBounds.Length +
@@ -1111,10 +1123,8 @@ namespace PhysicalWater
                 job.SourceBounds, job.PartitionSize, job.GeometryRevision,
                 job.DependencyRevisionHash, job.PartitionBounds.Length,
                 (int index, out VolumetricPceCapacityStorageDescriptor descriptor,
-                    out string loadError) => TryBuildBaseTerrainPcePartition(
-                        job.PartitionBounds[index], job.PartitionSize, job.CellSize,
-                        job.GeometryRevision, job.DependencyRevisionHash,
-                        out descriptor, out loadError),
+                    out string loadError) => TryBuildCapturedBaseTerrainPcePartition(
+                        job, index, out descriptor, out loadError),
                 (int index, VolumetricPceCapacityStorageDescriptor descriptor,
                     out string sinkError) =>
                 {
@@ -1146,6 +1156,137 @@ namespace PhysicalWater
             return membershipBytes + heightBytes;
         }
 
+        private static bool TryInitializeBaseTerrainHeightSnapshot(
+            BaseWorldPceBootstrapJob job, out string error)
+        {
+            error = string.Empty;
+            if (job == null || job.CellSize <= 0f ||
+                !Finite(job.SourceBounds.size.x) || !Finite(job.SourceBounds.size.z))
+            {
+                error = "Base terrain snapshot received invalid domain metadata.";
+                return false;
+            }
+            int columnsX = Mathf.RoundToInt(job.SourceBounds.size.x / job.CellSize);
+            int columnsZ = Mathf.RoundToInt(job.SourceBounds.size.z / job.CellSize);
+            if (columnsX <= 0 || columnsZ <= 0)
+            {
+                error = "Base terrain snapshot has no horizontal columns.";
+                return false;
+            }
+            long count = (long)(columnsX + 2) * (columnsZ + 2);
+            if (count > int.MaxValue)
+            {
+                error = "Base terrain snapshot is too large.";
+                return false;
+            }
+            job.TerrainColumnsX = columnsX;
+            job.TerrainColumnsZ = columnsZ;
+            job.TerrainColumnHeights = new float[(int)count];
+            return true;
+        }
+
+        private static bool CaptureBaseTerrainHeightSnapshot(
+            BaseWorldPceBootstrapJob job, Bounds partitionBounds,
+            VolumetricPceCapacityStorageDescriptor descriptor, out string error)
+        {
+            error = string.Empty;
+            if (job == null || descriptor == null || descriptor.ColumnTerrainHeights == null)
+            {
+                error = "Base terrain snapshot received an incomplete partition.";
+                return false;
+            }
+            int nx = descriptor.ResolutionX;
+            int nz = descriptor.ResolutionZ;
+            int startX = Mathf.RoundToInt((partitionBounds.min.x - job.SourceBounds.min.x) / job.CellSize);
+            int startZ = Mathf.RoundToInt((partitionBounds.min.z - job.SourceBounds.min.z) / job.CellSize);
+            if (startX < 0 || startZ < 0 || startX + nx > job.TerrainColumnsX ||
+                startZ + nz > job.TerrainColumnsZ || descriptor.ColumnTerrainHeights.Length != nx * nz)
+            {
+                error = "Base terrain partition does not fit the captured column domain.";
+                return false;
+            }
+            for (int z = 0; z < nz; z++)
+            for (int x = 0; x < nx; x++)
+            {
+                float height = descriptor.ColumnTerrainHeights[x + nx * z];
+                job.TerrainColumnHeights[SnapshotIndex(job, startX + x, startZ + z)] = height;
+            }
+            // Capture only the one-cell ring outside the declared domain.
+            // Interior partition neighbors are covered by the global grid.
+            for (int z = 0; z < nz; z++)
+            {
+                if (startX == 0) CaptureExteriorColumn(job, -1, startZ + z, out error);
+                if (startX + nx == job.TerrainColumnsX)
+                    CaptureExteriorColumn(job, job.TerrainColumnsX, startZ + z, out error);
+                if (!string.IsNullOrEmpty(error)) return false;
+            }
+            for (int x = 0; x < nx; x++)
+            {
+                if (startZ == 0) CaptureExteriorColumn(job, startX + x, -1, out error);
+                if (startZ + nz == job.TerrainColumnsZ)
+                    CaptureExteriorColumn(job, startX + x, job.TerrainColumnsZ, out error);
+                if (!string.IsNullOrEmpty(error)) return false;
+            }
+            return true;
+        }
+
+        private static void CaptureExteriorColumn(
+            BaseWorldPceBootstrapJob job, int columnX, int columnZ, out string error)
+        {
+            error = string.Empty;
+            float worldX = job.SourceBounds.min.x + (columnX + 0.5f) * job.CellSize;
+            float worldZ = job.SourceBounds.min.z + (columnZ + 0.5f) * job.CellSize;
+            if (WorldGenerator.instance == null || !Finite(worldX) || !Finite(worldZ))
+            {
+                error = "Valheim base terrain sampler returned no height for the captured exterior ring.";
+                return;
+            }
+            float height = WorldGenerator.instance.GetHeight(worldX, worldZ);
+            if (!Finite(height))
+            {
+                error = "Valheim base terrain sampler returned no height for the captured exterior ring.";
+                return;
+            }
+            job.TerrainColumnHeights[SnapshotIndex(job, columnX, columnZ)] =
+                height;
+        }
+
+        private static int SnapshotIndex(BaseWorldPceBootstrapJob job, int columnX, int columnZ) =>
+            (columnX + 1) + (job.TerrainColumnsX + 2) * (columnZ + 1);
+
+        private static bool TryGetCapturedBaseTerrainHeight(
+            BaseWorldPceBootstrapJob job, float worldX, float worldZ, out float height)
+        {
+            height = 0f;
+            if (job == null || job.TerrainColumnHeights == null) return false;
+            int columnX = Mathf.RoundToInt((worldX - job.SourceBounds.min.x) / job.CellSize - 0.5f);
+            int columnZ = Mathf.RoundToInt((worldZ - job.SourceBounds.min.z) / job.CellSize - 0.5f);
+            if (columnX < -1 || columnX > job.TerrainColumnsX ||
+                columnZ < -1 || columnZ > job.TerrainColumnsZ) return false;
+            height = job.TerrainColumnHeights[SnapshotIndex(job, columnX, columnZ)];
+            return Finite(height);
+        }
+
+        private static bool TryBuildCapturedBaseTerrainPcePartition(
+            BaseWorldPceBootstrapJob job, int index,
+            out VolumetricPceCapacityStorageDescriptor descriptor, out string error)
+        {
+            descriptor = null;
+            error = string.Empty;
+            if (job == null || index < 0 || index >= job.PartitionBounds.Length)
+            {
+                error = "Base terrain snapshot partition index is invalid.";
+                return false;
+            }
+            Bounds bounds = job.PartitionBounds[index];
+            return LiquidCoreValheimBaseTerrainPceBuilder.TryBuild(
+                bounds, job.PartitionSize, job.CellSize, job.GeometryRevision,
+                job.DependencyRevisionHash,
+                (float x, float z, out float height) =>
+                    TryGetCapturedBaseTerrainHeight(job, x, z, out height),
+                out descriptor, out error);
+        }
+
         private void AdvanceBaseWorldPceBootstrapJob()
         {
             BaseWorldPceBootstrapJob job = _baseWorldPceBootstrapJob;
@@ -1156,6 +1297,18 @@ namespace PhysicalWater
                         job.PartitionBounds[job.NextPartition], job.PartitionSize,
                         job.CellSize, job.GeometryRevision, job.DependencyRevisionHash,
                         out VolumetricPceCapacityStorageDescriptor descriptor, out string error))
+                {
+                    _baseWorldPceBootstrapJob = null;
+                    if (!_baseWorldBootstrapFailureReported)
+                    {
+                        PhysicalWaterPlugin.Log.LogWarning(
+                            "LiquidCore complete base-world PCE bootstrap deferred/fail-closed: " + error + ".");
+                        _baseWorldBootstrapFailureReported = true;
+                    }
+                    return;
+                }
+                if (!CaptureBaseTerrainHeightSnapshot(job, job.PartitionBounds[job.NextPartition],
+                        descriptor, out error))
                 {
                     _baseWorldPceBootstrapJob = null;
                     if (!_baseWorldBootstrapFailureReported)
