@@ -2587,9 +2587,8 @@ namespace PhysicalWater
                 for (int x = 0; x < _resolution; x++)
                 {
                     int index = Index(x, y);
-                    if (!_candidateWaterMask[index] || _solidHydroMask[index]) continue;
                     Vector3 world = new Vector3(_origin.x + x * _cellSize, seaLevel, _origin.z + y * _cellSize);
-                    if (IsCoarseOceanDomainWet(world))
+                    if (ShouldSeedConnectedOceanCell(_candidateWaterMask[index], _solidHydroMask[index], IsCoarseOceanDomainWet(world)))
                     {
                         _waterMask[index] = true;
                         if (tail < _floodQueue.Length) _floodQueue[tail++] = index;
@@ -2628,6 +2627,11 @@ namespace PhysicalWater
             _hydroInitialized = true;
             RefreshHydrodynamicWetMasks();
             _lastHydroVolume = CalculateHydroVolume();
+        }
+
+        internal static bool ShouldSeedConnectedOceanCell(bool candidateFluid, bool solidCell, bool connectedOceanWet)
+        {
+            return candidateFluid && !solidCell && connectedOceanWet;
         }
 
         private void SeedHydroBoundary(int index, ref int tail)
@@ -2916,9 +2920,9 @@ namespace PhysicalWater
                     int index = Index(x, y);
                     if (!_hydroNewCellMask[index]) continue;
                     _hydroNewCellMask[index] = false;
-                    if (_solidHydroMask[index] || !_candidateWaterMask[index]) continue;
+                    if (!_candidateWaterMask[index] || _solidHydroMask[index]) continue;
                     Vector3 world = new Vector3(_origin.x + x * _cellSize, seaLevel, _origin.z + y * _cellSize);
-                    if (!IsCoarseOceanDomainWet(world)) continue;
+                    if (!ShouldSeedConnectedOceanCell(_candidateWaterMask[index], _solidHydroMask[index], IsCoarseOceanDomainWet(world))) continue;
                     _hydroDepth[index] = Mathf.Max(_hydroDepth[index], Mathf.Max(0f, seaLevel - _effectiveBedHeights[index]));
                 }
             }
