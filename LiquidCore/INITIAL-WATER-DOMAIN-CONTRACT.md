@@ -60,3 +60,12 @@ membership, exact capacity representation, and idempotency identity before
 LiquidCore computes `V_source` and exact atoms. Activating a committed
 partition must then materialize existing owned water and add zero source
 volume.
+
+The descriptor validation seam now fails closed when `CompleteSourceDomain` is
+asserted without a stable partition identity or complete capacity, sparse
+storage, and per-cell membership fields. Active E3 windows remain valid
+non-source publications because they continue to set `CompleteSourceDomain=false`.
+The authoritative workspace source hash after this guard is
+`BEE970E96C442078B6357506DD59B02B096E8F517C69F6988D25A0DEA2ACD7E4`; the
+canonical build passed with zero errors and produced DLL hash
+`30FB5D178360F1657B325AC01B6436915C923B93EFA42E850669A512CBBC9DC5`.
