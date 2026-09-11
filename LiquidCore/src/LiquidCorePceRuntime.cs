@@ -49,6 +49,8 @@ namespace PhysicalWater
         private readonly Dictionary<string, SourceRuntimeRecord> _sourceRuntimeRecords = new Dictionary<string, SourceRuntimeRecord>();
         private readonly Dictionary<string, VolumetricPreparedGeometryDescriptor> _preparedGeometryByAsset =
             new Dictionary<string, VolumetricPreparedGeometryDescriptor>(StringComparer.Ordinal);
+        private readonly Dictionary<ulong, VolumetricPceCapacityStorageDescriptor> _capacityStorageByCatchment =
+            new Dictionary<ulong, VolumetricPceCapacityStorageDescriptor>();
         // The Valheim adapter publishes a root-level digest for the exact
         // ready snapshot. Retain that digest at the PCE boundary; individual
         // event revisions are source-level and cannot represent overlapping
@@ -88,6 +90,29 @@ namespace PhysicalWater
         internal ProbeColonyWorld World => _world;
         internal CodyCatchmentCache CodyL1 => _codyL1;
         internal event Action<CodyCatchmentDescriptor> CodyCatchmentPublished;
+        internal event Action<VolumetricPceCapacityStorageDescriptor> CapacityStoragePublished;
+
+        internal bool TryGetCapacityStorage(ulong catchmentId,
+            out VolumetricPceCapacityStorageDescriptor descriptor)
+        {
+            return _capacityStorageByCatchment.TryGetValue(catchmentId, out descriptor);
+        }
+
+        internal bool PublishCapacityStorage(
+            VolumetricPceCapacityStorageDescriptor descriptor, out string error)
+        {
+            error = string.Empty;
+            if (descriptor == null || !descriptor.Validate(out error)) return false;
+            if (_capacityStorageByCatchment.TryGetValue(descriptor.CatchmentId, out VolumetricPceCapacityStorageDescriptor previous) &&
+                descriptor.GeometryRevision < previous.GeometryRevision)
+            {
+                error = "PCE capacity publication is older than the retained geometry revision.";
+                return false;
+            }
+            _capacityStorageByCatchment[descriptor.CatchmentId] = descriptor;
+            CapacityStoragePublished?.Invoke(descriptor);
+            return true;
+        }
 
         private void Awake()
         {
