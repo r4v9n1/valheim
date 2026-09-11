@@ -1015,6 +1015,8 @@ namespace PhysicalWater
             CodyCatchmentDescriptor sourceSeed = null;
             ulong globalSourceCatchmentId = 0UL;
             LiquidCoreInitialWorldWaterDomain domain = null;
+            long closureManagedBefore = GC.GetTotalMemory(false);
+            var closureWatch = System.Diagnostics.Stopwatch.StartNew();
             bool valid = VolumetricPceGlobalConnectivityClosure.TryCloseOwned(
                 job.SourceBounds, job.PartitionSize, job.GeometryRevision,
                 job.DependencyRevisionHash, job.ProvisionalPartitions,
@@ -1027,6 +1029,14 @@ namespace PhysicalWater
                     job.GeometryRevision, job.DependencyRevisionHash, closed,
                     out domain, out assemblyError);
             }
+            closureWatch.Stop();
+            long closureManagedAfter = GC.GetTotalMemory(false);
+            PhysicalWaterPlugin.Log.LogInfo(
+                "LiquidCore complete base-world PCE closure telemetry: partitions=" +
+                job.PartitionBounds.Length + ", valid=" + valid + ", elapsedMs=" +
+                closureWatch.Elapsed.TotalMilliseconds.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) +
+                ", managedBefore=" + closureManagedBefore + ", managedAfter=" + closureManagedAfter +
+                ", managedDelta=" + (closureManagedAfter - closureManagedBefore) + ".");
             if (!valid)
             {
                 _baseWorldPceBootstrapJob = null;
