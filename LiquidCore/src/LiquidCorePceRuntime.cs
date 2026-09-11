@@ -1187,20 +1187,18 @@ namespace PhysicalWater
 
         private static bool CaptureBaseTerrainHeightSnapshot(
             BaseWorldPceBootstrapJob job, Bounds partitionBounds,
-            VolumetricPceCapacityStorageDescriptor descriptor, out string error)
+            float[] columnHeights, int nx, int nz, out string error)
         {
             error = string.Empty;
-            if (job == null || descriptor == null || descriptor.ColumnTerrainHeights == null)
+            if (job == null || columnHeights == null)
             {
                 error = "Base terrain snapshot received an incomplete partition.";
                 return false;
             }
-            int nx = descriptor.ResolutionX;
-            int nz = descriptor.ResolutionZ;
             int startX = Mathf.RoundToInt((partitionBounds.min.x - job.SourceBounds.min.x) / job.CellSize);
             int startZ = Mathf.RoundToInt((partitionBounds.min.z - job.SourceBounds.min.z) / job.CellSize);
             if (startX < 0 || startZ < 0 || startX + nx > job.TerrainColumnsX ||
-                startZ + nz > job.TerrainColumnsZ || descriptor.ColumnTerrainHeights.Length != nx * nz)
+                startZ + nz > job.TerrainColumnsZ || columnHeights.Length != nx * nz)
             {
                 error = "Base terrain partition does not fit the captured column domain.";
                 return false;
@@ -1208,7 +1206,7 @@ namespace PhysicalWater
             for (int z = 0; z < nz; z++)
             for (int x = 0; x < nx; x++)
             {
-                float height = descriptor.ColumnTerrainHeights[x + nx * z];
+                float height = columnHeights[x + nx * z];
                 job.TerrainColumnHeights[SnapshotIndex(job, startX + x, startZ + z)] = height;
             }
             // Capture only the one-cell ring outside the declared domain.
@@ -1293,10 +1291,16 @@ namespace PhysicalWater
             if (job == null) return;
             if (job.NextPartition < job.PartitionBounds.Length)
             {
-                if (!TryBuildBaseTerrainPcePartition(
-                        job.PartitionBounds[job.NextPartition], job.PartitionSize,
-                        job.CellSize, job.GeometryRevision, job.DependencyRevisionHash,
-                        out VolumetricPceCapacityStorageDescriptor descriptor, out string error))
+                Bounds partitionBounds = job.PartitionBounds[job.NextPartition];
+                if (!LiquidCoreValheimBaseTerrainPceBuilder.TryCaptureColumnTerrainHeights(
+                        partitionBounds, job.CellSize,
+                        (float x, float z, out float height) =>
+                        {
+                            height = WorldGenerator.instance == null ? 0f :
+                                WorldGenerator.instance.GetHeight(x, z);
+                            return WorldGenerator.instance != null && Finite(height);
+                        }, out float[] columnHeights, out int columnsX, out int columnsZ,
+                        out string error))
                 {
                     _baseWorldPceBootstrapJob = null;
                     if (!_baseWorldBootstrapFailureReported)
@@ -1307,8 +1311,8 @@ namespace PhysicalWater
                     }
                     return;
                 }
-                if (!CaptureBaseTerrainHeightSnapshot(job, job.PartitionBounds[job.NextPartition],
-                        descriptor, out error))
+                if (!CaptureBaseTerrainHeightSnapshot(job, partitionBounds,
+                        columnHeights, columnsX, columnsZ, out error))
                 {
                     _baseWorldPceBootstrapJob = null;
                     if (!_baseWorldBootstrapFailureReported)
@@ -1327,8 +1331,9 @@ namespace PhysicalWater
                     PhysicalWaterPlugin.Log.LogInfo(
                         "LiquidCore complete base-world PCE partition sampled: " +
                         job.NextPartition + "/" + job.PartitionBounds.Length +
-                        ", id=" + descriptor.SourcePartitionId +
-                        ", cells=" + descriptor.CellCapacity.Length + ".");
+                        ", id=" + VolumetricPceSourcePartitionGrid.StablePartitionId(
+                            partitionBounds, job.PartitionSize) +
+                        ", columns=" + (columnsX * columnsZ) + ".");
                 }
                 return;
             }
