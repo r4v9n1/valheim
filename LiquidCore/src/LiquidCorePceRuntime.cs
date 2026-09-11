@@ -154,6 +154,10 @@ namespace PhysicalWater
             var descriptor = new VolumetricPceCapacityStorageDescriptor
             {
                 CatchmentId = catchment.CatchmentId,
+                SourcePartitionId = "active-window:" + catchment.CatchmentId + ":" +
+                    Mathf.RoundToInt(domain.WorldOrigin.x / settings.CellSize) + ":" +
+                    Mathf.RoundToInt(domain.WorldOrigin.z / settings.CellSize),
+                CompleteSourceDomain = false,
                 GeometryRevision = geometryRevision,
                 DependencyRevisionHash = catchment.DependencyRevisionHash,
                 WorldBounds = new Bounds(domain.WorldOrigin + new Vector3(
