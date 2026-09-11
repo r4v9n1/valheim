@@ -438,7 +438,6 @@ namespace PhysicalWater
             _domain = _streaming.Domain;
             _domain.WaterBodyPublisher.Published += OnWaterBodyRegistryPublished;
             BindCodyRuntime(LiquidCorePceRuntime.Instance);
-            ReplayCompleteInitialWorldDomainIfAvailable();
             _accumulator = 0f;
             // Do not issue a blocking full-field diagnostic readback in the
             // same frame as F6 resource creation. The newly-created domain is
@@ -453,6 +452,10 @@ namespace PhysicalWater
             _coverageWindowOrigin = new Vector3(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
             _domain.Paused = true;
             PhysicalWaterPersistenceRuntime.TryRestore(_streaming);
+            // Restore the persisted E3 receipt before replaying the complete
+            // domain. A later geometry publication is reconciliation-only and
+            // must never recreate the finite initial source.
+            ReplayCompleteInitialWorldDomainIfAvailable();
             double restoreMs = createWatch.Elapsed.TotalMilliseconds - initializeMs;
             EnsureGeometryCoverage();
             SynchronizeGeometryIfReady();
@@ -1539,6 +1542,24 @@ namespace PhysicalWater
                     "LiquidCore complete initial-water domain arrived before the E3 representation was ready; source commit deferred.");
                 return;
             }
+            VolumetricFluidStateSnapshot persisted = _streaming.CapturePersistedState();
+            const string initialSourceId = "valheim-ocean-initial-v1";
+            if (persisted.InitialWorldSourceReceipts != null)
+            {
+                for (int i = 0; i < persisted.InitialWorldSourceReceipts.Length; i++)
+                {
+                    VolumetricInitialWorldSourceReceiptSnapshot receipt =
+                        persisted.InitialWorldSourceReceipts[i];
+                    if (receipt != null &&
+                        string.Equals(receipt.SourceId, initialSourceId, StringComparison.Ordinal))
+                    {
+                        PhysicalWaterPlugin.Log.LogInfo(
+                            "LiquidCore complete initial-water domain already has a persisted source receipt; " +
+                            "geometry refresh remains reconciliation-only.");
+                        return;
+                    }
+                }
+            }
             try
             {
                 // SeaLevel is used only as the named initial reference head.
@@ -1550,7 +1571,7 @@ namespace PhysicalWater
                     SourceCatchmentId = domain.SourceCatchmentId
                 };
                 LiquidCoreInitialWorldWaterSourcePlan plan = domain.ComputeSourcePlan(
-                    rule, "valheim-ocean-initial-v1",
+                    rule, initialSourceId,
                     _domain.FlipDomain.ParticleVolumeAtomicScale);
                 if (!_streaming.TryCommitInitialWorldWaterSourcePlan(plan, out string reason))
                 {
