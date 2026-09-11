@@ -48,6 +48,7 @@ namespace PhysicalWater
         internal float CellSize;
         internal long GeometryRevision;
         internal string DependencyRevisionHash;
+        internal long EstimatedCompactGeometryBytes;
         internal int NextPartition;
         internal readonly List<VolumetricPceCapacityStorageDescriptor> Provisional =
             new List<VolumetricPceCapacityStorageDescriptor>();
@@ -836,9 +837,33 @@ namespace PhysicalWater
                 PartitionSize = new Vector2(partitionSize, partitionSize),
                 CellSize = cellSize,
                 GeometryRevision = geometryRevision,
-                DependencyRevisionHash = dependencyRevision
+                DependencyRevisionHash = dependencyRevision,
+                EstimatedCompactGeometryBytes = EstimateBaseWorldCompactGeometryBytes(
+                    sourceBounds, partitionBounds.Length, cellSize)
             };
+            PhysicalWaterPlugin.Log.LogInfo(
+                "LiquidCore complete base-world PCE bootstrap started: bounds=" +
+                sourceBounds.min + ".." + sourceBounds.max + ", partitions=" + partitionBounds.Length +
+                ", estimated compact geometry=" +
+                _baseWorldPceBootstrapJob.EstimatedCompactGeometryBytes + " bytes.");
             AdvanceBaseWorldPceBootstrapJob();
+        }
+
+        private static long EstimateBaseWorldCompactGeometryBytes(
+            Bounds sourceBounds, int partitionCount, float cellSize)
+        {
+            if (partitionCount <= 0 || !Finite(cellSize) || cellSize <= 0f) return 0L;
+            long horizontalCells = (long)Math.Ceiling(sourceBounds.size.x / cellSize) *
+                                   (long)Math.Ceiling(sourceBounds.size.z / cellSize);
+            long verticalCells = (long)Math.Ceiling(sourceBounds.size.y / cellSize);
+            long cells = horizontalCells * verticalCells;
+            // Compact base terrain retains capacity, local component IDs,
+            // final catchment IDs, and one terrain height per X/Z column.
+            long membershipBytes = cells * (sizeof(float) + sizeof(int) + sizeof(ulong));
+            long heightBytes = horizontalCells * sizeof(float);
+            if (cells < 0L || membershipBytes < 0L || heightBytes < 0L ||
+                membershipBytes > long.MaxValue - heightBytes) return long.MaxValue;
+            return membershipBytes + heightBytes;
         }
 
         private void AdvanceBaseWorldPceBootstrapJob()
