@@ -178,16 +178,29 @@ namespace PhysicalWater
             out ulong catchmentId, out string error)
         {
             catchmentId = 0UL;
+            if (!TryGetCodyInitialWaterSourceSeed(out CodyCatchmentDescriptor descriptor, out error)) return false;
+            catchmentId = descriptor.CatchmentId;
+            return catchmentId != 0UL;
+        }
+
+        private bool TryGetCodyInitialWaterSourceSeed(
+            out CodyCatchmentDescriptor descriptor, out string error)
+        {
+            descriptor = null;
             error = string.Empty;
-            CodyCatchmentDescriptor descriptor;
             if ((_codyL1 == null || !_codyL1.TryGetInitialWaterSourceSeed(out descriptor)) &&
                 (_codyL2 == null || !_codyL2.TryGetInitialWaterSourceSeed(out descriptor)))
             {
                 error = "CODY has not published a validated initial-water source seed.";
                 return false;
             }
-            catchmentId = descriptor.CatchmentId;
-            return catchmentId != 0UL;
+            if (descriptor == null || descriptor.CatchmentId == 0UL)
+            {
+                descriptor = null;
+                error = "CODY initial-water source seed has an invalid catchment identity.";
+                return false;
+            }
+            return true;
         }
 
         internal bool TryBuildCompleteInitialWorldDomain(
@@ -337,15 +350,11 @@ namespace PhysicalWater
                     dependencyRevisionHash, provisional,
                     out VolumetricPceCapacityStorageDescriptor[] closed,
                     out error)) return false;
-            for (int i = 0; i < closed.Length; i++)
-            {
-                closed[i].CatchmentId = sourceCatchmentId;
-                if (!closed[i].Validate(out error))
-                {
-                    domain = null;
-                    return false;
-                }
-            }
+            if (!TryGetCodyInitialWaterSourceSeed(
+                    out CodyCatchmentDescriptor sourceSeed, out error) ||
+                sourceSeed.CatchmentId != sourceCatchmentId ||
+                !TryResolveClosedPceCatchment(sourceSeed, closed,
+                    out ulong globalSourceCatchmentId, out error)) return false;
             if (!VolumetricPceCompletePartitionAssembler.TryAssemble(
                     domainId, sourceBounds, partitionSize, geometryRevision,
                     dependencyRevisionHash, closed, out domain, out error))
@@ -353,6 +362,7 @@ namespace PhysicalWater
                 domain = null;
                 return false;
             }
+            domain.SourceCatchmentId = globalSourceCatchmentId;
             for (int i = 0; i < closed.Length; i++)
                 if (!PublishCapacityStorage(closed[i], out error))
                 {
@@ -361,6 +371,56 @@ namespace PhysicalWater
                 }
             return PublishCompleteInitialWorldDomain(domain, out error);
         }
+
+        private static bool TryResolveClosedPceCatchment(
+            CodyCatchmentDescriptor sourceSeed,
+            IReadOnlyList<VolumetricPceCapacityStorageDescriptor> closed,
+            out ulong globalCatchmentId, out string error)
+        {
+            globalCatchmentId = 0UL;
+            error = string.Empty;
+            if (sourceSeed == null || closed == null || closed.Count == 0 ||
+                !FiniteBounds(sourceSeed.DependencyBounds))
+            {
+                error = "CODY source seed does not provide a finite spatial selection region.";
+                return false;
+            }
+            var candidates = new HashSet<ulong>();
+            for (int p = 0; p < closed.Count; p++)
+            {
+                VolumetricPceCapacityStorageDescriptor descriptor = closed[p];
+                if (descriptor == null || !descriptor.WorldBounds.Intersects(sourceSeed.DependencyBounds)) continue;
+                int cellCount = descriptor.ResolutionX * descriptor.ResolutionY * descriptor.ResolutionZ;
+                for (int cell = 0; cell < cellCount; cell++)
+                {
+                    if (descriptor.CellComponentIds[cell] < 0 || descriptor.CellCatchmentIds[cell] == 0UL) continue;
+                    int x = cell % descriptor.ResolutionX;
+                    int y = cell / descriptor.ResolutionX % descriptor.ResolutionY;
+                    int z = cell / (descriptor.ResolutionX * descriptor.ResolutionY);
+                    Bounds cellBounds = new Bounds(
+                        descriptor.GridWorldOrigin + new Vector3(
+                            (x + 0.5f) * descriptor.CellSize,
+                            (y + 0.5f) * descriptor.CellSize,
+                            (z + 0.5f) * descriptor.CellSize),
+                        Vector3.one * descriptor.CellSize);
+                    if (cellBounds.Intersects(sourceSeed.DependencyBounds))
+                        candidates.Add(descriptor.CellCatchmentIds[cell]);
+                }
+            }
+            if (candidates.Count != 1)
+            {
+                error = candidates.Count == 0
+                    ? "CODY source seed does not map to an open post-closure PCE component."
+                    : "CODY source seed maps to multiple post-closure PCE components.";
+                return false;
+            }
+            foreach (ulong candidate in candidates) globalCatchmentId = candidate;
+            return globalCatchmentId != 0UL;
+        }
+
+        private static bool FiniteBounds(Bounds bounds) =>
+            Finite(bounds.center) && Finite(bounds.size) &&
+            bounds.size.x > 0f && bounds.size.y > 0f && bounds.size.z > 0f;
 
         internal bool PublishCapacityStorage(
             VolumetricPceCapacityStorageDescriptor descriptor, out string error)

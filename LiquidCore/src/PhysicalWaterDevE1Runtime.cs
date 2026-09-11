@@ -1546,7 +1546,8 @@ namespace PhysicalWater
                 // exact atoms; E3 receives only those supplied transactions.
                 var rule = new LiquidCoreInitialWorldWaterSourceRule
                 {
-                    ReferenceHead = PhysicalWaterPlugin.Settings.SeaLevel.Value
+                    ReferenceHead = PhysicalWaterPlugin.Settings.SeaLevel.Value,
+                    SourceCatchmentId = domain.SourceCatchmentId
                 };
                 LiquidCoreInitialWorldWaterSourcePlan plan = domain.ComputeSourcePlan(
                     rule, "valheim-ocean-initial-v1",
