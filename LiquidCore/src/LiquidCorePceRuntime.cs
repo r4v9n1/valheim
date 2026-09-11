@@ -763,7 +763,8 @@ namespace PhysicalWater
                 return;
             }
             long geometryRevision = Math.Max(0, world.m_worldGenVersion);
-            string dependencyRevision = "valheim-worldgen:" + world.m_seed + ":" + world.m_worldGenVersion;
+            string dependencyRevision = BuildBaseWorldDependencyRevision(
+                world, verticalMin, verticalMax, partitionSize, cellSize);
             string attemptKey = worldKey + ":" + sourceCatchmentId + ":" + geometryRevision + ":" +
                 verticalMin.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" +
                 verticalMax.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" +
@@ -790,6 +791,17 @@ namespace PhysicalWater
             PhysicalWaterPlugin.Log.LogInfo(
                 "LiquidCore complete base-world PCE domain published: world=" + worldKey +
                 ", partitions=" + domain.Partitions.Length + ", geometryRevision=" + geometryRevision + ".");
+        }
+
+        private static string BuildBaseWorldDependencyRevision(
+            World world, float verticalMin, float verticalMax,
+            float partitionSize, float cellSize)
+        {
+            return "valheim-worldgen:" + world.m_seed + ":" + world.m_worldGenVersion +
+                ":vertical=" + verticalMin.ToString("R", System.Globalization.CultureInfo.InvariantCulture) +
+                ":" + verticalMax.ToString("R", System.Globalization.CultureInfo.InvariantCulture) +
+                ":partition=" + partitionSize.ToString("R", System.Globalization.CultureInfo.InvariantCulture) +
+                ":cell=" + cellSize.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
         }
 
         internal void Attach(PhysicalWaterValheimWorldGeometryAdapter adapter)
