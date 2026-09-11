@@ -94,7 +94,12 @@ namespace PhysicalWater
             }
             AssignLocalComponents(capacity, components, nx, ny, nz, cellSize);
             var exits = BuildBoundaryExits(capacity, components, nx, ny, nz,
-                partitionBounds, partitionSize, cellSize);
+                partitionBounds, partitionSize, cellSize, sampler, out string exitError);
+            if (!string.IsNullOrEmpty(exitError))
+            {
+                error = exitError;
+                return false;
+            }
             descriptor = new VolumetricPceCapacityStorageDescriptor
             {
                 CatchmentId = 0UL,
@@ -166,8 +171,10 @@ namespace PhysicalWater
         }
 
         private static VolumetricPceStorageExit[] BuildBoundaryExits(float[] capacity, int[] components,
-            int nx, int ny, int nz, Bounds bounds, Vector2 partitionSize, float cellSize)
+            int nx, int ny, int nz, Bounds bounds, Vector2 partitionSize, float cellSize,
+            HeightSampler sampler, out string error)
         {
+            string localError = string.Empty;
             var seen = new HashSet<string>(StringComparer.Ordinal);
             var exits = new List<VolumetricPceStorageExit>();
             for (int z = 0; z < nz; z++)
@@ -181,12 +188,36 @@ namespace PhysicalWater
                 Add(z == 0, components[cell], 0, -1, x, y, z, x, y, nz - 1);
                 Add(z == nz - 1, components[cell], 0, 1, x, y, z, x, y, 0);
             }
+            error = localError;
             return exits.ToArray();
 
             void Add(bool boundary, int component, int dx, int dz, int x, int y, int z,
                 int destinationX, int destinationY, int destinationZ)
             {
-                if (!boundary) return;
+                if (!boundary || !string.IsNullOrEmpty(localError)) return;
+
+                // A source-side open cell is not by itself a physical
+                // connectivity edge. The corresponding cell in the
+                // in-domain neighbor must also have open capacity. Sample
+                // that deterministic base-world column with the same
+                // sampler used to build this partition and suppress a
+                // one-sided exit when the neighbor is solid. Global closure
+                // remains fail-closed for malformed descriptors, while
+                // ordinary terrain/solid boundaries are represented as no
+                // connection rather than as a broken reciprocal edge.
+                float destinationWorldX = bounds.min.x + (x + 0.5f) * cellSize + dx * cellSize;
+                float destinationWorldZ = bounds.min.z + (z + 0.5f) * cellSize + dz * cellSize;
+                if (!sampler(destinationWorldX, destinationWorldZ, out float destinationGround))
+                {
+                    localError = "Valheim base terrain sampler returned no height for a boundary neighbor.";
+                    return;
+                }
+                float bottom = bounds.min.y + y * cellSize;
+                float top = bottom + cellSize;
+                float destinationOpenHeight = Mathf.Clamp(
+                    top - Mathf.Max(bottom, destinationGround), 0f, cellSize);
+                if (destinationOpenHeight <= 1e-6f) return;
+
                 int tileX = Mathf.FloorToInt(bounds.min.x / partitionSize.x) + dx;
                 int tileZ = Mathf.FloorToInt(bounds.min.z / partitionSize.y) + dz;
                 string key = component + ":" + tileX + ":" + tileZ + ":" + x + ":" + y + ":" + z;
