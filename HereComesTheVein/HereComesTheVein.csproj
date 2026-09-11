@@ -1,0 +1,43 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>HereComesTheVein</AssemblyName>
+    <RootNamespace>HereComesTheVein</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Deterministic>true</Deterministic>
+
+    <BaseIntermediateOutputPath>$(LOCALAPPDATA)\R4V9N1\HereComesTheVein\obj\</BaseIntermediateOutputPath>
+    <OutputPath>$(LOCALAPPDATA)\R4V9N1\HereComesTheVein\bin\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+
+    <ValheimDir Condition="'$(ValheimDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Valheim</ValheimDir>
+    <GameManagedDir Condition="'$(GameManagedDir)' == ''">$(ValheimDir)\valheim_Data\Managed</GameManagedDir>
+    <BepInExCoreDir Condition="'$(BepInExCoreDir)' == ''">$(ValheimDir)\BepInEx\core</BepInExCoreDir>
+    <AssemblyAuthority Condition="'$(AssemblyAuthority)' == ''">G:\My Drive\build\assembly_valheim.dll</AssemblyAuthority>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="BepInEx">
+      <HintPath>$(BepInExCoreDir)\BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(BepInExCoreDir)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="assembly_valheim">
+      <HintPath>$(AssemblyAuthority)</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(GameManagedDir)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GameManagedDir)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>
