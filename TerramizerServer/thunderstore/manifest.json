@@ -1,9 +1,9 @@
 {
   "name": "TerramizerServer",
-  "version_number": "0.6.8",
+  "version_number": "1.0.3",
   "website_url": "",
-  "description": "Dedicated-server Valheim ownership/cache experiment. Human-directed, with AI-assisted code analysis and verification support.",
+  "description": "I use AI to review code, assist with optimization and integrity; I manually test and review every mod, and all decisions and code remain my own. Dedicated-server performance improvements.",
   "dependencies": [
-    "denikson-BepInExPack_Valheim-5.4.2333"
+    "denikson-BepInExPack_Valheim-5.4.2350"
   ]
 }

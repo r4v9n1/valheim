@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0
+
+- Rebuilt against the current Valheim 1.0 assemblies.
+- Preserves nearby-container requirement linking, safe material pulling, and inventory sorting behavior.
+- Replaced the package icon with a custom-made, non-AI-generated icon.
+
 ## 0.2.8
 
 - Moves the human/AI development disclosure to the top of the Thunderstore details text so it is visible immediately.

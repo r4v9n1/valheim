@@ -1,0 +1,16 @@
+LightMyFire 0.2.6 strict fuel inventory guarantee
+
+Coal barrel:
+  ACCEPT: Coal only
+  REJECT: Resin and every other item
+
+Resin barrel:
+  ACCEPT: Resin only
+  REJECT: Coal and every other item
+
+Enforcement layers:
+1. Harmony prefix blocks current Valheim Inventory insertion/check calls before mutation.
+2. ItemData, ItemDrop, GameObject/prefab and string-name AddItem paths are covered.
+3. Bulk inventory-to-barrel moves are rejected if the source contains any invalid item.
+4. The owning peer immediately ejects any invalid stack inserted by a bypassing mod/future API path.
+5. Removal is never blocked. Automatic refill consumes only the barrel's configured matching fuel.

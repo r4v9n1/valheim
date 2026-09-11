@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using BepInEx;
@@ -19,21 +20,27 @@ using UnityEngine;
 namespace TerramizerServer
 {
     [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
-    public sealed class TerramizerServerPlugin : BaseUnityPlugin
+    public sealed partial class TerramizerServerPlugin : BaseUnityPlugin
     {
         public const string PluginGuid = "r4v9n1.terramizerserver";
         public const string PluginName = "TerramizerServer";
-        public const string PluginVersion = "0.6.8";
+        public const string PluginVersion = "1.0.3";
         public const string CreatorCredit = "Created by R4V9N1";
         private const string SyncedVersionKey = "r4v9n1.terramizerserver.version";
         private const string SyncedStaticOwnershipKey = "r4v9n1.terramizerserver.staticOwnership";
         private const string SyncedOwnershipCacheKey = "r4v9n1.terramizerserver.ownershipCache";
+        private const string SyncedTerrainLimitsEnabledKey = "r4v9n1.terramizerserver.extendedTerrainLimits";
+        private const string SyncedTerrainRaiseLimitKey = "r4v9n1.terramizerserver.terrainRaiseLimit";
+        private const string SyncedTerrainDigLimitKey = "r4v9n1.terramizerserver.terrainDigLimit";
         private const string RpcRequestCompanionMetadata = "r4v9n1.terramizerserver.RequestCompanionMetadata";
         private const string RpcCompanionMetadata = "r4v9n1.terramizerserver.CompanionMetadata";
+        private const string RpcRequestCompanionMetadataV2 = "r4v9n1.terramizerserver.RequestCompanionMetadataV2";
+        private const string RpcCompanionMetadataV2 = "r4v9n1.terramizerserver.CompanionMetadataV2";
 
         private static ConfigEntry<bool> _enabled;
         private static ConfigEntry<bool> _dedicatedOnly;
         private static ConfigEntry<bool> _disableUnityJobDebugger;
+        private static ConfigEntry<bool> _reuseCollisionCallbacks;
         private static ConfigEntry<bool> _enableStaticPieceServerOwnership;
         private static ConfigEntry<bool> _dryRunStaticPieceServerOwnership;
         private static ConfigEntry<bool> _playerBuiltPiecesOnly;
@@ -44,6 +51,7 @@ namespace TerramizerServer
         private static ConfigEntry<float> _maintenanceOwnershipScanIntervalSeconds;
         private static ConfigEntry<int> _maintenanceMaxClaimsPerScan;
         private static ConfigEntry<int> _maintenanceZdoRecordsPerScan;
+        private static ConfigEntry<bool> _enableBackgroundOwnershipAudit;
         private static ConfigEntry<bool> _enableOwnershipCache;
         private static ConfigEntry<float> _ownershipCacheMaxAgeHours;
         private static ConfigEntry<int> _ownershipCacheRecordsPerScan;
@@ -53,6 +61,14 @@ namespace TerramizerServer
         private static ConfigEntry<bool> _logWatchedClaims;
         private static ConfigEntry<bool> _logDevSkips;
         private static ConfigEntry<float> _devSummaryIntervalSeconds;
+        private static ConfigEntry<bool> _speedUpSleepFastForward;
+        private static ConfigEntry<float> _sleepFastForwardSeconds;
+        private static ConfigEntry<bool> _skipSleepWorldSave;
+        private static ConfigEntry<bool> _preserveAutosaveTimer;
+        private static ConfigEntry<bool> _logSkippedSleepSaves;
+        private static FieldInfo _envManSkipToTimeField;
+        private static FieldInfo _envManTimeSkipSpeedField;
+        private static FieldInfo _gameSaveTimerField;
 
         private static ManualLogSource _log;
         private static FieldInfo _objectsByIdField;
@@ -64,11 +80,16 @@ namespace TerramizerServer
         private static bool _loadedZdoScanCursorPending;
         private static bool _companionRpcReplyLogged;
         private static bool _applicationQuitting;
+        private static bool _ownershipPatchFailureLogged;
+        private static bool _ownershipMaintenanceFailureLogged;
+        private static bool _firstBroadScanStatusStarted;
+        private static bool _firstBroadScanStatusCompleted;
+        private static float _nextFirstBroadScanStatusTime;
         private static string _ownershipCachePath;
         private static float _nextOwnershipScanTime;
         private static float _nextDevSummaryTime;
         private static float _nextOwnershipCacheFlushTime;
-        private static float _nextServerMetadataRefreshTime;
+        private static ZNet _metadataAdvertisedForInstance;
         private static int _cachedZdoScanIndex;
         private static int _cachedZdoScanObjectCount;
         private static int _zdoBroadScanPassesCompleted;
@@ -107,8 +128,11 @@ namespace TerramizerServer
                 "Enable TerramizerServer runtime features.");
             _dedicatedOnly = Config.Bind("General", "DedicatedOnly", true,
                 "Apply runtime features only in a batch-mode dedicated-server process.");
+            BindTerrainCompatibilityConfig();
             _disableUnityJobDebugger = Config.Bind("Performance", "DisableUnityJobDebugger", true,
                 "Disable Unity's development-only job debugger without changing simulation, networking, ownership, objects, or saves.");
+            _reuseCollisionCallbacks = Config.Bind("Performance", "ReuseCollisionCallbacks", true,
+                "Reuse Unity collision callback objects to reduce physics GC allocations. Disable for mods that retain Collision objects after callbacks.");
             _enableStaticPieceServerOwnership = Config.Bind("ExperimentalOwnership", "EnableStaticPieceServerOwnership", true,
                 "EXPERIMENTAL: make the dedicated server claim ownership of loaded, static, player-created structure pieces while preserving their creator field.");
             _dryRunStaticPieceServerOwnership = Config.Bind("ExperimentalOwnership", "DryRunStaticPieceServerOwnership", false,
@@ -117,18 +141,20 @@ namespace TerramizerServer
                 "Only claim pieces with a non-zero Valheim creator field.");
             _requireWearNTear = Config.Bind("ExperimentalOwnership", "RequireWearNTear", true,
                 "Only claim structure-style pieces that have WearNTear. This avoids crops and other non-structural placed objects.");
-            _ownershipScanIntervalSeconds = BindRange("ExperimentalOwnership", "OwnershipScanIntervalSeconds", 5f,
-                "Seconds between server sweeps of currently loaded pieces.", 1f, 120f);
-            _maxClaimsPerScan = BindRange("ExperimentalOwnership", "MaxClaimsPerScan", 250,
+            _ownershipScanIntervalSeconds = BindRange("ExperimentalOwnership", "OwnershipScanIntervalSeconds", 15f,
+                "Seconds between bounded ownership recovery passes. Newly loaded pieces are handled immediately.", 1f, 120f);
+            _maxClaimsPerScan = BindRange("ExperimentalOwnership", "MaxClaimsPerScan", 100,
                 "Maximum ZDO ownership changes allowed per scan.", 1, 5000);
-            _zdoRecordsPerScan = BindRange("ExperimentalOwnership", "ZdoRecordsPerScan", 25000,
-                "Maximum persistent ZDO records inspected per scan. Large existing worlds may need several scans to cover all records.", 100, 100000);
-            _maintenanceOwnershipScanIntervalSeconds = BindRange("ExperimentalOwnership", "MaintenanceOwnershipScanIntervalSeconds", 30f,
-                "Seconds between lower-cost maintenance sweeps after the broad ZDO scanner has completed at least one full pass.", 5f, 600f);
-            _maintenanceMaxClaimsPerScan = BindRange("ExperimentalOwnership", "MaintenanceMaxClaimsPerScan", 100,
+            _zdoRecordsPerScan = BindRange("ExperimentalOwnership", "ZdoRecordsPerScan", 10000,
+                "Maximum persistent ZDO records inspected per recovery pass. This work is bounded to protect active players.", 100, 100000);
+            _maintenanceOwnershipScanIntervalSeconds = BindRange("ExperimentalOwnership", "MaintenanceOwnershipScanIntervalSeconds", 1800f,
+                "Seconds between infrequent integrity audits after the initial world pass. New/loaded pieces are handled immediately.", 60f, 21600f);
+            _maintenanceMaxClaimsPerScan = BindRange("ExperimentalOwnership", "MaintenanceMaxClaimsPerScan", 25,
                 "Maximum ZDO ownership changes allowed per maintenance scan after the first full broad pass.", 1, 5000);
-            _maintenanceZdoRecordsPerScan = BindRange("ExperimentalOwnership", "MaintenanceZdoRecordsPerScan", 5000,
+            _maintenanceZdoRecordsPerScan = BindRange("ExperimentalOwnership", "MaintenanceZdoRecordsPerScan", 1000,
                 "Maximum persistent ZDO records inspected per maintenance scan after the first full broad pass.", 100, 100000);
+            _enableBackgroundOwnershipAudit = Config.Bind("ExperimentalOwnership", "EnableBackgroundOwnershipAudit", false,
+                "Run the legacy whole-world ZDO ownership audit. Disabled by default because event-driven claims cover newly loaded structures without scanning the live world table.");
             _enableOwnershipCache = Config.Bind("OwnershipCache", "EnableOwnershipCache", true,
                 "Store known eligible claimed ZDOs so restart warm-start can quickly reassign them to the new server session id.");
             _ownershipCacheMaxAgeHours = BindRange("OwnershipCache", "OwnershipCacheMaxAgeHours", 168f,
@@ -145,11 +171,26 @@ namespace TerramizerServer
                 "Log ownership claims for sensitive interactive prefabs such as beds, chests, portals, fires, stations, signs, item stands, wards, doors, and gates.");
             _logDevSkips = Config.Bind("DevLogs", "LogOwnershipSkips", false,
                 "Log skipped pieces. This is noisy and should only be enabled during focused testing.");
-            _devSummaryIntervalSeconds = BindRange("DevLogs", "OwnershipSummaryIntervalSeconds", 30f,
+            _devSummaryIntervalSeconds = BindRange("DevLogs", "OwnershipSummaryIntervalSeconds", 60f,
                 "Seconds between compact ownership experiment summaries.", 5f, 600f);
-
+            _speedUpSleepFastForward = Config.Bind("Sleep", "SpeedUpSleepFastForward", true, "Tune sleep time-skip to the configured real-time duration.");
+            _sleepFastForwardSeconds = BindRange("Sleep", "SleepFastForwardSeconds", 4f, "Target real seconds for sleep time-skip.", 1f, 60f);
+            _skipSleepWorldSave = Config.Bind("Sleep", "SkipSleepWorldSave", true, "Skip the extra world save triggered when sleep ends.");
+            _preserveAutosaveTimer = Config.Bind("Sleep", "PreserveAutosaveTimer", true, "Keep the regular autosave timer unchanged when the sleep save is skipped.");
+            _logSkippedSleepSaves = Config.Bind("Sleep", "LogSkippedSleepSaves", true, "Log when the sleep-triggered world save is skipped.");
+            InitializeStreaming();
             RemoveRetiredSettings();
-            LoadOwnershipCache();
+            _envManSkipToTimeField = AccessTools.Field(typeof(EnvMan), "m_skipToTime");
+            _envManTimeSkipSpeedField = AccessTools.Field(typeof(EnvMan), "m_timeSkipSpeed");
+            _gameSaveTimerField = AccessTools.Field(typeof(Game), "m_saveTimer");
+
+            // The legacy cache belongs to the optional whole-world audit. Normal
+            // operation is event-driven and must not read or maintain a world-sized
+            // cache on the dedicated server.
+            if (_enableBackgroundOwnershipAudit.Value)
+            {
+                LoadOwnershipCache();
+            }
             ApplySafeRuntimeSetting();
             InstallExperimentalPatches();
 
@@ -159,6 +200,9 @@ namespace TerramizerServer
                            ", playerBuiltOnly=" + _playerBuiltPiecesOnly.Value +
                            ", requireWearNTear=" + _requireWearNTear.Value + ".");
             Logger.LogInfo("Creator fields are preserved. WearNTear is not removed. Dynamic physics objects remain peer-owned.");
+            Logger.LogInfo("Bounded zone streaming prefetch: enabled=" + _streamingBoostEnabled.Value +
+                           ", maxZdosPerPeer=" + _streamingBoostMaxZdos.Value +
+                           ", cooldown=" + _streamingBoostCooldown.Value.ToString("F2") + "s, socket backpressure=" + _streamingBoostMaxQueuePercent.Value + "%. Peer-zone scene creation remains disabled.");
             Logger.LogInfo(CreatorCredit + ".");
         }
 
@@ -169,17 +213,18 @@ namespace TerramizerServer
 
         private void ApplySafeRuntimeSetting()
         {
-            if (!_enabled.Value || !_disableUnityJobDebugger.Value || (_dedicatedOnly.Value && !UnityEngine.Application.isBatchMode))
+            if (!_enabled.Value || (_dedicatedOnly.Value && !UnityEngine.Application.isBatchMode))
             {
                 return;
             }
 
             try
             {
-                if (JobsUtility.JobDebuggerEnabled)
+                if (_disableUnityJobDebugger.Value && JobsUtility.JobDebuggerEnabled)
                 {
                     JobsUtility.JobDebuggerEnabled = false;
                 }
+                Physics.reuseCollisionCallbacks = _reuseCollisionCallbacks.Value;
 
                 Logger.LogInfo("Unity's development job debugger is disabled; all server game systems remain unmodified.");
             }
@@ -197,7 +242,21 @@ namespace TerramizerServer
             }
 
             _harmony = new Harmony(PluginGuid);
+            BinarySearchDictionarySetValuePatch.Install(_harmony, Logger.LogInfo);
+            TryPatch(typeof(VisEquipmentIntCachePatch), "VisEquipment ZDO integer lookup cache");
+            TryPatch(typeof(ZPackageWritePackagePatch), "allocation-free ZPackage nesting");
+            TryPatch(typeof(ZdoOwnershipHandoffPatch), "optimized ZDO ownership handoff scan");
             TryPatch(typeof(ZNetViewAwakeStaticOwnershipPatch), "ZNetView creation ownership observation");
+            TryPatch(typeof(EnvManSkipToMorningPatch), "sleep fast-forward");
+            TryPatch(typeof(GameSleepStopPatch), "sleep save policy");
+            TryPatch(typeof(HeightmapAtMaxWorldLevelDepthTerrainLimitPatch), "world heightmap dig-depth terrain limit");
+            TryPatch(typeof(HeightmapLevelTerrainTerrainLimitPatch), "heightmap terrain raise/dig limits");
+            TryPatch(typeof(TerrainCompLevelTerrainLimitPatch), "terrain component raise/dig limits");
+            TryPatch(typeof(TerrainCompRaiseTerrainLimitPatch), "terrain component direct raise limit");
+            TryPatch(typeof(TerrainCompApplyToHeightmapTerrainLimitPatch), "terrain final-apply limits");
+            TryPatch(typeof(AudioManHeadlessPatch), "headless audio guard");
+            TryPatch(typeof(ShieldDomeAwakeHeadlessPatch), "headless shield initialization guard");
+            TryPatch(typeof(ShieldDomeColorHeadlessPatch), "headless shield color guard");
         }
 
         private void TryPatch(System.Type patchType, string name)
@@ -205,6 +264,7 @@ namespace TerramizerServer
             try
             {
                 _harmony.CreateClassProcessor(patchType).Patch();
+                Logger.LogInfo("Installed " + name + ".");
             }
             catch (System.Exception ex)
             {
@@ -212,10 +272,16 @@ namespace TerramizerServer
             }
         }
 
+        internal static bool ShouldSkipHeadlessVisualSystems()
+        {
+            return Application.isBatchMode;
+        }
+
         private void Update()
         {
             RegisterCompanionRpcsWhenReady();
             AdvertiseServerMetadata();
+            RunStreamingBoost();
 
             if (!ShouldRunExperiment())
             {
@@ -223,18 +289,32 @@ namespace TerramizerServer
             }
 
             float now = Time.realtimeSinceStartup;
-            if (_enableOwnershipCache.Value && !_ownershipCacheWarmStartComplete)
+            if (_enableBackgroundOwnershipAudit.Value && _enableOwnershipCache.Value && !_ownershipCacheWarmStartComplete)
             {
-                ApplyOwnershipCacheWarmStart();
+                try
+                {
+                    ApplyOwnershipCacheWarmStart();
+                }
+                catch (System.Exception ex)
+                {
+                    LogOwnershipMaintenanceFailure(ex);
+                }
             }
 
-            if (now >= _nextOwnershipScanTime)
+            if (_enableBackgroundOwnershipAudit.Value && now >= _nextOwnershipScanTime)
             {
-                SweepLoadedPieces();
+                try
+                {
+                    SweepLoadedPieces();
+                }
+                catch (System.Exception ex)
+                {
+                    LogOwnershipMaintenanceFailure(ex);
+                }
                 _nextOwnershipScanTime = now + GetOwnershipScanIntervalSeconds();
             }
 
-            if (now >= _nextDevSummaryTime)
+            if (_enableBackgroundOwnershipAudit.Value && now >= _nextDevSummaryTime)
             {
                 _nextDevSummaryTime = now + _devSummaryIntervalSeconds.Value;
                 LogOwnershipSummary();
@@ -272,23 +352,56 @@ namespace TerramizerServer
 
         internal static void TryClaimFromZNetView(ZNetView view, string reason)
         {
-            if (!ShouldRunExperiment() || view == null)
+            try
             {
-                return;
-            }
+                if (!ShouldRunExperiment() || view == null)
+                {
+                    return;
+                }
 
-            Piece piece = view.GetComponent<Piece>();
-            if (piece == null)
+                ZDO zdo = view.GetZDO();
+                if (zdo == null)
+                {
+                    return;
+                }
+
+                // Most ZNetViews are creatures, items, effects, or other
+                // non-structure objects. Use the persistent prefab hash and a
+                // cached prefab eligibility result to avoid component-tree
+                // walks for those objects during every zone load.
+                if (ZNetScene.instance != null)
+                {
+                    int prefabHash = zdo.GetPrefab();
+                    GameObject prefab = ZNetScene.instance.GetPrefab(prefabHash);
+                    if (prefab != null && !IsEligibleStaticPiecePrefab(prefabHash, prefab))
+                    {
+                        return;
+                    }
+                }
+
+                Piece piece = view.GetComponent<Piece>();
+                if (piece == null)
+                {
+                    piece = view.GetComponentInChildren<Piece>(true);
+                }
+
+                if (piece == null)
+                {
+                    return;
+                }
+
+                TryClaimPiece(piece, reason, allowClaimLimit: false, claimsThisScan: null);
+            }
+            catch (System.Exception ex)
             {
-                piece = view.GetComponentInChildren<Piece>(true);
+                // Ownership is an optional optimization. Never allow a failed
+                // eligibility/ownership probe to break vanilla object creation.
+                if (!_ownershipPatchFailureLogged && _log != null)
+                {
+                    _ownershipPatchFailureLogged = true;
+                    _log.LogWarning("Static ownership observation failed; the affected object remains vanilla-owned: " + ex.Message);
+                }
             }
-
-            if (piece == null)
-            {
-                return;
-            }
-
-            TryClaimPiece(piece, reason, allowClaimLimit: false, claimsThisScan: null);
         }
 
         private static void SweepLoadedPieces()
@@ -427,6 +540,7 @@ namespace TerramizerServer
 
             ApplyCachedZdoScanCursor(objects.Count);
             ValidateCachedScanPassState(objects.Count);
+            LogFirstBroadScanStatus(objects.Count, completed: false);
             if (_zdoScanIndex >= objects.Count)
             {
                 _zdoScanIndex = 0;
@@ -479,6 +593,57 @@ namespace TerramizerServer
                 }
             }
             PersistZdoScanCursor(objects.Count);
+            LogFirstBroadScanStatus(objects.Count, completed: completedPass && processed > 0);
+        }
+
+        private static void LogFirstBroadScanStatus(int objectCount, bool completed)
+        {
+            if (_log == null || !_enableBackgroundOwnershipAudit.Value || _zdoBroadScanPassesCompleted > 0 && _firstBroadScanStatusCompleted)
+                return;
+
+            float now = Time.realtimeSinceStartup;
+            if (!completed && _firstBroadScanStatusStarted && now < _nextFirstBroadScanStatusTime)
+                return;
+
+            if (!_firstBroadScanStatusStarted)
+            {
+                _firstBroadScanStatusStarted = true;
+                float configuredRate = GetZdoRecordsPerScan() / Math.Max(1f, GetOwnershipScanIntervalSeconds());
+                float referenceRate = 5000f;
+                float estimatedSeconds = objectCount / Math.Max(1f, configuredRate);
+                _nextFirstBroadScanStatusTime = now + 30f;
+                _log.LogInfo("[ownership scan] First broad ZDO scan started: " + objectCount +
+                             " records; estimated time " + FormatScanDuration(estimatedSeconds) +
+                             " at current budget (" + configuredRate.ToString("F0") + " records/s)." +
+                             " Prior measured warm-up reference was " + referenceRate.ToString("F0") + " records/s with a 25,000/5s budget.");
+                return;
+            }
+
+            if (completed)
+            {
+                _firstBroadScanStatusCompleted = true;
+                _log.LogInfo("[ownership scan] First broad ZDO scan completed: " + objectCount + " records inspected. Switching to maintenance mode.");
+                return;
+            }
+
+            int processed = Math.Min(Math.Max(_zdoScanIndex, 0), objectCount);
+            int remaining = Math.Max(0, objectCount - processed);
+            float rate = GetZdoRecordsPerScan() / Math.Max(1f, GetOwnershipScanIntervalSeconds());
+            float estimatedRemaining = remaining / Math.Max(1f, rate);
+            float percent = objectCount > 0 ? processed * 100f / objectCount : 100f;
+            _nextFirstBroadScanStatusTime = now + 30f;
+            _log.LogInfo("[ownership scan] First broad scan progress: " + percent.ToString("F1") +
+                         "% (" + processed + "/" + objectCount + "); estimated remaining " +
+                         FormatScanDuration(estimatedRemaining) + ".");
+        }
+
+        private static string FormatScanDuration(float seconds)
+        {
+            if (seconds < 60f) return Math.Max(0, (int)Math.Ceiling(seconds)) + " seconds";
+            int minutes = (int)(seconds / 60f);
+            int hours = minutes / 60;
+            minutes %= 60;
+            return hours > 0 ? hours + "h " + minutes + "m" : minutes + "m";
         }
 
         private static bool IsMaintenanceScanMode()
@@ -807,7 +972,8 @@ namespace TerramizerServer
 
         private static void RecordOwnershipCache(ZDO zdo, string prefabName, long creator)
         {
-            if (_enableOwnershipCache == null || !_enableOwnershipCache.Value || _dryRunStaticPieceServerOwnership.Value || zdo == null || !zdo.IsValid())
+            if (_enableBackgroundOwnershipAudit == null || !_enableBackgroundOwnershipAudit.Value ||
+                _enableOwnershipCache == null || !_enableOwnershipCache.Value || _dryRunStaticPieceServerOwnership.Value || zdo == null || !zdo.IsValid())
             {
                 return;
             }
@@ -1198,7 +1364,8 @@ namespace TerramizerServer
 
         private static void AdvertiseServerMetadata()
         {
-            if (_enabled == null || !_enabled.Value || ZNet.instance == null || !ZNet.instance.IsServer())
+            if (_enabled == null || !_enabled.Value || ZNet.instance == null || !ZNet.instance.IsServer() ||
+                ZNet.instance.m_serverSyncedPlayerData == null)
             {
                 return;
             }
@@ -1207,26 +1374,38 @@ namespace TerramizerServer
                 return;
             }
 
-            float now = Time.realtimeSinceStartup;
-            if (_serverMetadataAdvertised && now < _nextServerMetadataRefreshTime)
+            // Server-synced player data is read when each peer is initialized;
+            // rewriting the same values on a timer only adds work to the server
+            // update loop and can create needless sync churn. Re-advertise only
+            // when Valheim has replaced the live ZNet instance.
+            if (_serverMetadataAdvertised && object.ReferenceEquals(_metadataAdvertisedForInstance, ZNet.instance))
             {
                 return;
             }
-            _nextServerMetadataRefreshTime = now + 10f;
 
             ZNet.instance.m_serverSyncedPlayerData[SyncedVersionKey] = PluginVersion;
             ZNet.instance.m_serverSyncedPlayerData[SyncedStaticOwnershipKey] =
                 (_enableStaticPieceServerOwnership != null && _enableStaticPieceServerOwnership.Value).ToString();
             ZNet.instance.m_serverSyncedPlayerData[SyncedOwnershipCacheKey] =
-                (_enableOwnershipCache != null && _enableOwnershipCache.Value).ToString();
-
+                (_enableBackgroundOwnershipAudit != null && _enableBackgroundOwnershipAudit.Value &&
+                 _enableOwnershipCache != null && _enableOwnershipCache.Value).ToString();
+            ZNet.instance.m_serverSyncedPlayerData[SyncedTerrainLimitsEnabledKey] =
+                (_enableExtendedTerrainLimits != null && _enableExtendedTerrainLimits.Value).ToString();
+            ZNet.instance.m_serverSyncedPlayerData[SyncedTerrainRaiseLimitKey] =
+                GetTerrainRaiseLimitMeters().ToString(System.Globalization.CultureInfo.InvariantCulture);
+            ZNet.instance.m_serverSyncedPlayerData[SyncedTerrainDigLimitKey] =
+                GetTerrainDigLimitMeters().ToString(System.Globalization.CultureInfo.InvariantCulture);
             if (!_serverMetadataAdvertised && _log != null)
             {
                 _log.LogInfo("Advertised TerramizerServer companion metadata to connecting clients. version=" + PluginVersion +
                              ", staticOwnership=" + ZNet.instance.m_serverSyncedPlayerData[SyncedStaticOwnershipKey] +
-                             ", ownershipCache=" + ZNet.instance.m_serverSyncedPlayerData[SyncedOwnershipCacheKey] + ".");
+                             ", ownershipCache=" + ZNet.instance.m_serverSyncedPlayerData[SyncedOwnershipCacheKey] +
+                             ", extendedTerrainLimits=" + ZNet.instance.m_serverSyncedPlayerData[SyncedTerrainLimitsEnabledKey] +
+                             ", terrainRaiseLimit=" + ZNet.instance.m_serverSyncedPlayerData[SyncedTerrainRaiseLimitKey] +
+                             ", terrainDigLimit=" + ZNet.instance.m_serverSyncedPlayerData[SyncedTerrainDigLimitKey] + ".");
             }
             _serverMetadataAdvertised = true;
+            _metadataAdvertisedForInstance = ZNet.instance;
         }
 
         private static void RegisterCompanionRpcsWhenReady()
@@ -1237,6 +1416,7 @@ namespace TerramizerServer
             }
 
             ZRoutedRpc.instance.Register(RpcRequestCompanionMetadata, new System.Action<long>(OnRequestCompanionMetadata));
+            ZRoutedRpc.instance.Register(RpcRequestCompanionMetadataV2, new System.Action<long>(OnRequestCompanionMetadataV2));
             _registeredRoutedRpcInstance = ZRoutedRpc.instance;
         }
 
@@ -1252,7 +1432,8 @@ namespace TerramizerServer
             }
 
             bool staticOwnership = _enableStaticPieceServerOwnership != null && _enableStaticPieceServerOwnership.Value;
-            bool ownershipCache = _enableOwnershipCache != null && _enableOwnershipCache.Value;
+            bool ownershipCache = _enableBackgroundOwnershipAudit != null && _enableBackgroundOwnershipAudit.Value &&
+                                  _enableOwnershipCache != null && _enableOwnershipCache.Value;
             ZRoutedRpc.instance.InvokeRoutedRPC(sender, RpcCompanionMetadata, PluginVersion, staticOwnership, ownershipCache);
             _companionRpcReplies++;
 
@@ -1261,8 +1442,41 @@ namespace TerramizerServer
                 _companionRpcReplyLogged = true;
                 _log.LogInfo("Answered Terramizer companion metadata RPC. version=" + PluginVersion +
                              ", staticOwnership=" + staticOwnership +
-                             ", ownershipCache=" + ownershipCache + ".");
+                             ", ownershipCache=" + ownershipCache +
+                             ".");
             }
+        }
+
+        private static void OnRequestCompanionMetadataV2(long sender)
+        {
+            if (_enabled == null || !_enabled.Value || ZRoutedRpc.instance == null || ZNet.instance == null || !ZNet.instance.IsServer())
+            {
+                return;
+            }
+            if (_dedicatedOnly != null && _dedicatedOnly.Value && !Application.isBatchMode)
+            {
+                return;
+            }
+
+            bool staticOwnership = _enableStaticPieceServerOwnership != null && _enableStaticPieceServerOwnership.Value;
+            bool ownershipCache = _enableBackgroundOwnershipAudit != null && _enableBackgroundOwnershipAudit.Value &&
+                                  _enableOwnershipCache != null && _enableOwnershipCache.Value;
+            bool extendedTerrain = _enableExtendedTerrainLimits != null && _enableExtendedTerrainLimits.Value;
+            float terrainRaiseLimit = GetTerrainRaiseLimitMeters();
+            float terrainDigLimit = GetTerrainDigLimitMeters();
+            ZRoutedRpc.instance.InvokeRoutedRPC(sender, RpcCompanionMetadataV2, PluginVersion, staticOwnership, ownershipCache, extendedTerrain, terrainRaiseLimit, terrainDigLimit);
+            _companionRpcReplies++;
+        }
+
+        private static void LogOwnershipMaintenanceFailure(System.Exception ex)
+        {
+            if (_ownershipMaintenanceFailureLogged || _log == null)
+            {
+                return;
+            }
+
+            _ownershipMaintenanceFailureLogged = true;
+            _log.LogWarning("Optional ownership maintenance hit an error; vanilla server simulation continues and the next bounded pass will retry: " + ex.Message);
         }
 
         private static void LogClaim(string action, string prefabName, ZDO zdo, long oldOwner, long creator, string reason)
@@ -1395,11 +1609,7 @@ namespace TerramizerServer
             Remove("Streaming", "MaxSendQueueBytes", 16384);
             Remove("Streaming", "MinFreeSendQueueBytes", 4096);
             Remove("Streaming", "PeerSendIntervalSeconds", 0.05f);
-            Remove("Streaming", "EnableServerZoneStreamingBoost", true);
             Remove("Streaming", "ZoneStreamingBoostExtraRadius", 0);
-            Remove("Streaming", "MaxZoneStreamingBoostZdosPerPeer", 128);
-            Remove("Streaming", "ZoneStreamingBoostCooldownSeconds", 1.5f);
-            Remove("Streaming", "ZoneStreamingBoostMaxQueuePercent", 35);
             Remove("Streaming", "ZoneStreamingBoostIncludeDistantZdos", true);
             Remove("Streaming", "LogZoneStreamingBoosts", false);
             Remove("Streaming", "StreamingUpdateIntervalSeconds", 0.5f);
@@ -1426,12 +1636,10 @@ namespace TerramizerServer
             Remove("ServerSimulation", "MaxPeerZoneCreationsPerPass", 1);
             Remove("ServerSimulation", "EnableServerOwnershipForPersistentZdos", false);
             Remove("ServerSimulation", "AllowExperimentalServerOwnershipForPersistentZdos", false);
+            Remove("Performance", "ActivePlayerOwnershipBudgetMs", 0.35f);
+            Remove("Performance", "IdleOwnershipBudgetMs", 2.0f);
+            Remove("Performance", "MaintenanceFullAuditIntervalSeconds", 1800f);
             Remove("Sleep", "PauseExtraZoneWorkDuringSleep", true);
-            Remove("Sleep", "SpeedUpSleepFastForward", true);
-            Remove("Sleep", "SleepFastForwardSeconds", 4f);
-            Remove("Sleep", "SkipSleepWorldSave", false);
-            Remove("Sleep", "PreserveAutosaveTimer", true);
-            Remove("Sleep", "LogSkippedSleepSaves", true);
             Remove("Sleep", "LogSleepOptimizations", true);
             Remove("BuildInteractions", "RepairStaleWearNTearRemoveOwnership", true);
             Remove("BuildInteractions", "MaxRemoveRepairDistance", 8f);

@@ -5,6 +5,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$LocalProjectRoot = Join-Path $env:LOCALAPPDATA "R4V9N1\BrennivinProtection"
+$ObjDir = Join-Path $LocalProjectRoot "obj"
+$DistDir = Join-Path $LocalProjectRoot "dist"
 $ManagedDir = Join-Path $ValheimDir "valheim_Data\Managed"
 $BepInExCoreDir = Join-Path $ValheimDir "BepInEx\core"
 $JotunnCandidates = @(
@@ -12,7 +15,6 @@ $JotunnCandidates = @(
     (Join-Path $ValheimDir "BepInEx\plugins\Jotunn.dll")
 )
 $JotunnPath = $JotunnCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
-$DistDir = Join-Path $ProjectRoot "dist"
 $DllPath = Join-Path $DistDir "BrennivinProtection.dll"
 
 if ([string]::IsNullOrWhiteSpace($JotunnPath)) {
@@ -44,13 +46,15 @@ dotnet build (Join-Path $ProjectRoot "BrennivinProtection.csproj") `
     -p:GameManagedDir="$ManagedDir" `
     -p:BepInExCoreDir="$BepInExCoreDir" `
     -p:JotunnPath="$JotunnPath" `
+    -p:BaseIntermediateOutputPath="$ObjDir\" `
+    -p:GenerateTargetFrameworkAttribute=false `
     -p:OutputPath="$DistDir\"
 
 if ($LASTEXITCODE -ne 0) { throw "Build failed with exit code $LASTEXITCODE." }
 if (!(Test-Path -LiteralPath $DllPath -PathType Leaf)) { throw "Fresh DLL was not produced: $DllPath" }
 
 $dllVersion = ([Reflection.AssemblyName]::GetAssemblyName($DllPath)).Version.ToString()
-if ($dllVersion -ne "0.1.3.0") { throw "Fresh DLL version is $dllVersion, expected 0.1.3.0." }
+if ($dllVersion -ne "1.0.1.0") { throw "Fresh DLL version is $dllVersion, expected 1.0.1.0." }
 
 Write-Host "Built fresh BrennivinProtection.dll" -ForegroundColor Green
 Write-Host "DLL version: $dllVersion"

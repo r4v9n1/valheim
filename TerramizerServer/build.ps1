@@ -7,6 +7,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$LocalProjectRoot = Join-Path $env:LOCALAPPDATA "R4V9N1\TerramizerServer"
+$ObjDir = Join-Path $LocalProjectRoot "obj"
+$DistDir = Join-Path $LocalProjectRoot "dist"
 
 function Find-ValheimDir {
     param([string]$Requested)
@@ -66,7 +69,7 @@ function Ensure-BepInExRefs {
         return (Resolve-Path -LiteralPath $serverCore).Path
     }
 
-    $refsRoot = Join-Path $ProjectRoot ".refs"
+    $refsRoot = Join-Path $LocalProjectRoot "refs"
     $refsDir = Join-Path $refsRoot "bepinex-5.4.23.3"
     $bepInExDll = Join-Path $refsDir "BepInEx.dll"
     $harmonyDll = Join-Path $refsDir "0Harmony.dll"
@@ -113,8 +116,7 @@ $ValheimDir = Find-ValheimDir -Requested $ValheimDir
 $GameManagedDir = Find-ManagedDir -Root $ValheimDir -Requested $GameManagedDir
 $BepInExCoreDir = Ensure-BepInExRefs -Requested $BepInExCoreDir -ValheimRoot $ValheimDir
 
-$distDir = Join-Path $ProjectRoot "dist"
-New-Item -ItemType Directory -Force -Path $distDir | Out-Null
+New-Item -ItemType Directory -Force -Path $ObjDir, $DistDir | Out-Null
 
 $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
 $sdkList = ""
@@ -128,6 +130,8 @@ if ($sdkList) {
         -p:ValheimDir="$ValheimDir" `
         -p:GameManagedDir="$GameManagedDir" `
         -p:BepInExCoreDir="$BepInExCoreDir" `
+        -p:BaseIntermediateOutputPath="$ObjDir\" `
+        -p:GenerateTargetFrameworkAttribute=false `
         -p:OutputPath="$distDir\"
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet build failed with exit code $LASTEXITCODE."

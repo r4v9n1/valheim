@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.1
+
+- Fixes Valheim 1.0 inventory persistence notifications by using the current two-boolean `Inventory.Changed` signature.
+- Fixes the equipment-upgrade hook to target Valheim 1.0's current `Inventory.AddItem` overload.
+- Replaced the package icon with a custom-made, non-AI-generated icon.
+
+## 1.0.0
+
+- Rebuilt against the current Valheim 1.0 assemblies.
+- Preserves the existing equipment, food-slot, upgrade, save, death-drop, and tooltip behavior.
+
 ## 0.9.3
 
 - Moves the human/AI development disclosure to the top of the Thunderstore details text so it is visible immediately.

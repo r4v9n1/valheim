@@ -1,5 +1,9 @@
 # InventoryLink
 
+> I use AI to review code and assist with optimization and integrity; I manually test and review every mod, and all decisions and code remain my own.
+
+Current release: **1.0.0**, rebuilt against the current Valheim 1.0 assemblies.
+
 InventoryLink is a client-side Valheim mod that links nearby accessible containers to building and crafting. Requirements show the combined materials available to you, and only the missing amount is pulled after placement or crafting succeeds.
 
 The same DLL also includes safe, one-click sorting for player and container inventories.

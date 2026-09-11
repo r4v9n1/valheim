@@ -2,14 +2,17 @@ param([switch]$NoBuild)
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$LocalProjectRoot = Join-Path $env:LOCALAPPDATA "R4V9N1\BrennivinProtection"
+$DistDir = Join-Path $LocalProjectRoot "dist"
+$PackageStageRoot = Join-Path $LocalProjectRoot "package-stage"
+$ReleaseDir = "G:\My Drive\build\Valheim\releases\BrennivinProtection"
 $Owner = "R4V9N1"
 $PackageName = "BrennivinProtection"
-$Version = "0.1.3"
+$Version = "1.0.1"
 $ThunderstoreDir = Join-Path $ProjectRoot "thunderstore"
-$DllPath = Join-Path $ProjectRoot "dist\BrennivinProtection.dll"
-$ArtifactDir = Join-Path $ProjectRoot "artifacts"
-$StageDir = Join-Path $ProjectRoot "dist\package\$Owner-$PackageName-$Version"
-$ZipPath = Join-Path $ArtifactDir "$Owner-$PackageName-$Version.zip"
+$DllPath = Join-Path $DistDir "BrennivinProtection.dll"
+$StageDir = Join-Path $PackageStageRoot "$Owner-$PackageName-$Version"
+$ZipPath = Join-Path $ReleaseDir "$Owner-$PackageName-$Version.zip"
 
 if (!$NoBuild) {
     & (Join-Path $ProjectRoot "build.ps1")
@@ -26,7 +29,7 @@ if (Test-Path -LiteralPath $StageDir) { Remove-Item -LiteralPath $StageDir -Recu
 if (Test-Path -LiteralPath $ZipPath) { Remove-Item -LiteralPath $ZipPath -Force }
 
 New-Item -ItemType Directory -Force -Path (Join-Path $StageDir "plugins\BrennivinProtection") | Out-Null
-New-Item -ItemType Directory -Force -Path $ArtifactDir | Out-Null
+New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
 
 Copy-Item -LiteralPath $DllPath -Destination (Join-Path $StageDir "plugins\BrennivinProtection\BrennivinProtection.dll")
 foreach ($name in @("manifest.json", "README.md", "CHANGELOG.md", "icon.png")) {

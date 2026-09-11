@@ -1,5 +1,9 @@
 # BrennivinProtection
 
+> I use AI to review code and assist with optimization and integrity; I manually test and review every mod, and all decisions and code remain my own.
+
+Current release: **1.0.0**, rebuilt against the current Valheim 1.0 assemblies.
+
 Adds Brennivín, a cyan-blue fermentable flask for Valheim.
 
 - Craft `Mead base: Brennivín` at the Mead Ketill.

@@ -1,5 +1,7 @@
 # Equipment Sheet
 
+Current release: **1.0.1**, rebuilt against the current Valheim 1.0 assemblies.
+
 BepInEx client-side mod for Valheim. Adds a persistent equipment panel next to the vanilla player
 inventory grid: Helm, Chest, Legs, Trinket, Back, Belt, plus three Food slots.
 

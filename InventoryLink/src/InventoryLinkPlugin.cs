@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using BepInEx;
@@ -27,7 +27,7 @@ namespace InventoryLink
     {
         public const string PluginGuid = "r4v9n1.inventorylink";
         public const string PluginName = "InventoryLink";
-        public const string PluginVersion = "0.2.8";
+        public const string PluginVersion = "1.0.1";
         public const string CreatorCredit = "Created by R4V9N1";
 
         private const string PreviousDefaultCraftingStationNames = "$piece_workbench,$piece_stonecutter";
@@ -880,3 +880,6 @@ namespace InventoryLink
         }
     }
 }
+
+
+

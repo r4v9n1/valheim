@@ -1,0 +1,10 @@
+{
+  "name": "LightMyFire_Coal_Resin",
+  "version_number": "1.0.1",
+  "website_url": "",
+  "description": "I use AI to review code, assist with optimization and integrity; I manually test and review every mod, and all decisions and code remain my own. Coal and resin light-fuel barrels.",
+  "dependencies": [
+    "denikson-BepInExPack_Valheim-5.4.2350",
+    "ValheimModding-Jotunn-2.30.0"
+  ]
+}

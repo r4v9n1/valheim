@@ -1,10 +1,10 @@
 {
   "name": "BrennivinProtection",
-  "version_number": "0.1.3",
+  "version_number": "1.0.1",
   "website_url": "",
-  "description": "Adds Brennivín, a fermentable flask that protects carried inventory on death and teleports to bed when drunk.",
+  "description": "I use AI to review code, assist with optimization and integrity; I manually test and review every mod, and all decisions and code remain my own. Fermentable Brennivín flask for death protection and bed teleport.",
   "dependencies": [
-    "denikson-BepInExPack_Valheim-5.4.2333",
-    "ValheimModding-Jotunn-2.29.2"
+    "denikson-BepInExPack_Valheim-5.4.2350",
+    "ValheimModding-Jotunn-2.30.0"
   ]
 }

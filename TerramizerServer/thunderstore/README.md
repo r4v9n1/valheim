@@ -1,33 +1,49 @@
 # TerramizerServer
 
-TerramizerServer `0.6.8` is an experimental dedicated-server performance companion for Valheim.
+> I use AI to review code and assist with optimization and integrity; I manually test and review every mod, and all decisions and code remain my own.
 
-It keeps the Unity job-debugger optimization and adds a fresh-world test feature that lets the server claim loaded static player-built structure pieces while preserving Valheim's `creator` field. `WearNTear` is not removed, and dynamic physics objects are skipped.
+> [!IMPORTANT]
+> ## CLEAN CONFIG REQUIRED FOR THIS VERSION
+>
+> TerramizerServer 1.0.2 requires a **fresh configuration file**.
+>
+> Before installing this version:
+>
+> 1. Stop the Valheim dedicated server.
+> 2. Delete the existing `BepInEx/config/r4v9n1.terramizerserver.cfg`.
+> 3. Replace the old TerramizerServer DLL with the new version.
+> 4. Start the server and allow TerramizerServer to generate a new configuration file.
+>
+> **Do not reuse the configuration file from the previous release.**
+>
+> The previous TerramizerServer release contained Valheim 1.0 compatibility bugs and **should not be used**. This release supersedes that version.
+
+Current release: **1.0.1**, rebuilt against the current Valheim 1.0 dedicated-server assemblies.
+
+TerramizerServer `0.6.9` is a dedicated-server performance companion for Valheim.
+
+It keeps the Unity job-debugger optimization, reuses Unity collision callback objects to reduce physics GC, removes avoidable boxing allocations from Valheim's hot `BinarySearchDictionary.SetValue` update paths, restores bounded server zone-entry prefetch for faster area and dungeon object arrival, and lets the dedicated server claim loaded static player-built structure pieces while preserving Valheim's `creator` field. `WearNTear` is not removed, and dynamic physics objects are skipped.
 
 ## Development note
 
-This mod is human-directed and built from human structure, concepts, ideas, client/server testing, and gameplay improvement goals. AI is used as an assisting tool for code analysis, optimization review, implementation refinement, and verification support, while final decisions, packaging, and in-game validation remain under human direction.
+AI is used to assist with code analysis, optimization review, implementation refinement, and verification. I direct the build process, technical decisions, final code, packaging, and in-game validation.
 
 Created and maintained by **R4V9N1**.
 
-## Observed test results
+## Version 0.6.9
 
-During R4V9N1 fresh-world dedicated-server testing on 2026-08-22, the ownership cache and maintenance scan path produced the following measured behavior:
-
-- Newly discovered dungeon entries were observed loading on the client in roughly 1.5-3.0 ms across repeated tests.
-- Sample client timings included 41 rooms in 1.5241 ms, 35 rooms in 1.5031 ms, 36 rooms in 1.7994 ms, and 33 rooms in 2.0053 ms.
-- The slowest observed freshly tested dungeon load in that pass was still only about 3.0071 ms for 33 rooms.
-- The server stayed in maintenance mode during dungeon discovery, using a 30-second interval, 5,000 ZDO record budget, and 100 claim limit.
-- Server summaries remained stable while the client moved through newly discovered locations, with no TerramizerServer exceptions seen in the test logs.
-- Client shutdown was clean, and the server continued ownership maintenance afterward with companion replies dropping to 0 once no Terramizer client was connected.
-- The intended benefit is lower ZDO ownership churn and less client-side contention during active world/location streaming, especially after the first broad scan and cache warm-start have completed.
-
-These numbers are real measurements from the test setup, not a universal guarantee. Results will vary with world size, mod list, hardware, loaded areas, and server configuration.
-
-## Version 0.6.8
-
-- Adds measured test-result notes to the Thunderstore details so server owners can understand the observed dungeon-load and maintenance-scan benefits.
-- No runtime behavior changes intended relative to 0.6.7.
+- Reuses Unity collision callback objects by default to reduce dedicated-server physics GC without lowering simulation frequency; disable `ReuseCollisionCallbacks` for mods that retain `Collision` objects after callbacks.
+- Preserves fast sleep and skips only the extra sleep-triggered world save.
+- Claims eligible static pieces when their ZDO views are created, without scanning the whole live ZDO table during normal operation.
+- Prefilters ZDO views by cached prefab eligibility before walking component trees, reducing dedicated-server zone-load work for non-structure objects.
+- Optimizes the periodic ownership handoff scan by reusing ZDO's local-owner flag while preserving vanilla active-area decisions.
+- Keeps the legacy whole-world ownership audit opt-in (`EnableBackgroundOwnershipAudit = false`).
+- Extends both terrain raise and dig limits to 16 m by default.
+- Advertises terrain capability and limits through additive metadata and a versioned companion RPC; the legacy RPC remains unchanged for mixed-version clients.
+- Removes avoidable boxing allocations from hot server-side `BinarySearchDictionary.SetValue` update paths without changing gameplay simulation or network authority.
+- Caches the active ZDO integer table during equipment-visual updates, reducing repeated server-side lookup work without changing equipment state or synchronization.
+- Writes nested network packages directly from their existing buffers, reducing server serialization allocations without changing the wire format.
+- Restores bounded zone-entry ZDO prefetch to reduce the delay before newly entered areas and dungeon objects arrive, with socket backpressure and no server-side peer-zone scene creation.
 
 ## Version 0.6.7
 
@@ -37,7 +53,7 @@ These numbers are real measurements from the test setup, not a universal guarant
 - Skips dynamic/physics-heavy objects such as carts, ships, dropped items, creatures, and floating objects.
 - Logs every ownership claim only when explicitly enabled.
 - Keeps per-object watched ownership claim logs off by default for large-world testing; they can still be enabled for focused debugging.
-- Adds a compact periodic ownership summary with 30-second claim totals.
+- Adds a compact periodic ownership summary with 60-second claim totals when the optional broad audit is enabled.
 - Stores a restart ownership cache for known eligible claimed ZDOs.
 - Warm-starts restarts by direct cached ZDOID lookup, then assigns the current server session id without repeating the slow full eligibility scan for already known pieces.
 - Switches from fast warm-up scanning to lower-cost maintenance scanning after the first full broad ZDO pass.
@@ -56,6 +72,7 @@ BepInEx/config/r4v9n1.terramizerserver.cfg
 ```
 
 You do not need to delete the config when updating.
+On first successful load, retired streaming, throttling, ownership-repair, and sleep-work settings are removed; current streaming, ownership, terrain, and save-policy settings are preserved.
 
 Important config:
 
@@ -63,14 +80,29 @@ Important config:
 [ExperimentalOwnership]
 EnableStaticPieceServerOwnership = true
 DryRunStaticPieceServerOwnership = false
-OwnershipScanIntervalSeconds = 5
-MaxClaimsPerScan = 250
-ZdoRecordsPerScan = 25000
-MaintenanceOwnershipScanIntervalSeconds = 30
-MaintenanceMaxClaimsPerScan = 100
-MaintenanceZdoRecordsPerScan = 5000
+OwnershipScanIntervalSeconds = 15
+MaxClaimsPerScan = 100
+ZdoRecordsPerScan = 10000
+EnableBackgroundOwnershipAudit = false
+MaintenanceOwnershipScanIntervalSeconds = 1800
+MaintenanceMaxClaimsPerScan = 25
+MaintenanceZdoRecordsPerScan = 1000
+PlayerBuiltPiecesOnly = true
+RequireWearNTear = true
+
+[Terrain]
+EnableExtendedTerrainLimits = true
+TerrainRaiseLimitMeters = 16
+TerrainDigLimitMeters = 16
+
+[Streaming]
+EnableServerZoneStreamingBoost = true
+MaxZoneStreamingBoostZdosPerPeer = 256
+ZoneStreamingBoostCooldownSeconds = 0.75
+ZoneStreamingBoostMaxQueuePercent = 35
 
 [OwnershipCache]
+# Used only when EnableBackgroundOwnershipAudit is enabled.
 EnableOwnershipCache = true
 OwnershipCacheMaxAgeHours = 168
 OwnershipCacheRecordsPerScan = 200000

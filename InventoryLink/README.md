@@ -1,5 +1,7 @@
 # InventoryLink
 
+Current release: **1.0.0**, rebuilt against the current Valheim 1.0 assemblies.
+
 BepInEx client-side mod for Valheim. InventoryLink lets building and workbench crafting requirements count nearby accessible containers, then pulls only the missing materials from those containers after a piece is placed or an item is crafted/upgraded.
 
 ## Development note

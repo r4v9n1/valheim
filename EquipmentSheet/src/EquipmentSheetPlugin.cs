@@ -27,7 +27,7 @@ namespace EquipmentSheet
     {
         public const string PluginGuid = "r4v9n1.equipmentsheet";
         public const string PluginName = "Equipment Sheet";
-        public const string PluginVersion = "0.9.3";
+        public const string PluginVersion = "1.0.2";
         public const string CreatorCredit = "Created by R4V9N1";
 
         private const string CustomDataKey = "is.codex.valheim.equipmentsheet.inventory.v1";
@@ -168,7 +168,8 @@ namespace EquipmentSheet
             _humanoidTrinketField = AccessTools.Field(typeof(Humanoid), "m_trinketItem");
             _currentContainerField = AccessTools.Field(typeof(InventoryGui), "m_currentContainer");
             _craftUpgradeItemField = AccessTools.Field(typeof(InventoryGui), "m_craftUpgradeItem");
-            _inventoryChangedMethod = AccessTools.Method(typeof(Inventory), "Changed");
+            _inventoryChangedMethod = AccessTools.Method(typeof(Inventory), "Changed",
+                new Type[] { typeof(bool), typeof(bool) });
             _setupDragItemMethod = AccessTools.Method(typeof(InventoryGui), "SetupDragItem",
                 new Type[] { typeof(ItemDrop.ItemData), typeof(Inventory), typeof(int) });
             _setupEquipmentMethod = AccessTools.Method(typeof(Humanoid), "SetupEquipment");
@@ -896,7 +897,7 @@ namespace EquipmentSheet
             RefreshEquipmentInventory();
             if (_inventoryChangedMethod != null)
             {
-                _inventoryChangedMethod.Invoke(playerInventory, null);
+                NotifyInventoryChanged(playerInventory);
             }
 
             SaveEquipmentInventory(player);
@@ -944,7 +945,7 @@ namespace EquipmentSheet
             RefreshEquipmentInventory();
             if (_inventoryChangedMethod != null)
             {
-                _inventoryChangedMethod.Invoke(playerInventory, null);
+                NotifyInventoryChanged(playerInventory);
             }
 
             SaveEquipmentInventory(player);
@@ -1208,7 +1209,7 @@ namespace EquipmentSheet
             RefreshEquipmentInventory();
             if (_inventoryChangedMethod != null)
             {
-                _inventoryChangedMethod.Invoke(fromInventory, null);
+                NotifyInventoryChanged(fromInventory);
             }
 
             SaveEquipmentInventory(Player.m_localPlayer);
@@ -1247,7 +1248,7 @@ namespace EquipmentSheet
             RefreshEquipmentInventory();
             if (_inventoryChangedMethod != null)
             {
-                _inventoryChangedMethod.Invoke(fromInventory, null);
+                NotifyInventoryChanged(fromInventory);
             }
 
             SaveEquipmentInventory(Player.m_localPlayer);
@@ -1597,7 +1598,7 @@ namespace EquipmentSheet
                 ClearPendingTransfer(player);
                 if (_inventoryChangedMethod != null)
                 {
-                    _inventoryChangedMethod.Invoke(playerInventory, null);
+                    NotifyInventoryChanged(playerInventory);
                 }
 
                 if (_log != null)
@@ -1700,7 +1701,7 @@ namespace EquipmentSheet
             RefreshEquipmentInventory();
             if (_inventoryChangedMethod != null)
             {
-                _inventoryChangedMethod.Invoke(playerInventory, null);
+                NotifyInventoryChanged(playerInventory);
             }
 
             if (_log != null)
@@ -1795,7 +1796,15 @@ namespace EquipmentSheet
         {
             if (_equipmentInventory != null && _inventoryChangedMethod != null)
             {
-                _inventoryChangedMethod.Invoke(_equipmentInventory, null);
+                NotifyInventoryChanged(_equipmentInventory);
+            }
+        }
+
+        private static void NotifyInventoryChanged(Inventory inventory)
+        {
+            if (_inventoryChangedMethod != null && inventory != null)
+            {
+                _inventoryChangedMethod.Invoke(inventory, new object[] { true, false });
             }
         }
 
@@ -1967,7 +1976,7 @@ namespace EquipmentSheet
         }
 
         internal static bool AddUpgradedSheetItem(Inventory inventory, string name, int stack, int quality, int variant,
-            long crafterID, string crafterName, Vector2i position, bool pickedUp, ref ItemDrop.ItemData result)
+            long crafterID, string crafterName, bool cheated, bool pickedUp, ref ItemDrop.ItemData result)
         {
             SheetUpgradeTransaction transaction = _sheetUpgradeTransaction;
             if (transaction == null || !transaction.OriginalRemoved || inventory != transaction.PlayerInventory
@@ -1975,13 +1984,13 @@ namespace EquipmentSheet
                 || name != transaction.OriginalItem.m_dropPrefab.name
                 || quality != transaction.OriginalItem.m_quality + 1
                 || variant != transaction.OriginalItem.m_variant
-                || position.x != transaction.SheetPosition.x || position.y != transaction.SheetPosition.y)
+                || transaction.SheetPosition.x < 0 || transaction.SheetPosition.y < 0)
             {
                 return true;
             }
 
             result = _equipmentInventory.AddItem(name, stack, quality, variant, crafterID, crafterName,
-                transaction.SheetPosition, pickedUp);
+                transaction.SheetPosition, cheated, pickedUp, true);
             transaction.ReplacementItem = result;
             return false;
         }
@@ -2188,15 +2197,15 @@ namespace EquipmentSheet
 
     [HarmonyPatch(typeof(Inventory), "AddItem", new Type[]
     {
-        typeof(string), typeof(int), typeof(int), typeof(int), typeof(long), typeof(string), typeof(Vector2i), typeof(bool)
+        typeof(string), typeof(int), typeof(int), typeof(int), typeof(long), typeof(string), typeof(bool), typeof(bool)
     })]
     internal static class InventoryAddCraftedItemEquipmentSheetPatch
     {
         private static bool Prefix(Inventory __instance, string name, int stack, int quality, int variant,
-            long crafterID, string crafterName, Vector2i position, bool pickedUp, ref ItemDrop.ItemData __result)
+            long crafterID, string crafterName, bool cheated, bool pickedUp, ref ItemDrop.ItemData __result)
         {
             return EquipmentSheetPlugin.AddUpgradedSheetItem(__instance, name, stack, quality, variant,
-                crafterID, crafterName, position, pickedUp, ref __result);
+                crafterID, crafterName, cheated, pickedUp, ref __result);
         }
     }
 

@@ -1,5 +1,9 @@
 # EquipmentSheet
 
+> I use AI to review code and assist with optimization and integrity; I manually test and review every mod, and all decisions and code remain my own.
+
+Current release: **1.0.1**, rebuilt against the current Valheim 1.0 assemblies.
+
 EquipmentSheet is a client-side Valheim mod that adds a dedicated equipment and food panel beside the vanilla player inventory. It gives important gear a consistent home without hiding its weight or bypassing Valheim's normal equip and death-drop behavior.
 
 ## Development note

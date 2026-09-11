@@ -1,5 +1,7 @@
 # BrennivinProtection
 
+Current release: **1.0.0**, rebuilt against the current Valheim 1.0 assemblies.
+
 BepInEx/Jotunn mod for Valheim that adds Brennivín, a mead-kettle protection flask.
 
 ## Behavior

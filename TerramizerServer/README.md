@@ -1,10 +1,26 @@
 # TerramizerServer
 
-TerramizerServer `0.6.8` is an experimental dedicated-server performance companion for Valheim. It keeps the Unity job-debugger optimization and adds an opt-in server-authority experiment for loaded static player-built structure pieces.
+> [!IMPORTANT]
+> ## CLEAN CONFIG REQUIRED FOR THIS VERSION
+>
+> TerramizerServer 1.0.2 requires a **fresh configuration file**.
+>
+> Before installing this version:
+>
+> 1. Stop the Valheim dedicated server.
+> 2. Delete the existing `BepInEx/config/r4v9n1.terramizerserver.cfg`.
+> 3. Replace the old TerramizerServer DLL with the new version.
+> 4. Start the server and allow TerramizerServer to generate a new configuration file.
+>
+> **Do not reuse the configuration file from the previous release.**
+>
+> The previous TerramizerServer release contained Valheim 1.0 compatibility bugs and **should not be used**. This release supersedes that version.
+
+TerramizerServer `1.0.2` is a dedicated-server performance companion for Valheim. It keeps the Unity job-debugger optimization, reduces avoidable hot-path allocations, adds bounded area-entry ZDO prefetch with socket backpressure, and includes a server-authority experiment for loaded static player-built structure pieces.
 
 In this test build the static-piece ownership experiment is enabled by default and dry-run mode is disabled. The server claims loaded, persistent, player-created pieces that have `WearNTear`, while preserving Valheim's `creator` field. Dynamic physics objects such as ships, carts, dropped items, creatures, and floating objects are skipped. `WearNTear` is not removed.
 
-This is intended for fresh-world server testing first.
+The default runtime path is event-driven: newly loaded eligible pieces are handled immediately, while the legacy whole-world ownership audit remains disabled unless explicitly enabled. This keeps established multiplayer worlds responsive. The server also preserves fast sleep time-skipping, skips only the extra sleep-triggered world save, and preserves the regular autosave timer.
 
 ## Build and package
 
@@ -17,7 +33,7 @@ Outputs:
 
 ```text
 dist\TerramizerServer.dll
-    artifacts\R4V9N1-TerramizerServer-0.6.8.zip
+G:\My Drive\build\Valheim\releases\TerramizerServer\R4V9N1-TerramizerServer-1.0.2.zip
 ```
 
 ## Install

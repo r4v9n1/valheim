@@ -29,7 +29,7 @@ namespace BrennivinProtection
     {
         public const string PluginGuid = "r4v9n1.brennivin";
         public const string PluginName = "BrennivinProtection";
-        public const string PluginVersion = "0.1.3";
+        public const string PluginVersion = "1.0.1";
         public const string CreatorCredit = "Created by R4V9N1";
 
         internal const string PrefabName = "R4V9N1_Brennivin";

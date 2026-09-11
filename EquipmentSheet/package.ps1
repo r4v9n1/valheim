@@ -5,6 +5,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$LocalProjectRoot = Join-Path $env:LOCALAPPDATA "R4V9N1\EquipmentSheet"
+$DistDir = Join-Path $LocalProjectRoot "dist"
+$PackageStageRoot = Join-Path $LocalProjectRoot "package-stage"
+$ReleaseDir = "G:\My Drive\build\Valheim\releases\EquipmentSheet"
 $Owner = "R4V9N1"
 $PackageName = "EquipmentSheet"
 $PackageSource = Join-Path $ProjectRoot "thunderstore"
@@ -22,10 +26,10 @@ if (!$version) {
 if (!$manifest.description -or $manifest.description.Length -gt 250) {
     throw "Manifest description must contain 1-250 characters."
 }
-if ($manifest.description -notmatch "Human-directed" -or $manifest.description -notmatch "AI-assisted") {
+if ($manifest.description -notmatch "I use AI" -or $manifest.description -notmatch "manually test" -or $manifest.description -notmatch "remain my own") {
     throw "Manifest description must include the human-directed, AI-assisted development disclosure."
 }
-if ($manifest.dependencies -notcontains "denikson-BepInExPack_Valheim-5.4.2333") {
+if ($manifest.dependencies -notcontains "denikson-BepInExPack_Valheim-5.4.2350") {
     throw "Manifest is missing the pinned BepInExPack_Valheim dependency."
 }
 
@@ -53,7 +57,7 @@ if (!$NoBuild) {
     }
 }
 
-$dllPath = Join-Path $ProjectRoot "dist\EquipmentSheet.dll"
+$dllPath = Join-Path $DistDir "EquipmentSheet.dll"
 $requiredFiles = @(
     $dllPath,
     (Join-Path $PackageSource "manifest.json"),
@@ -80,8 +84,8 @@ if (!$dllVersion -or !($dllVersion.StartsWith($version))) {
 }
 
 $packageId = "$Owner-$PackageName-$version"
-$stageRoot = Join-Path $ProjectRoot "dist\thunderstore\$packageId"
-$zipPath = Join-Path $ProjectRoot "dist\$packageId.zip"
+$stageRoot = Join-Path $PackageStageRoot $packageId
+$zipPath = Join-Path $ReleaseDir "$packageId.zip"
 
 if (Test-Path -LiteralPath $stageRoot) {
     Remove-Item -LiteralPath $stageRoot -Recurse -Force
@@ -90,6 +94,7 @@ if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
 }
 New-Item -ItemType Directory -Force -Path $stageRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
 $pluginDir = Join-Path $stageRoot "plugins\EquipmentSheet"
 New-Item -ItemType Directory -Force -Path $pluginDir | Out-Null
 

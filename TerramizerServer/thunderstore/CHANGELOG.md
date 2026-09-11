@@ -1,5 +1,54 @@
 # Changelog
 
+## 1.0.2
+
+- Replaced the package icon with a custom-made, non-AI-generated icon.
+
+- Ported TerramizerServer to the current Valheim 1.0 dedicated-server API.
+- Replaced the obsolete `Vector2i` zone model with Valheim 1.0 `Vector2s`.
+- Replaced the removed `ZoneSystem.m_activeArea` / `m_activeDistantArea` model with `SimulationDistance`.
+- Updated `ZDOMan.FindSectorObjects` for the current Valheim 1.0 signature.
+- Updated ownership handoff logic for Valheim 1.0 world-position active-area checks.
+- Updated ownership checks to use `ZDOMan.IsInPeerActiveArea`.
+- Fixed the Valheim 1.0 sleep-save compatibility patch while preserving normal autosaves.
+- Dedicated-server compatibility is now validated against the actual Linux server `assembly_valheim.dll`.
+- **Clean configuration required:** delete `BepInEx/config/r4v9n1.terramizerserver.cfg` before starting this version.
+- The previous TerramizerServer release contained Valheim 1.0 compatibility bugs and **should not be used**.
+
+## 1.0.1
+
+- Updated `Game.SleepStop` compatibility for the current Valheim 1.0 player-profile save API.
+- Leaves Valheim's own player-profile save completely untouched instead of depending on a specific `SavePlayerProfile` overload.
+- Continues to skip only the extra sleep-triggered world save while preserving the normal autosave timer.
+- Rebuilt and repackaged against the current Valheim 1.0 dedicated-server assemblies.
+
+## 1.0.0
+
+- Rebuilt against the current Valheim 1.0 dedicated-server assemblies.
+- Preserves bounded zone-entry prefetch, static-piece ownership, terrain handshake, fast sleep, and no extra sleep-triggered world save behavior.
+
+## 0.6.9
+
+- Restores bounded server-side zone-entry ZDO prefetch for ready peers, prioritizing already-existing nearby objects so area and dungeon contents arrive sooner without creating peer zones or instantiating server-side scenes.
+- Enables Unity collision-callback reuse by default to reduce physics-heavy dedicated-server GC without changing simulation frequency; the setting is opt-out for compatibility.
+- Adds allocation-free `BinarySearchDictionary.SetValue` handling for hot value-type update paths, reducing avoidable server GC work without changing simulation or network authority.
+- Caches the active ZDO integer table during `VisEquipment` updates, reducing repeated server lookup work without changing equipment synchronization.
+- Prefilters event-driven ownership probes by cached prefab eligibility, avoiding unnecessary component-tree walks for non-structure ZDO views during zone loading.
+- Writes nested `ZPackage` data directly from its existing buffer, reducing dedicated-server serialization allocations while preserving the exact length-prefixed wire format.
+- Optimizes the periodic ZDO ownership handoff scan without changing active-area or ownership decisions; unexpected internal failures fall back to vanilla behavior.
+- Extend the final `TerrainComp.ApplyToHeightmap` ±8 m clamp so dedicated-server terrain changes consistently honor the configured 16 m raise and dig limits.
+- Adds additive terrain capability metadata and a versioned six-field companion response while preserving the legacy three-field RPC for older clients.
+
+- Advertises unchanged server-synced companion metadata once per live `ZNet` instance instead of rewriting it on a timer, reducing needless dedicated-server update work while preserving late-joining client compatibility.
+
+- Makes normal static-piece ownership event-driven; the legacy whole-world ZDO audit is disabled by default to protect dedicated-server frame time and network responsiveness.
+- Disables the periodic ownership-summary loop while the optional broad audit is disabled, removing needless normal-operation log work.
+- Prevents normal operation from loading or maintaining the ownership cache unless the audit is explicitly enabled.
+- Preserves dedicated-server fast sleep and the no-sleep-world-save policy.
+- Restores the terrain compatibility patch with 16 m raise and dig limits.
+- Applies the 16 m limit to both negative and positive terrain clamp operands, including direct `TerrainComp.RaiseTerrain` digging.
+- Removes retired server streaming and ownership-repair settings on load while preserving the new bounded streaming controls.
+
 ## 0.6.8
 
 - Adds observed client/server test notes to the Thunderstore details, including freshly discovered dungeon load timings around 1.5-3.0 ms during the measured test pass.
@@ -9,7 +58,7 @@
 ## 0.6.7
 
 - Moves the human/AI development disclosure to the top of the Thunderstore details text so it is visible immediately.
-- Adds a concise human-directed, AI-assisted development note to the package manifest description.
+- Documents AI-assisted code analysis and verification while retaining project-directed implementation and release decisions.
 - No runtime behavior changes intended relative to 0.6.6.
 
 ## 0.6.6

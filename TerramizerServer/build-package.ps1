@@ -7,13 +7,16 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$LocalProjectRoot = Join-Path $env:LOCALAPPDATA "R4V9N1\TerramizerServer"
+$DistDir = Join-Path $LocalProjectRoot "dist"
+$PackageStageRoot = Join-Path $LocalProjectRoot "package-stage"
+$ReleaseDir = "G:\My Drive\build\Valheim\releases\TerramizerServer"
 $Owner = "R4V9N1"
-$PackageVersion = "0.6.8"
+$PackageVersion = "1.0.3"
 $PackageName = "TerramizerServer"
 $TemplateDir = Join-Path $ProjectRoot "thunderstore"
-$DllPath = Join-Path $ProjectRoot "dist\TerramizerServer.dll"
-$ArtifactsDir = Join-Path $ProjectRoot "artifacts"
-$ArchivePath = Join-Path $ArtifactsDir "$Owner-$PackageName-$PackageVersion.zip"
+$DllPath = Join-Path $DistDir "TerramizerServer.dll"
+$ArchivePath = Join-Path $ReleaseDir "$Owner-$PackageName-$PackageVersion.zip"
 $ChecksumPath = "$ArchivePath.sha256"
 
 if (!$SkipBuild) {
@@ -50,30 +53,69 @@ if ($manifest.version_number -ne $PackageVersion) {
 if (!$manifest.description -or $manifest.description.Length -gt 250) {
     throw "Manifest description must contain 1-250 characters."
 }
-if ($manifest.description -notmatch "Human-directed" -or $manifest.description -notmatch "AI-assisted") {
-    throw "Manifest description must include the human-directed, AI-assisted development disclosure."
+if ($manifest.description -notmatch "I use AI" -or $manifest.description -notmatch "manually test" -or $manifest.description -notmatch "remain my own") {
+    throw "Manifest description must include the AI-assistance development disclosure."
 }
-if ($manifest.dependencies -notcontains "denikson-BepInExPack_Valheim-5.4.2333") {
+if ($manifest.dependencies -notcontains "denikson-BepInExPack_Valheim-5.4.2350") {
     throw "Manifest is missing the pinned BepInExPack_Valheim dependency."
 }
 
-$sourceText = Get-Content -LiteralPath (Join-Path $ProjectRoot "src\TerramizerServerPlugin.cs") -Raw
+$sourceText = (Get-ChildItem -LiteralPath (Join-Path $ProjectRoot "src") -Filter *.cs -File | Get-Content -Raw) -join "`n"
 if ($sourceText -notmatch 'public const string PluginGuid\s*=\s*"r4v9n1\.terramizerserver"') {
     throw "BepInEx PluginGuid must be r4v9n1.terramizerserver."
 }
 if ($sourceText -notmatch [regex]::Escape("Created by $Owner")) {
     throw "Creator metadata does not identify $Owner."
 }
-if ($sourceText -notmatch 'public const string PluginVersion\s*=\s*"0\.6\.8"') {
-    throw "TerramizerServer source version must be 0.6.8."
+if ($sourceText -notmatch 'public const string PluginVersion\s*=\s*"1\.0\.3"') {
+    throw "TerramizerServer source version must be 1.0.3."
 }
-$requiredExperimentHooks = @("using HarmonyLib;", "[HarmonyPatch(typeof(ZNetView), ""Awake"")", "EnableStaticPieceServerOwnership", "DryRunStaticPieceServerOwnership", "ZdoRecordsPerScan", "m_objectsByID")
+$requiredExperimentHooks = @("using HarmonyLib;", "[HarmonyPatch(typeof(ZNetView), ""Awake"")", "EnableStaticPieceServerOwnership", "DryRunStaticPieceServerOwnership", "ZdoRecordsPerScan", "m_objectsByID", "[HarmonyPatch(typeof(Heightmap), ""AtMaxWorldLevelDepth"")", "[HarmonyPatch(typeof(Heightmap), ""LevelTerrain"")", "[HarmonyPatch(typeof(TerrainComp), ""LevelTerrain"")", "[HarmonyPatch(typeof(TerrainComp), ""RaiseTerrain"")", "[HarmonyPatch(typeof(TerrainComp), ""ApplyToHeightmap"")", "TerrainRaiseLimitMeters", "TerrainDigLimitMeters", "TryPatch(typeof(HeightmapAtMaxWorldLevelDepthTerrainLimitPatch)", "TryPatch(typeof(HeightmapLevelTerrainTerrainLimitPatch)", "TryPatch(typeof(TerrainCompLevelTerrainLimitPatch)", "TryPatch(typeof(TerrainCompRaiseTerrainLimitPatch)", "TryPatch(typeof(TerrainCompApplyToHeightmapTerrainLimitPatch)")
+$requiredCompanionProtocol = @("SyncedTerrainLimitsEnabledKey", "SyncedTerrainRaiseLimitKey", "SyncedTerrainDigLimitKey", "RpcRequestCompanionMetadataV2", "RpcCompanionMetadataV2")
+foreach ($protocolItem in $requiredCompanionProtocol) {
+    if ($sourceText -notmatch [regex]::Escape($protocolItem)) {
+        throw "TerramizerServer companion protocol is missing compatibility item: $protocolItem."
+    }
+}
+$sleepText = Get-Content -LiteralPath (Join-Path $ProjectRoot "src\SleepPerformancePatches.cs") -Raw
+foreach ($sleepItem in @("GameSleepStopPatch", "CaptureSleepSaveTimer", "RestoreSleepSaveTimer", "SaveWorldFromSleep", "Expected one world-save call")) {
+    if ($sleepText -notmatch [regex]::Escape($sleepItem)) {
+        throw "TerramizerServer sleep-save protection is missing verification item: $sleepItem."
+    }
+}
 foreach ($hook in $requiredExperimentHooks) {
     if ($sourceText -notmatch [regex]::Escape($hook)) {
         throw "Experimental ownership build is missing expected hook/config text: $hook."
     }
 }
-$forbiddenRuntimeHooks = @("typeof(ZNetScene", "typeof(ZRoutedRpc", "typeof(ZoneSystem", "typeof(Heightmap")
+if ($sourceText -notmatch [regex]::Escape("_metadataAdvertisedForInstance")) {
+    throw "TerramizerServer metadata advertisement must be tied to the live ZNet instance."
+}
+if ($sourceText -match [regex]::Escape("_nextServerMetadataRefreshTime")) {
+    throw "TerramizerServer must not repeatedly refresh identical companion metadata on a timer."
+}
+if ($sourceText -notmatch [regex]::Escape("BinarySearchDictionarySetValuePatch.Install")) {
+    throw "TerramizerServer is missing the allocation-free BinarySearchDictionary.SetValue optimization."
+}
+if ($sourceText -notmatch [regex]::Escape("SetValuePrefix<TValue>(BinarySearchDictionary<int, TValue> __instance")) {
+    throw "TerramizerServer's BinarySearchDictionary prefix must expose the Harmony __instance parameter."
+}
+if ($sourceText -notmatch [regex]::Escape("VisEquipmentIntCachePatch")) {
+    throw "TerramizerServer is missing the VisEquipment ZDO integer lookup optimization."
+}
+if ($sourceText -notmatch [regex]::Escape("ZPackageWritePackagePatch")) {
+    throw "TerramizerServer is missing the allocation-free nested ZPackage optimization."
+}
+if ($sourceText -notmatch [regex]::Escape("ZdoOwnershipHandoffPatch")) {
+    throw "TerramizerServer is missing the optimized ZDO ownership handoff scan."
+}
+if ($sourceText -notmatch [regex]::Escape("ReuseCollisionCallbacks")) {
+    throw "TerramizerServer is missing the physics collision-callback reuse setting."
+}
+if ($sourceText -notmatch [regex]::Escape("IsEligibleStaticPiecePrefab(prefabHash, prefab)")) {
+    throw "TerramizerServer is missing the cached prefab eligibility prefilter."
+}
+$forbiddenRuntimeHooks = @("typeof(ZNetScene", "typeof(ZRoutedRpc", "typeof(ZoneSystem")
 foreach ($hook in $forbiddenRuntimeHooks) {
     if ($sourceText -match [regex]::Escape($hook)) {
         throw "Experimental ownership build must not patch broad runtime system $hook."
@@ -83,6 +125,13 @@ foreach ($hook in $forbiddenRuntimeHooks) {
 $dllVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($DllPath).FileVersion
 if (!$dllVersion -or !($dllVersion.StartsWith($PackageVersion))) {
     throw "DLL file version $dllVersion does not match package version $PackageVersion."
+}
+$dllAssembly = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes($DllPath))
+$dllReferences = @($dllAssembly.GetReferencedAssemblies() | ForEach-Object { $_.Name })
+foreach ($reference in @("0Harmony", "assembly_valheim", "assembly_utils")) {
+    if ($dllReferences -notcontains $reference) {
+        throw "TerramizerServer build is missing required reference $reference."
+    }
 }
 $readmeText = Get-Content -LiteralPath (Join-Path $TemplateDir "README.md") -Raw
 $developmentNoteIndex = $readmeText.IndexOf("## Development note", [System.StringComparison]::Ordinal)
@@ -103,8 +152,8 @@ finally {
     $icon.Dispose()
 }
 
-New-Item -ItemType Directory -Force -Path $ArtifactsDir | Out-Null
-$stagingParent = Join-Path $ProjectRoot "obj\thunderstore-package"
+New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
+$stagingParent = $PackageStageRoot
 New-Item -ItemType Directory -Force -Path $stagingParent | Out-Null
 $stagingRoot = Join-Path $stagingParent ([Guid]::NewGuid().ToString("N"))
 $pluginDir = Join-Path $stagingRoot "plugins\TerramizerServer"
@@ -157,6 +206,21 @@ try {
                 throw "Generated archive is missing required entry: $entry"
             }
         }
+        if ($entryNames.Count -ne $requiredEntries.Count -or @($entryNames | Sort-Object -Unique).Count -ne $entryNames.Count) {
+            throw "Generated archive must contain exactly the five required entries and no duplicates."
+        }
+        $dllEntry = $archive.GetEntry("plugins/TerramizerServer/TerramizerServer.dll")
+        $dllHash = [Security.Cryptography.SHA256]::Create()
+        try {
+            $archiveDllHash = ([BitConverter]::ToString($dllHash.ComputeHash($dllEntry.Open()))).Replace('-', '')
+        }
+        finally {
+            $dllHash.Dispose()
+        }
+        $distHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $DllPath).Hash
+        if ($archiveDllHash -ne $distHash) {
+            throw "Generated archive DLL does not match dist DLL."
+        }
     }
     finally {
         $archive.Dispose()
@@ -173,6 +237,13 @@ finally {
     $resolvedParent = [IO.Path]::GetFullPath($stagingParent).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
     $resolvedStage = [IO.Path]::GetFullPath($stagingRoot)
     if ($resolvedStage.StartsWith($resolvedParent, [StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $resolvedStage)) {
-        Remove-Item -LiteralPath $resolvedStage -Recurse -Force
+        try {
+            [IO.Directory]::Delete($resolvedStage, $true)
+        }
+        catch {
+            Start-Sleep -Milliseconds 100
+            try { [IO.Directory]::Delete($resolvedStage, $true) }
+            catch { Write-Warning "Could not remove temporary package staging directory; package output remains valid: $resolvedStage" }
+        }
     }
 }

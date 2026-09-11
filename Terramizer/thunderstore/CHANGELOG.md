@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.0.3
+
+- Updated the player placement transaction-effect patch for Valheim's current five-parameter `Player.PlacePiece` contract.
+- Replaced the package icon with a custom-made, non-AI-generated icon.
+
+## 1.0.1
+
+- Rebuilt and repackaged against the current Valheim 1.0 assemblies after the game update.
+- Compatibility maintenance release; no intentional change to Terramizer client gameplay or performance behavior.
+- Replaced the package icon with a custom-made, non-AI-generated icon.
+
+## 1.0.0
+
+- Rebuilt against the current Valheim 1.0 assemblies.
+- Preserves vanilla vegetation, WearNTear, fire, ambient-smoke, visible-update, and multiplayer cadence while retaining the scoped placement-smoke cleanup and allocation safeguards.
+
+## 0.9.8
+
+- Enables Unity collision-callback reuse by default to reduce physics-heavy scene GC without changing physics frequency or visible quality; the setting is opt-out for compatibility.
+- Adds allocation-free `BinarySearchDictionary.SetValue` handling for hot value-type update paths, reducing avoidable GC work without reducing visible update ticks or smoke/vegetation quality.
+- Caches the active ZDO integer table during `VisEquipment` updates, removing repeated dictionary-root lookups while preserving equipment visuals and update cadence.
+- Writes nested `ZPackage` data directly from its existing buffer, removing an avoidable serialization copy while preserving the exact length-prefixed wire format.
+- Prefer the server's richer synced terrain metadata over the legacy ownership-only RPC during multiplayer handshake, so compatible 0.6.9 dedicated servers reliably expose their configured 16 m terrain limits even if RPC delivery is delayed.
+- Extend the final `TerrainComp.ApplyToHeightmap` clamp as well as the operation clamps, and require a validated TerramizerServer handshake before enabling extended terrain on remote dedicated worlds.
+- Bound companion discovery traffic to one legacy probe and three V2 retries per connection instead of repeating both RPCs indefinitely.
+- Keeps WearNTear and smoke renderer updates at vanilla cadence, including when a TerramizerServer companion is detected.
+- Removes the client smoke-renderer Harmony hook entirely.
+- Suppresses only the one-shot placement effect emitted when building pieces are placed; ambient and gameplay smoke remain unchanged.
+- Keeps vegetation resets immediate; no grass rebuild deferral or vegetation pacing is enabled.
+- Removes obsolete 1.0 pacing and terrain config entries on load so restored clients cannot retain stale throttling settings.
+- Adds narrow 16 m terrain raise/dig compatibility for single-player and local hosting; remote servers remain authoritative.
+- Adds mixed-version-safe server terrain capability negotiation so compatible remote clients honor the dedicated server's configured limits.
+
 ## 0.9.5
 
 - Retunes smoke pacing for smoother visible fire, hearth, smelter, and processing-station smoke.
@@ -12,7 +45,7 @@
 ## 0.9.4
 
 - Moves the human/AI development disclosure to the top of the Thunderstore details text so it is visible immediately.
-- Adds a concise human-directed, AI-assisted development note to the package manifest description.
+- Documents AI-assisted code analysis and verification while retaining project-directed implementation and release decisions.
 - No gameplay changes intended relative to 0.9.3.
 
 ## 0.9.3

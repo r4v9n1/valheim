@@ -4,7 +4,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$DllPath = Join-Path $ProjectRoot "dist\BrennivinProtection.dll"
+$LocalProjectRoot = Join-Path $env:LOCALAPPDATA "R4V9N1\BrennivinProtection"
+$DllPath = Join-Path $LocalProjectRoot "dist\BrennivinProtection.dll"
 $PluginDir = Join-Path $ValheimDir "BepInEx\plugins\BrennivinProtection"
 
 & (Join-Path $ProjectRoot "build.ps1") -ValheimDir $ValheimDir

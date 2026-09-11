@@ -1,0 +1,35 @@
+LightMyFire - Coal&Resin 0.5.4
+================================
+
+Thunderstore package name:
+    LightMyFire_Coal_Resin
+
+Team:
+    R4V9N1
+
+Version:
+    0.5.4
+
+BUILD + CREATE UPLOAD ZIP
+-------------------------
+1. Close Valheim.
+2. Run BUILD-AND-INSTALL.bat.
+3. Upload ONLY:
+
+    artifacts\R4V9N1-LightMyFire_Coal_Resin-0.5.4.zip
+
+0.5.4 SILENT AUTOFILL UPDATE
+
+Automatic barrel refills now update light fuel without playing the source's fuel-added sound or visual effect.
+
+0.5.1 CORRECTION
+----------------
+0.5.0 was published with the wrong DLL.
+This 0.5.1 source package:
+- matches the managed behavior of your known-good 0.5.0 DLL
+- contains the exact production Unity AssetBundle extracted from that DLL
+- forces a fresh DLL build
+- validates DLL version 0.5.4.0
+- hash-checks the DLL copied into the package
+
+Install the same 0.5.4 version on server and all clients.

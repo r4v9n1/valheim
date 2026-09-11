@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0
+
+- Rebuilt against the current Valheim 1.0 assemblies.
+- Preserves Brennivín death protection, inventory/equipment handling, bed teleport, recipe, and Jotunn compatibility behavior.
+- Replaced the package icon with a custom-made, non-AI-generated icon.
+
 ## 0.1.3
 
 - Replaced the temporary LightMyFire placeholder package icon with a Brennivín-specific cyan protection flask icon.
