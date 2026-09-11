@@ -1015,7 +1015,7 @@ namespace PhysicalWater
             CodyCatchmentDescriptor sourceSeed = null;
             ulong globalSourceCatchmentId = 0UL;
             LiquidCoreInitialWorldWaterDomain domain = null;
-            bool valid = VolumetricPceGlobalConnectivityClosure.TryClose(
+            bool valid = VolumetricPceGlobalConnectivityClosure.TryCloseOwned(
                 job.SourceBounds, job.PartitionSize, job.GeometryRevision,
                 job.DependencyRevisionHash, job.ProvisionalPartitions,
                 out closed, out closureError);
