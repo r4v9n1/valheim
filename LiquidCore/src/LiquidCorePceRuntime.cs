@@ -114,6 +114,7 @@ namespace PhysicalWater
         private string _baseWorldBootstrapAttemptKey;
         private BaseWorldPceBootstrapJob _baseWorldPceBootstrapJob;
         private bool _baseWorldBootstrapFailureReported;
+        private string _baseWorldBootstrapGateState;
         private bool _configuredSourceMarkerApplied;
         private bool _configuredSourceMarkerReported;
         internal static LiquidCorePceRuntime Instance { get; private set; }
@@ -841,11 +842,33 @@ namespace PhysicalWater
 
         private void TryBootstrapCompleteBaseWorldDomain()
         {
-            if (PhysicalWaterPlugin.Settings == null ||
-                !PhysicalWaterPlugin.Settings.StageE1Enabled.Value ||
-                WorldGenerator.instance == null) return;
+            if (PhysicalWaterPlugin.Settings == null)
+            {
+                ReportBaseWorldBootstrapGate("settings-unavailable");
+                return;
+            }
+            if (!PhysicalWaterPlugin.Settings.StageE1Enabled.Value)
+            {
+                ReportBaseWorldBootstrapGate("stage-e1-disabled");
+                return;
+            }
+            if (WorldGenerator.instance == null)
+            {
+                ReportBaseWorldBootstrapGate("world-generator-unavailable");
+                return;
+            }
             World world = ZNet.GetWorldIfIsHost();
-            if (world == null || world.m_uid == 0L) return;
+            if (world == null)
+            {
+                ReportBaseWorldBootstrapGate("host-world-unavailable");
+                return;
+            }
+            if (world.m_uid == 0L)
+            {
+                ReportBaseWorldBootstrapGate("host-world-uid-unavailable");
+                return;
+            }
+            ReportBaseWorldBootstrapGate("ready:" + world.m_uid.ToString("X16"));
             string worldKey = world.m_uid.ToString("X16");
             if (_baseWorldPceBootstrapJob != null)
             {
@@ -922,6 +945,14 @@ namespace PhysicalWater
                 ", estimated compact geometry=" +
                 _baseWorldPceBootstrapJob.EstimatedCompactGeometryBytes + " bytes.");
             AdvanceBaseWorldPceBootstrapJob();
+        }
+
+        private void ReportBaseWorldBootstrapGate(string state)
+        {
+            if (string.Equals(_baseWorldBootstrapGateState, state, StringComparison.Ordinal)) return;
+            _baseWorldBootstrapGateState = state;
+            PhysicalWaterPlugin.Log.LogInfo(
+                "LiquidCore complete base-world PCE bootstrap gate: state=" + state + ".");
         }
 
         private bool TryCloseBaseWorldPcePartitionsStreaming(
