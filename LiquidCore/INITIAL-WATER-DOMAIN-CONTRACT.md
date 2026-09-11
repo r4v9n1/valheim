@@ -189,3 +189,28 @@ emitting its terminal report; its last measured terrain-step readback was
 PASS or FAIL. The 1800-step replay remains an outstanding expensive
 regression and is not promoted to the primary task unless it exposes a
 regression caused by the source-domain work.
+
+## Global capacity-provider audit — 2026-09-11
+
+The current production path was traced without changing source. E1 queues
+CODY coverage from `_geometryCoverageBounds`, which is derived from the
+player-centred E3 window. `LiquidCorePceRuntime` enumerates only 24 m logical
+regions intersecting that represented window, builds CODY snapshots from the
+active cut-face arrays, and `PublishAppliedDomainCapacityStorage` copies the
+same active-domain capacity/storage arrays. No code enumerates the complete
+Valheim world, proves a connected-ocean component across all partitions, or
+retains complete dormant capacity outside the active E3 window.
+
+Therefore the existing `VolumetricPceCapacityStorageDescriptor` remains a
+geometry-only active-window publication. It cannot be promoted to
+`CompleteSourceDomain=true`, and the existing `LiquidCoreInitialWorldWaterDomain`
+aggregator must not be fed these windows as a whole-world source. Doing so
+would make a local grid define the ocean and would violate the no-overlap,
+complete-domain, and exactly-once source accounting invariants.
+
+No production source caller was wired and no source atoms were created. The
+required next implementation is an actual CODY/PCE global or explicitly
+enumerated non-overlapping partition provider that publishes complete storage
+curves and membership for every source partition, with a stable revision and
+aggregate coverage proof. Until that provider exists, the current fail-closed
+behavior is preserved.
