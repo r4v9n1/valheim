@@ -178,3 +178,14 @@ terminal report: GPU readback reached approximately `219 s` for the
 `lower:s300` phase and then stalled. This is incomplete validation, not a
 PASS and not evidence that the terrain gate is complete. No new terrain data
 was synthesized.
+
+The bounded 60-step retained-terrain witness was attempted on 2026-09-11
+using the same retained snapshot. It reached `raise:s60` with
+`acceptedRoots=240/240`, `attemptedRoots=240`, and reported
+`COMPOSITE CARRY-ONLY PUBLISHED HEADS: PASS` (`carryOnly=39`, `hidden=0`).
+The run then stalled during the post-settle diagnostic capture before
+emitting its terminal report; its last measured terrain-step readback was
+`44568.994 ms`. Therefore the bounded witness result is **INCOMPLETE**, not
+PASS or FAIL. The 1800-step replay remains an outstanding expensive
+regression and is not promoted to the primary task unless it exposes a
+regression caused by the source-domain work.
