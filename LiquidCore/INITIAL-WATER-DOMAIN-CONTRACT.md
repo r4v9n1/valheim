@@ -164,3 +164,17 @@ and ten existing warnings. Its SHA-256 is
 The rebuilt AssetBundle passed shader/kernel/material validation and has
 SHA-256
 `CAB7E46490284C2D75AF2EF27CE419888BB93DD570B94E5B7EFE7EC8626859F3`.
+
+The post-checkpoint focused regressions passed for redistribution, persistence
+and authoritative water queries. Persistence explicitly reports vertical
+overflow save/restore (`123456789` atoms), and the source-domain regression
+reports the exact `8 m3`/`64000`-atom plan.
+
+The retained terrain witness at
+`live-failures/20260905-water-product-rejection/20260905-002830` was used;
+it is technically suitable and reached
+`TERRAIN COMPOSITE DISPLACEMENT: PASS`. Its full replay did not produce a
+terminal report: GPU readback reached approximately `219 s` for the
+`lower:s300` phase and then stalled. This is incomplete validation, not a
+PASS and not evidence that the terrain gate is complete. No new terrain data
+was synthesized.
