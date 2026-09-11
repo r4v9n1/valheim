@@ -138,6 +138,7 @@ namespace PhysicalWater
         private readonly List<LiquidCoreMicroSpillConnection> _microSpillScratch = new List<LiquidCoreMicroSpillConnection>();
         private readonly List<ulong> _retiredMicroSpillScratch = new List<ulong>();
         private LiquidCorePceRuntime _subscribedCodyRuntime;
+        private string _activationGateState;
 
         internal PhysicalWaterOneHitTerrainTruth OneHitTerrainTruth => _oneHitTerrainTruth;
 
@@ -173,19 +174,32 @@ namespace PhysicalWater
 
         private void Update()
         {
-            if (_streaming == null && Player.m_localPlayer != null &&
-                _macShader != null && _flipShader != null && _surfaceShader != null &&
-                LiquidCorePceRuntime.Instance != null &&
-                LiquidCorePceRuntime.Instance.TryGetCompleteInitialWorldDomain(
-                    out LiquidCoreInitialWorldWaterDomain publishedDomain) &&
-                publishedDomain.SourceCatchmentId != 0UL)
+            LiquidCorePceRuntime pce = LiquidCorePceRuntime.Instance;
+            LiquidCoreInitialWorldWaterDomain publishedDomain = null;
+            bool hasCompleteDomain = pce != null &&
+                pce.TryGetCompleteInitialWorldDomain(out publishedDomain);
+            bool hasSourceCatchment = hasCompleteDomain && publishedDomain.SourceCatchmentId != 0UL;
+            bool assetsReady = _macShader != null && _flipShader != null && _surfaceShader != null && _surfaceMaterial != null;
+            if (_streaming == null)
             {
-                // The complete PCE domain and explicit CODY source selection
-                // are prerequisites. This creates only the player-centered
-                // active representation; it never selects or creates source
-                // water. The publication callback/replay performs the
-                // idempotent LiquidCore source transaction after initialization.
-                CreateDomainCommand(null);
+                if (Player.m_localPlayer == null)
+                    ReportActivationGate("local-player-unavailable");
+                else if (!assetsReady)
+                    ReportActivationGate("finite-assets-unavailable");
+                else if (!hasCompleteDomain)
+                    ReportActivationGate("complete-pce-domain-unavailable");
+                else if (!hasSourceCatchment)
+                    ReportActivationGate("explicit-cody-source-catchment-unavailable");
+                else
+                {
+                    ReportActivationGate("ready");
+                    // The complete PCE domain and explicit CODY source
+                    // selection are prerequisites. This creates only the
+                    // player-centered active representation; it never selects
+                    // or creates source water. The publication callback/replay
+                    // performs the idempotent source transaction after init.
+                    CreateDomainCommand(null);
+                }
             }
             if (Input.GetKeyDown(KeyCode.F6)) CreateDomainCommand(null);
             if (Input.GetKeyDown(KeyCode.F7)) FillBoxCommand(null);
@@ -246,6 +260,14 @@ namespace PhysicalWater
                 LogTelemetry();
             }
 
+        }
+
+        private void ReportActivationGate(string state)
+        {
+            if (string.Equals(_activationGateState, state, StringComparison.Ordinal)) return;
+            _activationGateState = state;
+            PhysicalWaterPlugin.Log.LogInfo(
+                "PhysicalWater devE3 activation gate: state=" + state + ".");
         }
 
         private void RequestPlayerWaterSample()
