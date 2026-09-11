@@ -177,8 +177,9 @@ namespace PhysicalWater
         {
             catchmentId = 0UL;
             error = string.Empty;
-            if (_codyL1 == null ||
-                !_codyL1.TryGetInitialWaterSourceSeed(out CodyCatchmentDescriptor descriptor))
+            CodyCatchmentDescriptor descriptor;
+            if ((_codyL1 == null || !_codyL1.TryGetInitialWaterSourceSeed(out descriptor)) &&
+                (_codyL2 == null || !_codyL2.TryGetInitialWaterSourceSeed(out descriptor)))
             {
                 error = "CODY has not published a validated initial-water source seed.";
                 return false;
