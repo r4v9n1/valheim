@@ -142,6 +142,52 @@ This is deliberate fail-closed behavior: the next implementation must add a
 complete or explicitly partitioned geometry/capacity publication before any
 LiquidCore source atoms are computed or committed.
 
+## World-generation source-relation semantic audit — 2026-09-11
+
+The current Valheim client assembly was decompiled and its water-related
+world-generation signals were traced to their definitions and call sites.
+
+`WorldGenerator.waterEdge` is a constant (`10500f`) paired with
+`waterEdgeSqr`. It is used by the procedural height function as a radial
+terrain-edge transition: beyond `10000f` the generated base height is blended
+toward `-0.2f`, and beyond `10490f` toward `-2f`. It is deterministic from
+the generated world, but it is terrain shaping/edge falloff, not an ocean
+volume, wet-space relation, or connected-component identity. It can justify
+neither eta-zero nor a LiquidCore source catchment.
+
+`WorldGenerator.GetOceanHeight(float,float)` is a private method whose body is
+only `return GetBaseHeight(wx, wy, menuTerrain: false)`. It does not read or
+write water state and does not identify an ocean. It is a terrain-height
+helper and cannot establish an initial source relationship.
+
+`GetBiome(..., oceanLevel, ...)` classifies a point as `Ocean` when generated
+base height is below the supplied threshold (unless the optional
+`waterAlwaysOcean` path changes the test). This is exactly the prohibited
+height/biome classifier shortcut, not a physical water authority. The
+deterministic `FindLakes`, river, and stream generation paths likewise produce
+terrain-generation features; they do not publish a complete ocean waterbody,
+finite source volume, or globally closed water component.
+
+The retained assembly exposes no deterministic world-generation or persisted
+metadata that says which final PCE component owns the initial LiquidCore
+water. Vanilla `WaterVolume`, `LiquidVolume`, and `LiquidSurface` are host
+runtime/presentation surfaces and are not accepted as ownership authority.
+Therefore no candidate passes the required source-relation test. The first
+absent point remains:
+
+`global PCE closure -> justified CODY source relation`
+
+This is not a marker-lifecycle defect. A production implementation must add or
+consume an explicit, world-scoped initial-condition contract at that seam
+(including its provenance, geometry/DNA revisions, and source-set semantics),
+then resolve it against final PCE IDs. Until such a contract exists, CODY and
+LiquidCore correctly remain fail-closed; no source caller is wired and no
+water is created.
+
+The attempted direct exterior-boundary selection was rejected during this
+audit: PCE boundary connectivity proves only open topology and cannot prove
+water ownership. No code change was made from that rejected experiment.
+
 ## Follow-up source checkpoints — 2026-09-11
 
 The focused complete-domain regression now also proves the LiquidCore source
