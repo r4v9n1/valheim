@@ -50,8 +50,6 @@ namespace PhysicalWater
         internal string DependencyRevisionHash;
         internal long EstimatedCompactGeometryBytes;
         internal int NextPartition;
-        internal readonly List<VolumetricPceCapacityStorageDescriptor> Provisional =
-            new List<VolumetricPceCapacityStorageDescriptor>();
     }
 
     internal sealed class LiquidCorePceRuntime : MonoBehaviour
@@ -856,6 +854,39 @@ namespace PhysicalWater
             AdvanceBaseWorldPceBootstrapJob();
         }
 
+        private bool TryCloseBaseWorldPcePartitionsStreaming(
+            BaseWorldPceBootstrapJob job,
+            List<VolumetricPceCapacityStorageDescriptor> closed,
+            out string error)
+        {
+            error = string.Empty;
+            if (job == null || closed == null)
+            {
+                error = "PCE streaming closure received no bootstrap job or sink.";
+                return false;
+            }
+            return VolumetricPceGlobalConnectivityClosure.TryCloseStreaming(
+                job.SourceBounds, job.PartitionSize, job.GeometryRevision,
+                job.DependencyRevisionHash, job.PartitionBounds.Length,
+                (int index, out VolumetricPceCapacityStorageDescriptor descriptor,
+                    out string loadError) => TryBuildBaseTerrainPcePartition(
+                        job.PartitionBounds[index], job.PartitionSize, job.CellSize,
+                        job.GeometryRevision, job.DependencyRevisionHash,
+                        out descriptor, out loadError),
+                (int index, VolumetricPceCapacityStorageDescriptor descriptor,
+                    out string sinkError) =>
+                {
+                    sinkError = string.Empty;
+                    if (descriptor == null)
+                    {
+                        sinkError = "PCE streaming closure produced a null partition.";
+                        return false;
+                    }
+                    closed.Add(descriptor);
+                    return true;
+                }, out error);
+        }
+
         private static long EstimateBaseWorldCompactGeometryBytes(
             Bounds sourceBounds, int partitionCount, float cellSize)
         {
@@ -893,7 +924,6 @@ namespace PhysicalWater
                     }
                     return;
                 }
-                job.Provisional.Add(descriptor);
                 job.NextPartition++;
                 if (job.NextPartition == 1 ||
                     job.NextPartition == job.PartitionBounds.Length ||
@@ -914,10 +944,11 @@ namespace PhysicalWater
             CodyCatchmentDescriptor sourceSeed = null;
             ulong globalSourceCatchmentId = 0UL;
             LiquidCoreInitialWorldWaterDomain domain = null;
-            bool valid = TryCloseBaseWorldPcePartitionsOwned(
-                job.SourceBounds, job.PartitionSize, job.GeometryRevision,
-                job.DependencyRevisionHash, job.Provisional,
-                out closed, out closureError);
+            var closedList = new List<VolumetricPceCapacityStorageDescriptor>(
+                job.PartitionBounds.Length);
+            bool valid = TryCloseBaseWorldPcePartitionsStreaming(
+                job, closedList, out closureError);
+            if (valid) closed = closedList.ToArray();
             string failure = valid ? string.Empty : closureError;
             if (valid)
             {
