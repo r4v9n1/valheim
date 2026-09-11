@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Security.Cryptography;
 using R4V9N1.PhysicalOcean.Cody;
 using R4V9N1.PhysicalOcean.Probes;
 using R4V9N1.PhysicalOcean.Volumetric;
@@ -1533,7 +1534,26 @@ namespace PhysicalWater
             }
             Material materialAsset = _bundle.LoadAsset<Material>("R4V9N1_PhysicalVolumetricDebugSurface");
             if (materialAsset != null) _surfaceMaterial = new Material(materialAsset) { name = "LiquidCore_CelWaterSurface" };
-            PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devE1 assets: mac=" + (_macShader != null) + ", flip=" + (_flipShader != null) + ", surface=" + (_surfaceShader != null) + ", celMaterial=" + (_surfaceMaterial != null) + ".");
+            string bundleHash = "unavailable";
+            try
+            {
+                using (SHA256 sha = SHA256.Create())
+                using (FileStream stream = File.OpenRead(path))
+                    bundleHash = BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", string.Empty);
+            }
+            catch (Exception ex)
+            {
+                PhysicalWaterPlugin.Log.LogWarning("PhysicalWater devE1 could not fingerprint its loaded asset bundle: " + ex.Message + ".");
+            }
+            string materialName = _surfaceMaterial == null ? "missing" : _surfaceMaterial.name;
+            string shaderName = _surfaceMaterial == null || _surfaceMaterial.shader == null ? "missing" : _surfaceMaterial.shader.name;
+            bool shaderSupported = _surfaceMaterial != null && _surfaceMaterial.shader != null && _surfaceMaterial.shader.isSupported;
+            int passCount = _surfaceMaterial == null || _surfaceMaterial.shader == null ? 0 : _surfaceMaterial.shader.passCount;
+            PhysicalWaterPlugin.Log.LogInfo("PhysicalWater devE1 assets: bundlePath=" + path +
+                ", bundleSha256=" + bundleHash + ", mac=" + (_macShader != null) +
+                ", flip=" + (_flipShader != null) + ", surface=" + (_surfaceShader != null) +
+                ", materialName=" + materialName + ", shaderName=" + shaderName +
+                ", shaderSupported=" + shaderSupported + ", shaderPassCount=" + passCount + ".");
         }
 
         private bool ReadyForCommand(Terminal.ConsoleEventArgs args, bool playerRequired)

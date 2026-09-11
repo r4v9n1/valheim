@@ -1,5 +1,7 @@
 using System;
+using System.IO;
 using System.Reflection;
+using System.Security.Cryptography;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -41,6 +43,7 @@ namespace PhysicalWater
         private void Awake()
         {
             Log = Logger;
+            LogLoadedAssemblyIdentity();
             Settings = new PhysicalWaterSettings(Config);
             ValheimKnowledge = ValheimKnowledgeDatabase.LoadEmbedded();
             Logger.LogInfo("LiquidCore Valheim knowledge database: " + ValheimKnowledge.Summary() + ".");
@@ -130,6 +133,33 @@ namespace PhysicalWater
                            (geometryAdapterRequired ? "enabled" : "disabled") +
                            ". While the legacy replacement is enabled, vanilla water rendering/queries/floaters are unconditionally suppressed.");
             Logger.LogInfo("LiquidCore 0.6.0-devE3 adds conservative logical-region streaming around the frozen E1 solver/math and E2.1.2 presentation. FiniteStreaming=" + Settings.StageE1Enabled.Value + ", legacyReplacement=" + legacyReplacementEnabled + ".");
+        }
+
+        private void LogLoadedAssemblyIdentity()
+        {
+            try
+            {
+                string path = typeof(PhysicalWaterPlugin).Assembly.Location;
+                string hash = "unavailable";
+                long length = 0L;
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                {
+                    FileInfo file = new FileInfo(path);
+                    length = file.Length;
+                    using (SHA256 sha = SHA256.Create())
+                    using (FileStream stream = File.OpenRead(path))
+                    {
+                        hash = BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", string.Empty);
+                    }
+                }
+                Logger.LogInfo("LiquidCore loaded assembly identity: path=" + path +
+                               ", sha256=" + hash + ", bytes=" + length +
+                               ", assemblyVersion=" + PluginAssemblyVersion + ".");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning("LiquidCore could not fingerprint its loaded assembly: " + ex.Message + ".");
+            }
         }
 
         private void OnDestroy()
