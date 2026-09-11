@@ -1,6 +1,6 @@
 {
   "name": "TerramizerServer",
-  "version_number": "1.0.3",
+  "version_number": "1.0.4",
   "website_url": "",
   "description": "I use AI to review code, assist with optimization and integrity; I manually test and review every mod, and all decisions and code remain my own. Dedicated-server performance improvements.",
   "dependencies": [

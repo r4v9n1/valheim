@@ -12,7 +12,7 @@ $DistDir = Join-Path $LocalProjectRoot "dist"
 $PackageStageRoot = Join-Path $LocalProjectRoot "package-stage"
 $ReleaseDir = "G:\My Drive\build\Valheim\releases\TerramizerServer"
 $Owner = "R4V9N1"
-$PackageVersion = "1.0.3"
+$PackageVersion = "1.0.4"
 $PackageName = "TerramizerServer"
 $TemplateDir = Join-Path $ProjectRoot "thunderstore"
 $DllPath = Join-Path $DistDir "TerramizerServer.dll"
@@ -67,8 +67,8 @@ if ($sourceText -notmatch 'public const string PluginGuid\s*=\s*"r4v9n1\.terrami
 if ($sourceText -notmatch [regex]::Escape("Created by $Owner")) {
     throw "Creator metadata does not identify $Owner."
 }
-if ($sourceText -notmatch 'public const string PluginVersion\s*=\s*"1\.0\.3"') {
-    throw "TerramizerServer source version must be 1.0.3."
+if ($sourceText -notmatch 'public const string PluginVersion\s*=\s*"1\.0\.4"') {
+    throw "TerramizerServer source version must be 1.0.4."
 }
 $requiredExperimentHooks = @("using HarmonyLib;", "[HarmonyPatch(typeof(ZNetView), ""Awake"")", "EnableStaticPieceServerOwnership", "DryRunStaticPieceServerOwnership", "ZdoRecordsPerScan", "m_objectsByID", "[HarmonyPatch(typeof(Heightmap), ""AtMaxWorldLevelDepth"")", "[HarmonyPatch(typeof(Heightmap), ""LevelTerrain"")", "[HarmonyPatch(typeof(TerrainComp), ""LevelTerrain"")", "[HarmonyPatch(typeof(TerrainComp), ""RaiseTerrain"")", "[HarmonyPatch(typeof(TerrainComp), ""ApplyToHeightmap"")", "TerrainRaiseLimitMeters", "TerrainDigLimitMeters", "TryPatch(typeof(HeightmapAtMaxWorldLevelDepthTerrainLimitPatch)", "TryPatch(typeof(HeightmapLevelTerrainTerrainLimitPatch)", "TryPatch(typeof(TerrainCompLevelTerrainLimitPatch)", "TryPatch(typeof(TerrainCompRaiseTerrainLimitPatch)", "TryPatch(typeof(TerrainCompApplyToHeightmapTerrainLimitPatch)")
 $requiredCompanionProtocol = @("SyncedTerrainLimitsEnabledKey", "SyncedTerrainRaiseLimitKey", "SyncedTerrainDigLimitKey", "RpcRequestCompanionMetadataV2", "RpcCompanionMetadataV2")

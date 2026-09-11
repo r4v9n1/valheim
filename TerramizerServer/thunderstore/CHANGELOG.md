@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.4
+
+- Bumped the package version for the default ownership-audit and cache behavior update.
+
 ## 1.0.3
 
 - Enabled the background ownership audit by default so the ownership cache performs its initial broad scan, warm-start, and maintenance cycle without manual configuration.

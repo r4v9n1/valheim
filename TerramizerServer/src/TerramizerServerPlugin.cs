@@ -24,7 +24,7 @@ namespace TerramizerServer
     {
         public const string PluginGuid = "r4v9n1.terramizerserver";
         public const string PluginName = "TerramizerServer";
-        public const string PluginVersion = "1.0.3";
+        public const string PluginVersion = "1.0.4";
         public const string CreatorCredit = "Created by R4V9N1";
         private const string SyncedVersionKey = "r4v9n1.terramizerserver.version";
         private const string SyncedStaticOwnershipKey = "r4v9n1.terramizerserver.staticOwnership";
