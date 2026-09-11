@@ -76,7 +76,7 @@ namespace PhysicalWater
         // requires every represented local/open-region exit to carry the
         // bounded sub-grid-candidate hint consumed by MVC after physical-path
         // proof fails. Do not couple this to the Valheim knowledge JSON schema.
-        private const int CodyCatchmentSchemaVersion = 2;
+        private const int CodyCatchmentSchemaVersion = 3;
         private CodyCatchmentCache _codyL1;
         private CodyCatchmentCache _codyL2;
         private CodyCatchmentRebuildCoordinator _codyRebuilds;
