@@ -94,3 +94,8 @@ Workspace validation checkpoint `d548e89` adds
 covered partition set and reject a gap, positive-volume overlap, and revision
 mismatch. It is a structural contract regression only; it does not synthesize
 terrain or water and does not authorize the production source caller.
+
+Workspace checkpoint `2a75f5d` fixes the namespace imports and the focused
+Unity 6000.0.61f1/D3D11 run passes all four cases (`RESULT: PASS`). The
+canonical DLL remains build-clean with hash
+`87927CB81000A313C6E5F8A774FB0EF1CB4C3E6557526C2631C5A0B2EFFF1429`.
