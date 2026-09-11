@@ -438,6 +438,7 @@ namespace PhysicalWater
             _domain = _streaming.Domain;
             _domain.WaterBodyPublisher.Published += OnWaterBodyRegistryPublished;
             BindCodyRuntime(LiquidCorePceRuntime.Instance);
+            ReplayCompleteInitialWorldDomainIfAvailable();
             _accumulator = 0f;
             // Do not issue a blocking full-field diagnostic readback in the
             // same frame as F6 resource creation. The newly-created domain is
@@ -1520,6 +1521,14 @@ namespace PhysicalWater
                 _subscribedCodyRuntime.CodyCatchmentPublished += OnCodyCatchmentPublished;
                 _subscribedCodyRuntime.CompleteInitialWorldDomainPublished += OnCompleteInitialWorldDomainPublished;
             }
+        }
+
+        private void ReplayCompleteInitialWorldDomainIfAvailable()
+        {
+            if (_subscribedCodyRuntime == null ||
+                !_subscribedCodyRuntime.TryGetCompleteInitialWorldDomain(
+                    out LiquidCoreInitialWorldWaterDomain domain)) return;
+            OnCompleteInitialWorldDomainPublished(domain);
         }
 
         private void OnCompleteInitialWorldDomainPublished(LiquidCoreInitialWorldWaterDomain domain)
