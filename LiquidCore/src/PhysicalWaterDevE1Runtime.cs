@@ -1665,10 +1665,11 @@ namespace PhysicalWater
                     ReferenceHead = PhysicalWaterPlugin.Settings.SeaLevel.Value,
                     SourceCatchmentId = domain.SourceCatchmentId
                 };
-                LiquidCoreInitialWorldWaterSourcePlan plan = domain.ComputeSourcePlan(
-                    rule, initialSourceId,
-                    _domain.FlipDomain.ParticleVolumeAtomicScale);
-                if (!_streaming.TryCommitInitialWorldWaterSourcePlan(plan, out string reason))
+                if (!_streaming.TryComputeAndCommitInitialWorldWaterSource(
+                        domain.Partitions, rule, initialSourceId,
+                        _domain.FlipDomain.ParticleVolumeAtomicScale,
+                        out double totalSourceVolume, out ulong totalSourceAtoms,
+                        out string reason))
                 {
                     PhysicalWaterPlugin.Log.LogWarning(
                         "LiquidCore complete initial-water source commit deferred/fail-closed: " + reason + ".");
@@ -1676,9 +1677,9 @@ namespace PhysicalWater
                 }
                 PhysicalWaterPlugin.Log.LogInfo(
                     "LiquidCore complete initial-water source committed: domain=" + domain.DomainId +
-                    ", partitions=" + plan.Partitions.Length + ", volume=" +
-                    plan.TotalSourceVolume.ToString("R", CultureInfo.InvariantCulture) +
-                    ", atoms=" + plan.TotalSourceAtoms + ".");
+                    ", partitions=" + domain.Partitions.Length + ", volume=" +
+                    totalSourceVolume.ToString("R", CultureInfo.InvariantCulture) +
+                    ", atoms=" + totalSourceAtoms + ".");
             }
             catch (Exception ex)
             {
