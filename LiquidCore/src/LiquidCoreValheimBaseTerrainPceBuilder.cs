@@ -62,10 +62,8 @@ namespace PhysicalWater
                 return false;
             }
             int cellCount = nx * ny * nz;
-            int knots = VolumetricCutCellProjection.AdaptiveHydraulicCurveKnotCount;
             var capacity = new float[cellCount];
-            var curves = new Vector2[cellCount * knots];
-            var counts = new int[cellCount];
+            var columnTerrainHeights = new float[nx * nz];
             var components = new int[cellCount];
             for (int i = 0; i < components.Length; i++) components[i] = -1;
             for (int z = 0; z < nz; z++)
@@ -78,6 +76,7 @@ namespace PhysicalWater
                     error = "Valheim base terrain sampler returned no height.";
                     return false;
                 }
+                columnTerrainHeights[x + nx * z] = ground;
                 for (int y = 0; y < ny; y++)
                 {
                     int cell = Index(x, y, z, nx, ny);
@@ -85,7 +84,6 @@ namespace PhysicalWater
                     float top = bottom + cellSize;
                     float openHeight = Mathf.Clamp(top - Mathf.Max(bottom, ground), 0f, cellSize);
                     capacity[cell] = openHeight * cellSize * cellSize;
-                    BuildColumnCurve(curves, counts, cell, knots, bottom, top, ground, cellSize);
                 }
             }
             AssignLocalComponents(capacity, components, nx, ny, nz, cellSize);
@@ -106,8 +104,9 @@ namespace PhysicalWater
                 ResolutionY = ny,
                 ResolutionZ = nz,
                 CellCapacity = capacity,
-                CellStorageCurves = curves,
-                CellStorageKnotCounts = counts,
+                CellStorageCurves = Array.Empty<Vector2>(),
+                CellStorageKnotCounts = Array.Empty<int>(),
+                ColumnTerrainHeights = columnTerrainHeights,
                 CellCatchmentIds = new ulong[cellCount],
                 CellComponentIds = components,
                 Columns = Array.Empty<VolumetricPceStorageColumn>(),
@@ -122,18 +121,6 @@ namespace PhysicalWater
         }
 
         internal delegate bool HeightSampler(float x, float z, out float height);
-
-        private static void BuildColumnCurve(Vector2[] curves, int[] counts, int cell,
-            int knots, float bottom, float top, float ground, float cellSize)
-        {
-            int offset = cell * knots;
-            float start = Mathf.Clamp01((ground - bottom) / cellSize);
-            float openFraction = Mathf.Clamp01((top - Mathf.Max(bottom, ground)) / cellSize);
-            counts[cell] = openFraction <= 0f ? 2 : 2;
-            curves[offset] = new Vector2(start, 0f);
-            curves[offset + 1] = new Vector2(1f, openFraction * VolumetricCutCellProjection.AdaptiveHydraulicFractionScale);
-            for (int i = 2; i < knots; i++) curves[offset + i] = curves[offset + 1];
-        }
 
         private static void AssignLocalComponents(float[] capacity, int[] components,
             int nx, int ny, int nz, float cellSize)
