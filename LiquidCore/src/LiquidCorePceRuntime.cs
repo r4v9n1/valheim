@@ -786,6 +786,23 @@ namespace PhysicalWater
             return true;
         }
 
+        internal string DescribeCodyCatchments()
+        {
+            if (_codyL2 == null) return "CODY L2 is not initialized.";
+            CodyCatchmentDescriptor[] descriptors = _codyL2.CapturePersistentDescriptors();
+            if (descriptors == null || descriptors.Length == 0) return "CODY L2 has no valid persisted catchments.";
+            var builder = new System.Text.StringBuilder("CODY catchments: ");
+            for (int i = 0; i < descriptors.Length; i++)
+            {
+                if (i > 0) builder.Append("; ");
+                CodyCatchmentDescriptor descriptor = descriptors[i];
+                builder.Append(descriptor.CatchmentId)
+                    .Append(" region=(").Append(descriptor.RegionX).Append(',').Append(descriptor.RegionZ)
+                    .Append(") sourceSeed=").Append(descriptor.InitialWaterSourceSeed);
+            }
+            return builder.ToString();
+        }
+
         internal static bool TryParseCatchmentId(string text, out ulong value)
         {
             value = 0UL;

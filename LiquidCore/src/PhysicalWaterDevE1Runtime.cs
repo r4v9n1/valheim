@@ -383,9 +383,18 @@ namespace PhysicalWater
             new Terminal.ConsoleCommand("pw_e3_step", "advance paused E3 simulation by one 1/30 second step", StepCommand, false, false, false, false, true);
             new Terminal.ConsoleCommand("pw_e3_probe", "capture one blocking raw/fraction/presentation field probe", ProbeCommand, false, false, false, false, true);
             new Terminal.ConsoleCommand("pw_e3_snapshot", "save a replayable finite-fluid snapshot", SnapshotCommand, false, false, false, false, true);
+            new Terminal.ConsoleCommand("pw_pce_sources", "list valid persisted CODY catchments", ListPceSourcesCommand, false, false, false, false, true);
             new Terminal.ConsoleCommand("pw_pce_select_source", "select explicit CODY initial-water catchment: [id]", SelectInitialSourceCommand, false, false, false, false, true);
             new Terminal.ConsoleCommand("pw_e3_capture_terrain", "capture replayable Valheim terrain: [width] [depth] [spacing] [label]", CaptureTerrainCommand, false, false, false, false, true);
             new Terminal.ConsoleCommand("pw_terrain_capture", "capture replayable Valheim terrain: [width] [depth] [spacing] [label]", CaptureTerrainCommand, false, false, false, false, true);
+        }
+
+        private void ListPceSourcesCommand(Terminal.ConsoleEventArgs args)
+        {
+            LiquidCorePceRuntime pce = LiquidCorePceRuntime.Instance;
+            string listing = pce == null ? "CODY runtime is not initialized." : pce.DescribeCodyCatchments();
+            PhysicalWaterPlugin.Log.LogInfo("LiquidCore " + listing);
+            Reply(args, listing);
         }
 
         private void SelectInitialSourceCommand(Terminal.ConsoleEventArgs args)
