@@ -89,6 +89,8 @@ namespace PhysicalWater
         private VolumetricFiniteDomainController _pendingCodyDomain;
         private Bounds _pendingCodyCoverageBounds;
         private long _pendingCodyGeometryRevision = -1;
+        private string _baseWorldBootstrapWorldKey;
+        private bool _baseWorldBootstrapReported;
         internal static LiquidCorePceRuntime Instance { get; private set; }
 
         internal ProbeColonyWorld World => _world;
@@ -558,6 +560,57 @@ namespace PhysicalWater
             if (_queue.PendingCount > 0) _queue.Drain();
             if (_codyRebuilds != null) _codyRebuilds.PublishReady();
             DispatchPendingCodyCoverage();
+            TryBootstrapCompleteBaseWorldDomain();
+        }
+
+        private void TryBootstrapCompleteBaseWorldDomain()
+        {
+            if (PhysicalWaterPlugin.Settings == null ||
+                !PhysicalWaterPlugin.Settings.StageE1Enabled.Value ||
+                WorldGenerator.instance == null) return;
+            World world = ZNet.GetWorldIfIsHost();
+            if (world == null || world.m_uid == 0L) return;
+            string worldKey = world.m_uid.ToString("X16");
+            if (string.Equals(_baseWorldBootstrapWorldKey, worldKey, StringComparison.Ordinal)) return;
+            if (!TryResolveCodyInitialWaterSourceCatchment(
+                    out ulong sourceCatchmentId, out string sourceError))
+            {
+                if (!_baseWorldBootstrapReported)
+                {
+                    PhysicalWaterPlugin.Log.LogInfo(
+                        "LiquidCore complete base-world PCE bootstrap deferred: " + sourceError + ".");
+                    _baseWorldBootstrapReported = true;
+                }
+                return;
+            }
+            float verticalMin = PhysicalWaterPlugin.Settings.InitialWorldPceVerticalMin.Value;
+            float verticalMax = PhysicalWaterPlugin.Settings.InitialWorldPceVerticalMax.Value;
+            float partitionSize = PhysicalWaterPlugin.Settings.InitialWorldPcePartitionSize.Value;
+            float cellSize = PhysicalWaterPlugin.Settings.InitialWorldPceCellSize.Value;
+            if (!Finite(verticalMin) || !Finite(verticalMax) || verticalMax <= verticalMin ||
+                !Finite(partitionSize) || partitionSize <= 0f || !Finite(cellSize) || cellSize <= 0f)
+            {
+                PhysicalWaterPlugin.Log.LogWarning(
+                    "LiquidCore complete base-world PCE bootstrap rejected invalid explicit domain settings.");
+                _baseWorldBootstrapWorldKey = worldKey;
+                return;
+            }
+            long geometryRevision = Math.Max(0, world.m_worldGenVersion);
+            string dependencyRevision = "valheim-worldgen:" + world.m_seed + ":" + world.m_worldGenVersion;
+            if (!TryPublishBaseWorldPceDomainForCatchment(
+                    "valheim-world-ocean-" + worldKey, sourceCatchmentId,
+                    verticalMin, verticalMax, new Vector2(partitionSize, partitionSize),
+                    cellSize, geometryRevision, dependencyRevision,
+                    out LiquidCoreInitialWorldWaterDomain domain, out string error))
+            {
+                PhysicalWaterPlugin.Log.LogWarning(
+                    "LiquidCore complete base-world PCE bootstrap deferred/fail-closed: " + error + ".");
+                return;
+            }
+            _baseWorldBootstrapWorldKey = worldKey;
+            PhysicalWaterPlugin.Log.LogInfo(
+                "LiquidCore complete base-world PCE domain published: world=" + worldKey +
+                ", partitions=" + domain.Partitions.Length + ", geometryRevision=" + geometryRevision + ".");
         }
 
         internal void Attach(PhysicalWaterValheimWorldGeometryAdapter adapter)

@@ -288,6 +288,10 @@ namespace PhysicalWater
         internal readonly ConfigEntry<bool> StageE1RenderSurface;
         internal readonly ConfigEntry<float> StageE1TelemetryInterval;
         internal readonly ConfigEntry<int> StageE1MaxSubstepsPerFrame;
+        internal readonly ConfigEntry<float> InitialWorldPceVerticalMin;
+        internal readonly ConfigEntry<float> InitialWorldPceVerticalMax;
+        internal readonly ConfigEntry<float> InitialWorldPcePartitionSize;
+        internal readonly ConfigEntry<float> InitialWorldPceCellSize;
 
         internal PhysicalWaterSettings(ConfigFile config)
         {
@@ -461,6 +465,14 @@ namespace PhysicalWater
             StageE1MaxSubstepsPerFrame = config.Bind("StageE1", "MaxSubstepsPerFrame", 2,
                 new ConfigDescription("Maximum fixed 30 Hz E1 solver steps dispatched in one rendered frame.",
                     new AcceptableValueRange<int>(1, 4)));
+            InitialWorldPceVerticalMin = config.Bind("InitialWorldPce", "VerticalMin", -100f,
+                "Explicit finite base-world PCE domain lower bound. This is geometry-domain metadata, not a water source.");
+            InitialWorldPceVerticalMax = config.Bind("InitialWorldPce", "VerticalMax", 200f,
+                "Explicit finite base-world PCE domain upper bound. It must remain above the declared initial reference head.");
+            InitialWorldPcePartitionSize = config.Bind("InitialWorldPce", "PartitionSize", 256f,
+                "Deterministic horizontal partition size for the complete base-world PCE provider.");
+            InitialWorldPceCellSize = config.Bind("InitialWorldPce", "CellSize", 8f,
+                "Deterministic PCE storage-cell size for the complete base-world provider.");
         }
     }
 }
