@@ -1091,7 +1091,10 @@ namespace PhysicalWater
                     out globalSourceCatchmentId, out sourceError))
                 domain.SourceCatchmentId = globalSourceCatchmentId;
             else
+            {
                 domain.SourceCatchmentId = 0UL;
+                LogUnselectedClosedPceCatchments(closed, sourceError);
+            }
             if (!CanPublishCompleteBaseWorldPceDomain(domain, closed, out string preflightError))
             {
                 _baseWorldPceBootstrapJob = null;
@@ -1135,6 +1138,35 @@ namespace PhysicalWater
             PhysicalWaterPlugin.Log.LogInfo(
                 "LiquidCore complete base-world PCE domain published: world=" + job.WorldKey +
                 ", partitions=" + closed.Length + ", geometryRevision=" + job.GeometryRevision + ".");
+        }
+
+        private static void LogUnselectedClosedPceCatchments(
+            IReadOnlyList<VolumetricPceCapacityStorageDescriptor> closed,
+            string sourceError)
+        {
+            var ids = new SortedSet<ulong>();
+            if (closed != null)
+            {
+                for (int i = 0; i < closed.Count; i++)
+                {
+                    ulong[] membership = closed[i]?.CellCatchmentIds;
+                    if (membership == null) continue;
+                    for (int j = 0; j < membership.Length; j++)
+                        if (membership[j] != 0UL) ids.Add(membership[j]);
+                }
+            }
+            string[] values = new string[Math.Min(ids.Count, 16)];
+            int index = 0;
+            foreach (ulong id in ids)
+            {
+                if (index >= values.Length) break;
+                values[index++] = id.ToString("X16");
+            }
+            PhysicalWaterPlugin.Log.LogInfo(
+                "LiquidCore complete base-world PCE source remains unselected: " +
+                "explicit CODY source marker is required; closedCatchmentCount=" + ids.Count +
+                ", closedCatchments=" + string.Join(",", values) +
+                ", reason=" + (string.IsNullOrEmpty(sourceError) ? "no validated CODY source seed" : sourceError) + ".");
         }
 
         private static string BuildBaseWorldDependencyRevision(
