@@ -1349,7 +1349,9 @@ namespace PhysicalWater
                 job.SourceBounds, job.PartitionSize.x, job.CellSize);
             PhysicalWaterPlugin.Log.LogInfo(
                 "LiquidCore complete base-world PCE domain published: world=" + job.WorldKey +
-                ", partitions=" + closed.Length + ", geometryRevision=" + job.GeometryRevision + ".");
+                ", partitions=" + closed.Length + ", geometryRevision=" + job.GeometryRevision +
+                ", completeSourceDomain=" + domain.Partitions[0].CompleteSourceDomain +
+                ", sourceCatchments=" + (domain.SourceCatchmentIds == null ? 0 : domain.SourceCatchmentIds.Length) + ".");
         }
 
         private static void LogUnselectedClosedPceCatchments(
