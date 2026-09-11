@@ -178,23 +178,30 @@ namespace PhysicalWater
             {
                 int cell = Index(x, y, z, nx, ny);
                 if (capacity[cell] <= 1e-6f || components[cell] < 0) continue;
-                Add(x == 0, components[cell], -1, 0, x, y, z);
-                Add(x == nx - 1, components[cell], 1, 0, x, y, z);
-                Add(z == 0, components[cell], 0, -1, x, y, z);
-                Add(z == nz - 1, components[cell], 0, 1, x, y, z);
+                Add(x == 0, components[cell], -1, 0, x, y, z, nx - 1, y, z);
+                Add(x == nx - 1, components[cell], 1, 0, x, y, z, 0, y, z);
+                Add(z == 0, components[cell], 0, -1, x, y, z, x, y, nz - 1);
+                Add(z == nz - 1, components[cell], 0, 1, x, y, z, x, y, 0);
             }
             return exits.ToArray();
 
-            void Add(bool boundary, int component, int dx, int dz, int x, int y, int z)
+            void Add(bool boundary, int component, int dx, int dz, int x, int y, int z,
+                int destinationX, int destinationY, int destinationZ)
             {
                 if (!boundary) return;
                 int tileX = Mathf.FloorToInt(bounds.min.x / partitionSize.x) + dx;
                 int tileZ = Mathf.FloorToInt(bounds.min.z / partitionSize.y) + dz;
-                string key = component + ":" + tileX + ":" + tileZ;
+                string key = component + ":" + tileX + ":" + tileZ + ":" + x + ":" + y + ":" + z;
                 if (!seen.Add(key)) return;
                 exits.Add(new VolumetricPceStorageExit
                 {
                     SourceComponentId = component,
+                    SourceBoundaryCellX = x,
+                    SourceBoundaryCellY = y,
+                    SourceBoundaryCellZ = z,
+                    DestinationBoundaryCellX = destinationX,
+                    DestinationBoundaryCellY = destinationY,
+                    DestinationBoundaryCellZ = destinationZ,
                     DestinationRegionX = tileX,
                     DestinationRegionZ = tileZ,
                     SaddleHeight = bounds.min.y + y * cellSize,
