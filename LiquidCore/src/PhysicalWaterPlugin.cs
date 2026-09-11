@@ -90,6 +90,7 @@ namespace PhysicalWater
             }
 
             bool geometryAdapterRequired = Settings.ValheimGeometryDiagnosticsEnabled.Value || Settings.StageE1Enabled.Value;
+            bool globalPceBootstrapEnabled = geometryAdapterRequired;
             if (geometryAdapterRequired)
             {
                 PatchSafely(typeof(ValheimGeometryTerrainOperationPatch), "devD6 terrain geometry dirty marker");
@@ -132,7 +133,7 @@ namespace PhysicalWater
                            " mode. devD6 Valheim geometry diagnostics are " +
                            (geometryAdapterRequired ? "enabled" : "disabled") +
                            ". While the legacy replacement is enabled, vanilla water rendering/queries/floaters are unconditionally suppressed.");
-            Logger.LogInfo("LiquidCore 0.6.0-devE3 adds conservative logical-region streaming around the frozen E1 solver/math and E2.1.2 presentation. FiniteStreaming=" + Settings.StageE1Enabled.Value + ", legacyReplacement=" + legacyReplacementEnabled + ".");
+            Logger.LogInfo("LiquidCore 0.6.0-devE3 adds conservative logical-region streaming around the frozen E1 solver/math and E2.1.2 presentation. GlobalPceBootstrap=" + globalPceBootstrapEnabled + ", FiniteE3=" + Settings.StageE1Enabled.Value + ", legacyReplacement=" + legacyReplacementEnabled + ".");
         }
 
         private void LogLoadedAssemblyIdentity()
