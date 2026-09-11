@@ -107,6 +107,7 @@ namespace PhysicalWater
         private Bounds _pendingCodyCoverageBounds;
         private long _pendingCodyGeometryRevision = -1;
         private string _baseWorldBootstrapWorldKey;
+        private string _baseWorldBootstrapDomainFingerprint;
         private string _baseWorldBootstrapAttemptKey;
         private BaseWorldPceBootstrapJob _baseWorldPceBootstrapJob;
         private bool _baseWorldBootstrapReported;
@@ -772,6 +773,7 @@ namespace PhysicalWater
                 if (!string.Equals(_baseWorldPceBootstrapJob.WorldKey, worldKey, StringComparison.Ordinal))
                 {
                     _baseWorldPceBootstrapJob = null;
+                    _baseWorldBootstrapDomainFingerprint = null;
                     _baseWorldBootstrapAttemptKey = null;
                 }
                 else
@@ -780,7 +782,6 @@ namespace PhysicalWater
                     return;
                 }
             }
-            if (string.Equals(_baseWorldBootstrapWorldKey, worldKey, StringComparison.Ordinal)) return;
             if (!TryResolveCodyInitialWaterSourceCatchment(
                     out ulong sourceCatchmentId, out string sourceError))
             {
@@ -807,14 +808,6 @@ namespace PhysicalWater
             long geometryRevision = Math.Max(0, world.m_worldGenVersion);
             string dependencyRevision = BuildBaseWorldDependencyRevision(
                 world, verticalMin, verticalMax, partitionSize, cellSize);
-            string attemptKey = worldKey + ":" + sourceCatchmentId + ":" + geometryRevision + ":" +
-                verticalMin.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" +
-                verticalMax.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" +
-                partitionSize.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" +
-                cellSize.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
-            if (string.Equals(_baseWorldBootstrapAttemptKey, attemptKey, StringComparison.Ordinal)) return;
-            _baseWorldBootstrapAttemptKey = attemptKey;
-            _baseWorldBootstrapFailureReported = false;
             if (!TryEnumerateBaseWorldPcePartitions(
                     verticalMin, verticalMax, new Vector2(partitionSize, partitionSize),
                     out Bounds sourceBounds, out Bounds[] partitionBounds, out string error))
@@ -827,6 +820,20 @@ namespace PhysicalWater
                 }
                 return;
             }
+            string domainFingerprint = BuildBaseWorldDomainFingerprint(
+                sourceBounds, partitionSize, cellSize);
+            if (string.Equals(_baseWorldBootstrapWorldKey, worldKey, StringComparison.Ordinal) &&
+                string.Equals(_baseWorldBootstrapDomainFingerprint, domainFingerprint, StringComparison.Ordinal))
+                return;
+            string attemptKey = worldKey + ":" + domainFingerprint + ":" + sourceCatchmentId + ":" +
+                geometryRevision + ":" +
+                verticalMin.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" +
+                verticalMax.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" +
+                partitionSize.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" +
+                cellSize.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+            if (string.Equals(_baseWorldBootstrapAttemptKey, attemptKey, StringComparison.Ordinal)) return;
+            _baseWorldBootstrapAttemptKey = attemptKey;
+            _baseWorldBootstrapFailureReported = false;
             _baseWorldPceBootstrapJob = new BaseWorldPceBootstrapJob
             {
                 WorldKey = worldKey,
@@ -988,6 +995,8 @@ namespace PhysicalWater
             }
             _baseWorldPceBootstrapJob = null;
             _baseWorldBootstrapWorldKey = job.WorldKey;
+            _baseWorldBootstrapDomainFingerprint = BuildBaseWorldDomainFingerprint(
+                job.SourceBounds, job.PartitionSize.x, job.CellSize);
             PhysicalWaterPlugin.Log.LogInfo(
                 "LiquidCore complete base-world PCE domain published: world=" + job.WorldKey +
                 ", partitions=" + closed.Length + ", geometryRevision=" + job.GeometryRevision + ".");
@@ -1002,6 +1011,21 @@ namespace PhysicalWater
                 ":" + verticalMax.ToString("R", System.Globalization.CultureInfo.InvariantCulture) +
                 ":partition=" + partitionSize.ToString("R", System.Globalization.CultureInfo.InvariantCulture) +
                 ":cell=" + cellSize.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        private static string BuildBaseWorldDomainFingerprint(
+            Bounds sourceBounds, float partitionSize, float cellSize)
+        {
+            System.Globalization.CultureInfo culture =
+                System.Globalization.CultureInfo.InvariantCulture;
+            return sourceBounds.min.x.ToString("R", culture) + ":" +
+                sourceBounds.min.y.ToString("R", culture) + ":" +
+                sourceBounds.min.z.ToString("R", culture) + ":" +
+                sourceBounds.max.x.ToString("R", culture) + ":" +
+                sourceBounds.max.y.ToString("R", culture) + ":" +
+                sourceBounds.max.z.ToString("R", culture) + ":partition=" +
+                partitionSize.ToString("R", culture) + ":cell=" +
+                cellSize.ToString("R", culture);
         }
 
         internal void Attach(PhysicalWaterValheimWorldGeometryAdapter adapter)
@@ -1584,6 +1608,7 @@ namespace PhysicalWater
             {
                 _baseWorldPceBootstrapJob = null;
                 _baseWorldBootstrapWorldKey = null;
+                _baseWorldBootstrapDomainFingerprint = null;
                 _baseWorldBootstrapAttemptKey = null;
                 _baseWorldBootstrapFailureReported = false;
             }
