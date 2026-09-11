@@ -58,7 +58,13 @@ namespace PhysicalWater
                 error = "Base terrain column capture bounds are not aligned to cell size.";
                 return false;
             }
-            heights = new float[resolutionX * resolutionZ];
+            long columnCount = (long)resolutionX * resolutionZ;
+            if (columnCount > int.MaxValue)
+            {
+                error = "Base terrain column capture contains too many columns.";
+                return false;
+            }
+            heights = new float[(int)columnCount];
             for (int z = 0; z < resolutionZ; z++)
             for (int x = 0; x < resolutionX; x++)
             {
