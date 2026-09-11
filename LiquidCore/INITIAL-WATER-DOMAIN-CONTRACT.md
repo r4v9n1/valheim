@@ -224,3 +224,11 @@ zero errors and ten existing warnings; its SHA-256 is
 `C7326860D21366682EC67A39B756FF6560DA0A5CEE3A0299A880410EA3363010`.
 This validates the contract guard only; it does not promote the active E3
 window into a real global source domain.
+
+The PCE integration boundary now accepts a validated, deep-copied
+`LiquidCoreInitialWorldWaterDomain` publication with stable identity and
+monotonic geometry revision. Workspace checkpoint `63825a3` contains the
+geometry-only clone/validation support. The production caller still has no
+complete domain to publish, so no source transaction or water ledger mutation
+is performed. The DLL built from this checkpoint has SHA-256
+`B06D30915066F7F962EF2AB51D0076BFCFE31E354B27378561592CDF339BC4CF`.

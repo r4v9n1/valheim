@@ -51,6 +51,7 @@ namespace PhysicalWater
             new Dictionary<string, VolumetricPreparedGeometryDescriptor>(StringComparer.Ordinal);
         private readonly Dictionary<ulong, VolumetricPceCapacityStorageDescriptor> _capacityStorageByCatchment =
             new Dictionary<ulong, VolumetricPceCapacityStorageDescriptor>();
+        private LiquidCoreInitialWorldWaterDomain _completeInitialWorldDomain;
         // The Valheim adapter publishes a root-level digest for the exact
         // ready snapshot. Retain that digest at the PCE boundary; individual
         // event revisions are source-level and cannot represent overlapping
@@ -91,6 +92,38 @@ namespace PhysicalWater
         internal CodyCatchmentCache CodyL1 => _codyL1;
         internal event Action<CodyCatchmentDescriptor> CodyCatchmentPublished;
         internal event Action<VolumetricPceCapacityStorageDescriptor> CapacityStoragePublished;
+        internal event Action<LiquidCoreInitialWorldWaterDomain> CompleteInitialWorldDomainPublished;
+
+        internal bool TryGetCompleteInitialWorldDomain(
+            out LiquidCoreInitialWorldWaterDomain domain)
+        {
+            domain = _completeInitialWorldDomain?.Clone();
+            return domain != null;
+        }
+
+        internal bool PublishCompleteInitialWorldDomain(
+            LiquidCoreInitialWorldWaterDomain domain, out string error)
+        {
+            error = string.Empty;
+            if (domain == null || !domain.ValidateComplete(out error)) return false;
+            if (_completeInitialWorldDomain != null)
+            {
+                if (!string.Equals(_completeInitialWorldDomain.DomainId, domain.DomainId,
+                        StringComparison.Ordinal))
+                {
+                    error = "PCE complete source publication changed the stable domain identity.";
+                    return false;
+                }
+                if (domain.GeometryRevision < _completeInitialWorldDomain.GeometryRevision)
+                {
+                    error = "PCE complete source publication is older than the retained geometry revision.";
+                    return false;
+                }
+            }
+            _completeInitialWorldDomain = domain.Clone();
+            CompleteInitialWorldDomainPublished?.Invoke(_completeInitialWorldDomain.Clone());
+            return true;
+        }
 
         internal bool TryGetCapacityStorage(ulong catchmentId,
             out VolumetricPceCapacityStorageDescriptor descriptor)
