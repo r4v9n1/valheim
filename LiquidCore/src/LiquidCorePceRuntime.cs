@@ -1536,6 +1536,7 @@ namespace PhysicalWater
                 TryGetCodyInitialWaterSourceSeed(out CodyCatchmentDescriptor sourceSeed, out _) &&
                 sourceSeed.CatchmentId == descriptor.CatchmentId)
             {
+                _baseWorldPceBootstrapJob = null;
                 _baseWorldBootstrapAttemptKey = null;
                 _baseWorldBootstrapFailureReported = false;
             }
