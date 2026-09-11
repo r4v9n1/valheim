@@ -155,7 +155,7 @@ namespace PhysicalWater
         {
             worldKey = null;
             World world = ZNet.GetWorldIfIsHost();
-            if (world == null || string.IsNullOrEmpty(world.m_fileName)) return null;
+            if (world == null || string.IsNullOrEmpty(world.m_name)) return null;
             worldKey = world.m_uid.ToString("X16");
             string directory = Path.Combine(Application.persistentDataPath, "LiquidCore", "Worlds");
             return Path.Combine(directory, worldKey + ".pwfs");
