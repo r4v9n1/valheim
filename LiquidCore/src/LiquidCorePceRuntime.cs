@@ -49,8 +49,11 @@ namespace PhysicalWater
         private readonly Dictionary<string, SourceRuntimeRecord> _sourceRuntimeRecords = new Dictionary<string, SourceRuntimeRecord>();
         private readonly Dictionary<string, VolumetricPreparedGeometryDescriptor> _preparedGeometryByAsset =
             new Dictionary<string, VolumetricPreparedGeometryDescriptor>(StringComparer.Ordinal);
-        private readonly Dictionary<ulong, VolumetricPceCapacityStorageDescriptor> _capacityStorageByCatchment =
-            new Dictionary<ulong, VolumetricPceCapacityStorageDescriptor>();
+        // A connected catchment can span multiple non-overlapping source
+        // partitions. SourcePartitionId is therefore the storage identity;
+        // CatchmentId remains geometry/topology metadata, not a partition key.
+        private readonly Dictionary<string, VolumetricPceCapacityStorageDescriptor> _capacityStorageByPartition =
+            new Dictionary<string, VolumetricPceCapacityStorageDescriptor>(StringComparer.Ordinal);
         private LiquidCoreInitialWorldWaterDomain _completeInitialWorldDomain;
         // The Valheim adapter publishes a root-level digest for the exact
         // ready snapshot. Retain that digest at the PCE boundary; individual
@@ -128,7 +131,25 @@ namespace PhysicalWater
         internal bool TryGetCapacityStorage(ulong catchmentId,
             out VolumetricPceCapacityStorageDescriptor descriptor)
         {
-            return _capacityStorageByCatchment.TryGetValue(catchmentId, out descriptor);
+            foreach (VolumetricPceCapacityStorageDescriptor candidate in _capacityStorageByPartition.Values)
+            {
+                if (candidate.CatchmentId != catchmentId) continue;
+                descriptor = candidate;
+                return true;
+            }
+            descriptor = null;
+            return false;
+        }
+
+        internal bool TryGetCapacityStorage(string sourcePartitionId,
+            out VolumetricPceCapacityStorageDescriptor descriptor)
+        {
+            if (string.IsNullOrWhiteSpace(sourcePartitionId))
+            {
+                descriptor = null;
+                return false;
+            }
+            return _capacityStorageByPartition.TryGetValue(sourcePartitionId, out descriptor);
         }
 
         internal bool TryBuildCompleteInitialWorldDomain(
@@ -137,7 +158,7 @@ namespace PhysicalWater
             out LiquidCoreInitialWorldWaterDomain domain, out string error)
         {
             var partitions = new List<VolumetricPceCapacityStorageDescriptor>(
-                _capacityStorageByCatchment.Values);
+                _capacityStorageByPartition.Values);
             return LiquidCoreInitialWorldWaterDomain.TryAssembleComplete(
                 domainId, sourceBounds, geometryRevision, dependencyRevisionHash,
                 partitions, out domain, out error);
@@ -148,13 +169,18 @@ namespace PhysicalWater
         {
             error = string.Empty;
             if (descriptor == null || !descriptor.Validate(out error)) return false;
-            if (_capacityStorageByCatchment.TryGetValue(descriptor.CatchmentId, out VolumetricPceCapacityStorageDescriptor previous) &&
+            if (string.IsNullOrWhiteSpace(descriptor.SourcePartitionId))
+            {
+                error = "PCE capacity publication requires a stable source-partition identity.";
+                return false;
+            }
+            if (_capacityStorageByPartition.TryGetValue(descriptor.SourcePartitionId, out VolumetricPceCapacityStorageDescriptor previous) &&
                 descriptor.GeometryRevision < previous.GeometryRevision)
             {
                 error = "PCE capacity publication is older than the retained geometry revision.";
                 return false;
             }
-            _capacityStorageByCatchment[descriptor.CatchmentId] = descriptor;
+            _capacityStorageByPartition[descriptor.SourcePartitionId] = descriptor;
             CapacityStoragePublished?.Invoke(descriptor);
             return true;
         }
