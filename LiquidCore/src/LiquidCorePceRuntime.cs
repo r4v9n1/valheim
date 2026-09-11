@@ -297,6 +297,17 @@ namespace PhysicalWater
                 provisional, out closed, out error);
         }
 
+        private static bool TryCloseBaseWorldPcePartitionsOwned(
+            Bounds sourceBounds, Vector2 partitionSize,
+            long geometryRevision, string dependencyRevisionHash,
+            IReadOnlyList<VolumetricPceCapacityStorageDescriptor> provisional,
+            out VolumetricPceCapacityStorageDescriptor[] closed, out string error)
+        {
+            return VolumetricPceGlobalConnectivityClosure.TryCloseOwned(
+                sourceBounds, partitionSize, geometryRevision, dependencyRevisionHash,
+                provisional, out closed, out error);
+        }
+
         internal bool TryPublishBaseWorldPceDomain(
             string domainId, float verticalMin, float verticalMax,
             Vector2 partitionSize, float cellSize, long geometryRevision,
@@ -861,7 +872,7 @@ namespace PhysicalWater
             CodyCatchmentDescriptor sourceSeed = null;
             ulong globalSourceCatchmentId = 0UL;
             LiquidCoreInitialWorldWaterDomain domain = null;
-            bool valid = TryCloseBaseWorldPcePartitions(
+            bool valid = TryCloseBaseWorldPcePartitionsOwned(
                 job.SourceBounds, job.PartitionSize, job.GeometryRevision,
                 job.DependencyRevisionHash, job.Provisional,
                 out closed, out closureError);
