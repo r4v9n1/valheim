@@ -172,6 +172,20 @@ namespace PhysicalWater
 
         private void Update()
         {
+            if (_streaming == null && Player.m_localPlayer != null &&
+                _macShader != null && _flipShader != null && _surfaceShader != null &&
+                LiquidCorePceRuntime.Instance != null &&
+                LiquidCorePceRuntime.Instance.TryGetCompleteInitialWorldDomain(
+                    out LiquidCoreInitialWorldWaterDomain publishedDomain) &&
+                publishedDomain.SourceCatchmentId != 0UL)
+            {
+                // The complete PCE domain and explicit CODY source selection
+                // are prerequisites. This creates only the player-centered
+                // active representation; it never selects or creates source
+                // water. The publication callback/replay performs the
+                // idempotent LiquidCore source transaction after initialization.
+                CreateDomainCommand(null);
+            }
             if (Input.GetKeyDown(KeyCode.F6)) CreateDomainCommand(null);
             if (Input.GetKeyDown(KeyCode.F7)) FillBoxCommand(null);
             if (Input.GetKeyDown(KeyCode.F8)) ClearCommand(null);
