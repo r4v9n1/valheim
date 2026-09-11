@@ -4,14 +4,14 @@
   "generatedUtc": "2026-09-04T11:50:09.9047871Z",
   "valheim": {
     "steamAppId": "892970",
-    "steamBuildId": "21981559",
+    "steamBuildId": "25253764",
     "assemblyName": "assembly_valheim.dll",
     "assemblySha256": "27a766a8d23a7bd8b6a54fb9ad0452a96c305fb3629b39c40527c09a1c393a84",
     "assemblyClassCount": 809
   },
   "modSet": {
     "fingerprintAlgorithm": "sha256(relative-path|length|sha256, ordinal path order, LiquidCore excluded)",
-    "fingerprint": "95daa4f9c5988f4eb0ccb9dd82c2399d03b5df0fdfcdec99582c2b2454f1a081",
+    "fingerprint": "7e51bae02167a73a7c0243de22f55da437cb327bfbd9b8a1c4b090f316e5160e",
     "pluginCount": 8
   },
   "cacheContract": {
