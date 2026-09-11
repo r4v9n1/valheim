@@ -127,6 +127,19 @@ namespace PhysicalWater
                 return false;
             }
             VolumetricWaterSettings settings = domain.Settings;
+            CodyDrainageExit[] drainageExits = catchment.DrainageExits ?? Array.Empty<CodyDrainageExit>();
+            var exits = new VolumetricPceStorageExit[drainageExits.Length];
+            for (int i = 0; i < drainageExits.Length; i++)
+            {
+                exits[i] = new VolumetricPceStorageExit
+                {
+                    DestinationRegionX = drainageExits[i].DestinationRegionX,
+                    DestinationRegionZ = drainageExits[i].DestinationRegionZ,
+                    SaddleHeight = drainageExits[i].SpillHeight,
+                    PathLength = drainageExits[i].PathLength,
+                    MinimumApertureEquivalent = drainageExits[i].MinimumApertureEquivalent
+                };
+            }
             var descriptor = new VolumetricPceCapacityStorageDescriptor
             {
                 CatchmentId = catchment.CatchmentId,
@@ -144,7 +157,8 @@ namespace PhysicalWater
                 ResolutionZ = settings.ResolutionZ,
                 CellCapacity = domain.CaptureCutCellCapacitySync(),
                 CellStorageCurves = domain.CaptureHydraulicStorageSparseSync(),
-                CellStorageKnotCounts = domain.CaptureHydraulicStorageSparseCountsSync()
+                CellStorageKnotCounts = domain.CaptureHydraulicStorageSparseCountsSync(),
+                Exits = exits
             };
             if (!PublishCapacityStorage(descriptor, out error)) return false;
             PhysicalWaterPlugin.Log.LogInfo(
