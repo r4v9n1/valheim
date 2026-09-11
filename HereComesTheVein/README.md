@@ -10,6 +10,7 @@ HereComesTheVein keeps vanilla copper veins unchanged and adds weighted IronOre 
 
 - Existing copper vein drop tables receive a weighted IronOre entry alongside CopperOre.
 - The configured weighting averages approximately **60% CopperOre and 40% IronOre**.
+- IronOre drops are locked until the Elder has been defeated in the world.
 - Vanilla copper vein models, names, mining behavior, quantities, and world-generation identity remain unchanged.
 - The server applies the loot change authoritatively; clients may also install the mod for matching setup and diagnostics.
 - Existing worlds are supported because the mod does not regenerate or rewrite world-generation data.

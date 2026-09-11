@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.6
+
+- IronOre drops from copper veins now begin only after the Elder has been defeated.
+
 ## 0.1.0
 
 - Replaced the package icon with a custom-made, non-AI-generated icon.

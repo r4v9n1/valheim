@@ -446,7 +446,7 @@ namespace HereComesTheVein
         [HarmonyPostfix]
         private static void Postfix(List<GameObject> __result)
         {
-            if (__result == null || __result.Count == 0)
+            if (__result == null || __result.Count == 0 || !ElderHasBeenDefeated())
             {
                 return;
             }
@@ -472,6 +472,35 @@ namespace HereComesTheVein
             {
                 HereComesTheVeinPlugin.ModLog?.LogDebug("Converted " + replacements + " CopperOre drop(s) to IronOre.");
             }
+        }
+
+        private static bool ElderHasBeenDefeated()
+        {
+            Type zoneSystemType = AccessTools.TypeByName("ZoneSystem");
+            object zoneSystem = AccessTools.Property(zoneSystemType, "instance")?.GetValue(null, null);
+            if (zoneSystem == null)
+            {
+                return false;
+            }
+
+            Type globalKeysType = AccessTools.TypeByName("GlobalKeys");
+            if (globalKeysType == null)
+            {
+                return false;
+            }
+
+            object elderKey;
+            try
+            {
+                elderKey = Enum.Parse(globalKeysType, "defeated_gd_king");
+            }
+            catch
+            {
+                return false;
+            }
+
+            MethodInfo getGlobalKey = AccessTools.Method(zoneSystemType, "GetGlobalKey", new[] { globalKeysType });
+            return getGlobalKey != null && (bool)getGlobalKey.Invoke(zoneSystem, new[] { elderKey });
         }
 
         private static GameObject ResolveIronOre()
