@@ -91,6 +91,8 @@ namespace PhysicalWater
         private long _pendingCodyGeometryRevision = -1;
         private string _baseWorldBootstrapWorldKey;
         private bool _baseWorldBootstrapReported;
+        private bool _configuredSourceMarkerApplied;
+        private bool _configuredSourceMarkerReported;
         internal static LiquidCorePceRuntime Instance { get; private set; }
 
         internal ProbeColonyWorld World => _world;
@@ -620,7 +622,56 @@ namespace PhysicalWater
             if (_queue.PendingCount > 0) _queue.Drain();
             if (_codyRebuilds != null) _codyRebuilds.PublishReady();
             DispatchPendingCodyCoverage();
+            TryApplyConfiguredSourceMarker();
             TryBootstrapCompleteBaseWorldDomain();
+        }
+
+        private void TryApplyConfiguredSourceMarker()
+        {
+            if (_configuredSourceMarkerApplied || _codyL2 == null ||
+                PhysicalWaterPlugin.Settings == null) return;
+            string configured = PhysicalWaterPlugin.Settings.InitialWorldPceSourceCatchmentId.Value;
+            if (string.IsNullOrWhiteSpace(configured))
+            {
+                _configuredSourceMarkerApplied = true;
+                return;
+            }
+            if (!TryParseCatchmentId(configured, out ulong catchmentId))
+            {
+                PhysicalWaterPlugin.Log.LogWarning(
+                    "LiquidCore ignored invalid InitialWorldPce.SourceCatchmentId; bootstrap remains fail-closed.");
+                _configuredSourceMarkerApplied = true;
+                return;
+            }
+            if (!_codyL2.TryPublishInitialWaterSourceSeed(catchmentId, out string error))
+            {
+                if (!_configuredSourceMarkerReported)
+                {
+                    PhysicalWaterPlugin.Log.LogWarning(
+                        "LiquidCore explicit CODY source marker was not applied: " + error + ".");
+                    _configuredSourceMarkerReported = true;
+                }
+                return;
+            }
+            _configuredSourceMarkerApplied = true;
+            _codyPersistenceWritable = true;
+            PhysicalWaterPlugin.Log.LogInfo(
+                "LiquidCore applied explicit CODY initial-water source marker: catchment=" + catchmentId + ".");
+        }
+
+        private static bool TryParseCatchmentId(string text, out ulong value)
+        {
+            value = 0UL;
+            string normalized = text.Trim();
+            if (!normalized.StartsWith("0x", StringComparison.OrdinalIgnoreCase) &&
+                ulong.TryParse(normalized, System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture, out value) && value != 0UL)
+                return true;
+            if (normalized.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                normalized = normalized.Substring(2);
+            return ulong.TryParse(normalized,
+                System.Globalization.NumberStyles.HexNumber,
+                System.Globalization.CultureInfo.InvariantCulture, out value) && value != 0UL;
         }
 
         private void TryBootstrapCompleteBaseWorldDomain()
