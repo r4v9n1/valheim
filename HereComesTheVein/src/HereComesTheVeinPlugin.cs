@@ -15,7 +15,7 @@ namespace HereComesTheVein
     {
         public const string PluginGuid = "com.r4v9n1.herecomesthevein";
         public const string PluginName = "HereComesTheVein";
-        public const string PluginVersion = "0.1.6";
+        public const string PluginVersion = "0.1.7";
 
         internal const int IronOreSharePercent = 40;
 
@@ -500,7 +500,78 @@ namespace HereComesTheVein
             }
 
             MethodInfo getGlobalKey = AccessTools.Method(zoneSystemType, "GetGlobalKey", new[] { globalKeysType });
-            return getGlobalKey != null && (bool)getGlobalKey.Invoke(zoneSystem, new[] { elderKey });
+            if (getGlobalKey != null && (bool)getGlobalKey.Invoke(zoneSystem, new[] { elderKey }))
+            {
+                return true;
+            }
+
+            return ElderTrophyIsActivatedOnAltar();
+        }
+
+        private static bool ElderTrophyIsActivatedOnAltar()
+        {
+            Type offeringBowlType = AccessTools.TypeByName("OfferingBowl");
+            Type itemStandType = AccessTools.TypeByName("ItemStand");
+            if (offeringBowlType == null || itemStandType == null)
+            {
+                return false;
+            }
+
+            MethodInfo findBowls = typeof(UnityEngine.Object).GetMethod(
+                "FindObjectsOfType", BindingFlags.Public | BindingFlags.Static, null,
+                new[] { typeof(Type) }, null);
+            MethodInfo findItemStands = AccessTools.Method(offeringBowlType, "FindItemStands");
+            MethodInfo getAttachedItem = AccessTools.Method(itemStandType, "GetAttachedItem");
+            if (findBowls == null || findItemStands == null || getAttachedItem == null)
+            {
+                return false;
+            }
+
+            Array bowls = findBowls.Invoke(null, new object[] { offeringBowlType }) as Array;
+            if (bowls == null)
+            {
+                return false;
+            }
+
+            foreach (object bowl in bowls)
+            {
+                FieldInfo useItemStands = AccessTools.Field(offeringBowlType, "m_useItemStands");
+                if (useItemStands == null || !(bool)useItemStands.GetValue(bowl))
+                {
+                    continue;
+                }
+
+                IEnumerable stands = findItemStands.Invoke(bowl, null) as IEnumerable;
+                if (stands == null)
+                {
+                    continue;
+                }
+
+                foreach (object stand in stands)
+                {
+                    int attachedHash = (int)getAttachedItem.Invoke(stand, null);
+                    if (attachedHash == 0)
+                    {
+                        continue;
+                    }
+
+                    GameObject itemPrefab = ResolveItemPrefab(attachedHash);
+                    if (itemPrefab != null && string.Equals(itemPrefab.name, "TrophyTheElder", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static GameObject ResolveItemPrefab(int hash)
+        {
+            Type objectDbType = AccessTools.TypeByName("ObjectDB");
+            object objectDb = AccessTools.Property(objectDbType, "instance")?.GetValue(null, null);
+            MethodInfo getItemPrefab = AccessTools.Method(objectDbType, "GetItemPrefab", new[] { typeof(int) });
+            return getItemPrefab?.Invoke(objectDb, new object[] { hash }) as GameObject;
         }
 
         private static GameObject ResolveIronOre()

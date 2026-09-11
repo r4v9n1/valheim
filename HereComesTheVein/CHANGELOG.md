@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.7
+
+- Added an activated Elder OfferingBowl trophy fallback for restored worlds missing the global Elder defeat key.
+
 ## 0.1.6
 
 - IronOre drops from copper veins now begin only after the Elder has been defeated.
