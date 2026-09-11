@@ -127,6 +127,17 @@ namespace PhysicalWater
                 return false;
             }
             VolumetricWaterSettings settings = domain.Settings;
+            int cellCount = settings.ResolutionX * settings.ResolutionY * settings.ResolutionZ;
+            float[] cellCapacity = domain.CaptureCutCellCapacitySync();
+            Vector2[] storageCurves = domain.CaptureHydraulicStorageSparseSync();
+            int[] storageKnotCounts = domain.CaptureHydraulicStorageSparseCountsSync();
+            float[] apertureU = domain.CaptureHydraulicApertureUSync();
+            float[] apertureW = domain.CaptureHydraulicApertureWSync();
+            BuildAppliedCellMembership(
+                cellCapacity, storageCurves, storageKnotCounts, apertureU, apertureW,
+                settings.ResolutionX, settings.ResolutionY, settings.ResolutionZ,
+                catchment.CatchmentId, domain.WorldOrigin, settings.CellSize,
+                out ulong[] cellCatchmentIds, out int[] cellComponentIds);
             CodyDrainageExit[] drainageExits = catchment.DrainageExits ?? Array.Empty<CodyDrainageExit>();
             var exits = new VolumetricPceStorageExit[drainageExits.Length];
             for (int i = 0; i < drainageExits.Length; i++)
@@ -155,9 +166,11 @@ namespace PhysicalWater
                 ResolutionX = settings.ResolutionX,
                 ResolutionY = settings.ResolutionY,
                 ResolutionZ = settings.ResolutionZ,
-                CellCapacity = domain.CaptureCutCellCapacitySync(),
-                CellStorageCurves = domain.CaptureHydraulicStorageSparseSync(),
-                CellStorageKnotCounts = domain.CaptureHydraulicStorageSparseCountsSync(),
+                CellCapacity = cellCapacity,
+                CellStorageCurves = storageCurves,
+                CellStorageKnotCounts = storageKnotCounts,
+                CellCatchmentIds = cellCatchmentIds,
+                CellComponentIds = cellComponentIds,
                 Exits = exits
             };
             if (!PublishCapacityStorage(descriptor, out error)) return false;
@@ -166,6 +179,89 @@ namespace PhysicalWater
                 ", geometryRevision=" + geometryRevision + ", dependency=" + catchment.DependencyRevisionHash +
                 ", cells=" + descriptor.CellCapacity.Length + ", sparseKnots=" + descriptor.CellStorageCurves.Length + ".");
             return true;
+        }
+
+        private static void BuildAppliedCellMembership(
+            float[] capacity, Vector2[] storageCurves, int[] storageKnotCounts,
+            float[] apertureU, float[] apertureW,
+            int nx, int ny, int nz, ulong catchmentId, Vector3 origin, float cellSize,
+            out ulong[] cellCatchmentIds, out int[] cellComponentIds)
+        {
+            int count = nx * ny * nz;
+            cellCatchmentIds = new ulong[count];
+            cellComponentIds = new int[count];
+            int[] components = cellComponentIds;
+            for (int i = 0; i < count; i++) components[i] = -1;
+            if (capacity.Length != count || apertureU.Length != (nx + 1) * ny * nz ||
+                apertureW.Length != nx * ny * (nz + 1)) return;
+            var queue = new Queue<int>();
+            for (int seed = 0; seed < count; seed++)
+            {
+                if (capacity[seed] <= 1e-6f || components[seed] >= 0) continue;
+                int component = seed;
+                components[seed] = component;
+                queue.Enqueue(seed);
+                while (queue.Count > 0)
+                {
+                    int current = queue.Dequeue();
+                    int x = current % nx;
+                    int y = (current / nx) % ny;
+                    int z = current / (nx * ny);
+                    TryVisit(x - 1, y, z, apertureU[(x) + (nx + 1) * (y + ny * z)]);
+                    TryVisit(x + 1, y, z, apertureU[(x + 1) + (nx + 1) * (y + ny * z)]);
+                    TryVisit(x, y - 1, z, HasVerticalConnection(current - nx, current, storageCurves, storageKnotCounts));
+                    TryVisit(x, y + 1, z, HasVerticalConnection(current, current + nx, storageCurves, storageKnotCounts));
+                    TryVisit(x, y, z - 1, apertureW[x + nx * (y + ny * z)]);
+                    TryVisit(x, y, z + 1, apertureW[x + nx * (y + ny * (z + 1))]);
+
+                    void TryVisit(int nx2, int ny2, int nz2, float face)
+                    {
+                        if (face <= 0f || nx2 < 0 || nx2 >= nx || ny2 < 0 || ny2 >= ny || nz2 < 0 || nz2 >= nz) return;
+                        int next = nx2 + nx * (ny2 + ny * nz2);
+                        if (capacity[next] <= 1e-6f || components[next] >= 0) return;
+                        components[next] = component;
+                        queue.Enqueue(next);
+                    }
+                }
+            }
+            int centerX = Mathf.Clamp(Mathf.FloorToInt((origin.x + nx * cellSize * 0.5f - origin.x) / cellSize), 0, nx - 1);
+            int centerY = Mathf.Clamp(Mathf.FloorToInt((origin.y + ny * cellSize * 0.5f - origin.y) / cellSize), 0, ny - 1);
+            int centerZ = Mathf.Clamp(Mathf.FloorToInt((origin.z + nz * cellSize * 0.5f - origin.z) / cellSize), 0, nz - 1);
+            int center = centerX + nx * (centerY + ny * centerZ);
+            int ownedComponent = center >= 0 && center < count ? components[center] : -1;
+            if (ownedComponent < 0) return;
+            for (int i = 0; i < count; i++)
+                if (components[i] == ownedComponent) cellCatchmentIds[i] = catchmentId;
+        }
+
+        private static float HasVerticalConnection(int lower, int upper, Vector2[] curves, int[] counts)
+        {
+            if (curves == null || counts == null || lower < 0 || upper < 0 ||
+                lower >= counts.Length || upper >= counts.Length) return 0f;
+            int stride = VolumetricCutCellProjection.AdaptiveHydraulicCurveKnotCount;
+            int lowerCount = Mathf.Clamp(counts[lower], 2, stride);
+            int upperCount = Mathf.Clamp(counts[upper], 2, stride);
+            float lowerTop = EvaluateStorageCurve(curves, lower * stride, lowerCount, 0.99f);
+            float lowerNearTop = EvaluateStorageCurve(curves, lower * stride, lowerCount, 0.90f);
+            float upperNearBottom = EvaluateStorageCurve(curves, upper * stride, upperCount, 0.10f);
+            float upperBottom = EvaluateStorageCurve(curves, upper * stride, upperCount, 0.01f);
+            return lowerTop - lowerNearTop > 1e-4f && upperNearBottom - upperBottom > 1e-4f ? 1f : 0f;
+        }
+
+        private static float EvaluateStorageCurve(Vector2[] curves, int offset, int count, float height)
+        {
+            if (height <= curves[offset].x) return curves[offset].y;
+            for (int i = 1; i < count; i++)
+            {
+                Vector2 b = curves[offset + i];
+                Vector2 a = curves[offset + i - 1];
+                if (height <= b.x)
+                {
+                    float span = b.x - a.x;
+                    return span <= 1e-7f ? b.y : Mathf.Lerp(a.y, b.y, (height - a.x) / span);
+                }
+            }
+            return curves[offset + count - 1].y;
         }
 
         private void Awake()
