@@ -80,3 +80,11 @@ The LiquidCore source calculator used by the build is additionally
 checkpointed in workspace commit `85e4a0e` (`LiquidCore: checkpoint initial
 source calculator`), also pushed. The source caller remains intentionally
 unwired until a complete global or partitioned domain is available.
+
+Workspace checkpoint `47410b8` adds the geometry-only
+`LiquidCoreInitialWorldWaterDomain` manifest. It rejects missing partitions,
+duplicate identities, revision mismatches, positive-volume overlap, and
+incomplete spatial coverage before delegating to LiquidCore's source-plan
+calculator. It performs no water or E3 operation. The canonical build passed
+with zero errors and produced DLL hash
+`49F9E69FFF6A800841994CD13F6E0970D9E9861DA392013E9D84B3927CEBA481`.
