@@ -152,6 +152,26 @@ namespace PhysicalWater
             return _capacityStorageByPartition.TryGetValue(sourcePartitionId, out descriptor);
         }
 
+        internal bool TryResolveCodySourceCatchment(
+            Vector3 sourceSeedPosition, out ulong catchmentId, out string error)
+        {
+            catchmentId = 0UL;
+            error = string.Empty;
+            if (!Finite(sourceSeedPosition) || _codyL1 == null ||
+                !_codyL1.TryLookup(sourceSeedPosition, out CodyCatchmentDescriptor descriptor))
+            {
+                error = "No validated CODY catchment covers the explicit initial-water source seed.";
+                return false;
+            }
+            if (descriptor.CatchmentId == 0UL)
+            {
+                error = "The CODY source seed resolved to an invalid catchment identity.";
+                return false;
+            }
+            catchmentId = descriptor.CatchmentId;
+            return true;
+        }
+
         internal bool TryBuildCompleteInitialWorldDomain(
             string domainId, Bounds sourceBounds, long geometryRevision,
             string dependencyRevisionHash,
@@ -243,6 +263,51 @@ namespace PhysicalWater
                     dependencyRevisionHash, provisional,
                     out VolumetricPceCapacityStorageDescriptor[] closed,
                     out error)) return false;
+            if (!VolumetricPceCompletePartitionAssembler.TryAssemble(
+                    domainId, sourceBounds, partitionSize, geometryRevision,
+                    dependencyRevisionHash, closed, out domain, out error))
+            {
+                domain = null;
+                return false;
+            }
+            for (int i = 0; i < closed.Length; i++)
+                if (!PublishCapacityStorage(closed[i], out error))
+                {
+                    domain = null;
+                    return false;
+                }
+            return PublishCompleteInitialWorldDomain(domain, out error);
+        }
+
+        internal bool TryPublishBaseWorldPceDomain(
+            string domainId, Vector3 sourceSeedPosition,
+            float verticalMin, float verticalMax, Vector2 partitionSize,
+            float cellSize, long geometryRevision, string dependencyRevisionHash,
+            out LiquidCoreInitialWorldWaterDomain domain, out string error)
+        {
+            domain = null;
+            if (!TryResolveCodySourceCatchment(sourceSeedPosition, out ulong sourceCatchmentId, out error))
+                return false;
+            if (!TryBuildBaseWorldPcePartitions(
+                    verticalMin, verticalMax, partitionSize, cellSize,
+                    geometryRevision, dependencyRevisionHash,
+                    out Bounds sourceBounds,
+                    out VolumetricPceCapacityStorageDescriptor[] provisional,
+                    out error)) return false;
+            if (!TryCloseBaseWorldPcePartitions(
+                    sourceBounds, partitionSize, geometryRevision,
+                    dependencyRevisionHash, provisional,
+                    out VolumetricPceCapacityStorageDescriptor[] closed,
+                    out error)) return false;
+            for (int i = 0; i < closed.Length; i++)
+            {
+                closed[i].CatchmentId = sourceCatchmentId;
+                if (!closed[i].Validate(out error))
+                {
+                    domain = null;
+                    return false;
+                }
+            }
             if (!VolumetricPceCompletePartitionAssembler.TryAssemble(
                     domainId, sourceBounds, partitionSize, geometryRevision,
                     dependencyRevisionHash, closed, out domain, out error))
@@ -1132,6 +1197,12 @@ namespace PhysicalWater
                 ", revision=" + change.Revision + ", L1/L2=" + l1Invalidated + "/" + l2Invalidated +
                 ", affected=" + string.Join(",", _codyInvalidated.ConvertAll(id => id.ToString()).ToArray()) + ".");
         }
+
+        private static bool Finite(Vector3 value) =>
+            Finite(value.x) && Finite(value.y) && Finite(value.z);
+
+        private static bool Finite(float value) =>
+            !float.IsNaN(value) && !float.IsInfinity(value);
 
         private void FlushCody()
         {
