@@ -40,6 +40,7 @@
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyGeometryBridge.cs" Link="Probes\ProbeColonyGeometryBridge.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyChangeQueue.cs" Link="Probes\ProbeColonyChangeQueue.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricPceSourcePartitionGrid.cs" Link="Probes\VolumetricPceSourcePartitionGrid.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricPceGlobalConnectivityClosure.cs" Link="Probes\VolumetricPceGlobalConnectivityClosure.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricPceCompletePartitionAssembler.cs" Link="Probes\VolumetricPceCompletePartitionAssembler.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyEventBridge.cs" Link="Probes\ProbeColonyEventBridge.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyCausalGeometrySignals.cs" Link="Probes\ProbeColonyCausalGeometrySignals.cs" />
