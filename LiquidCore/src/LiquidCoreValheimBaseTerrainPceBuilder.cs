@@ -107,7 +107,12 @@ namespace PhysicalWater
                 CellStorageCurves = Array.Empty<Vector2>(),
                 CellStorageKnotCounts = Array.Empty<int>(),
                 ColumnTerrainHeights = columnTerrainHeights,
-                CellCatchmentIds = new ulong[cellCount],
+                // Catchment membership is intentionally absent until the
+                // cross-partition closure assigns final global identities.
+                // Allocating a zeroed array here would duplicate the full
+                // membership buffer during bootstrap without adding geometry
+                // evidence or ownership.
+                CellCatchmentIds = Array.Empty<ulong>(),
                 CellComponentIds = components,
                 Columns = Array.Empty<VolumetricPceStorageColumn>(),
                 Exits = exits
