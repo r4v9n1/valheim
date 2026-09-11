@@ -297,8 +297,13 @@ namespace PhysicalWater
                     out VolumetricPceCapacityStorageDescriptor[] closed,
                     out error)) return false;
             if (!VolumetricPceCompletePartitionAssembler.TryAssemble(
-                    domainId, sourceBounds, partitionSize, geometryRevision,
-                    dependencyRevisionHash, closed, out domain, out error))
+                domainId, sourceBounds, partitionSize, geometryRevision,
+                dependencyRevisionHash, closed, out domain, out error))
+            {
+                domain = null;
+                return false;
+            }
+            if (!CanPublishCompleteBaseWorldPceDomain(domain, closed, out error))
             {
                 domain = null;
                 return false;
@@ -358,13 +363,18 @@ namespace PhysicalWater
                 !TryResolveClosedPceCatchment(sourceSeed, closed,
                     out ulong globalSourceCatchmentId, out error)) return false;
             if (!VolumetricPceCompletePartitionAssembler.TryAssemble(
-                    domainId, sourceBounds, partitionSize, geometryRevision,
-                    dependencyRevisionHash, closed, out domain, out error))
+                domainId, sourceBounds, partitionSize, geometryRevision,
+                dependencyRevisionHash, closed, out domain, out error))
             {
                 domain = null;
                 return false;
             }
             domain.SourceCatchmentId = globalSourceCatchmentId;
+            if (!CanPublishCompleteBaseWorldPceDomain(domain, closed, out error))
+            {
+                domain = null;
+                return false;
+            }
             for (int i = 0; i < closed.Length; i++)
                 if (!PublishCapacityStorage(closed[i], out error))
                 {
@@ -372,6 +382,50 @@ namespace PhysicalWater
                     return false;
                 }
             return PublishCompleteInitialWorldDomain(domain, out error);
+        }
+
+        private bool CanPublishCompleteBaseWorldPceDomain(
+            LiquidCoreInitialWorldWaterDomain domain,
+            IReadOnlyList<VolumetricPceCapacityStorageDescriptor> closed,
+            out string error)
+        {
+            error = string.Empty;
+            if (domain == null || closed == null || closed.Count == 0)
+            {
+                error = "Complete base-world PCE publication preflight received no assembled domain.";
+                return false;
+            }
+            if (_completeInitialWorldDomain != null)
+            {
+                if (!string.Equals(_completeInitialWorldDomain.DomainId, domain.DomainId,
+                        StringComparison.Ordinal))
+                {
+                    error = "PCE complete source publication changed the stable domain identity.";
+                    return false;
+                }
+                if (domain.GeometryRevision < _completeInitialWorldDomain.GeometryRevision)
+                {
+                    error = "PCE complete source publication is older than the retained geometry revision.";
+                    return false;
+                }
+            }
+            for (int i = 0; i < closed.Count; i++)
+            {
+                VolumetricPceCapacityStorageDescriptor candidate = closed[i];
+                if (candidate == null || string.IsNullOrWhiteSpace(candidate.SourcePartitionId))
+                {
+                    error = "PCE complete source publication contains an invalid partition identity.";
+                    return false;
+                }
+                if (_capacityStorageByPartition.TryGetValue(
+                        candidate.SourcePartitionId, out VolumetricPceCapacityStorageDescriptor previous) &&
+                    candidate.GeometryRevision < previous.GeometryRevision)
+                {
+                    error = "PCE complete source publication is older than a retained partition revision.";
+                    return false;
+                }
+            }
+            return true;
         }
 
         private static bool TryResolveClosedPceCatchment(
