@@ -34,6 +34,9 @@ $surfaceShaderText = Get-Content -LiteralPath $SurfaceShader -Raw
 if ($surfaceShaderText -notmatch 'CelBand' -or $surfaceShaderText -notmatch 'step\s*\(') {
     throw "PhysicalOceanSurface.shader is missing the required discrete cel-lighting path (CelBand/step); smooth-water shader rejected."
 }
+if ($surfaceShaderText -notmatch 'fwidth\s*\(' -or $surfaceShaderText -notmatch '_FresnelRamp') {
+    throw "PhysicalOceanSurface.shader is missing derivative-aware cel thresholds or artist Fresnel ramp support."
+}
 
 New-Item -ItemType Directory -Force -Path $LocalUnityProject, $LocalOutputDir | Out-Null
 
