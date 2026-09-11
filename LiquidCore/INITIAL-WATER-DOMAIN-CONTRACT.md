@@ -88,3 +88,9 @@ incomplete spatial coverage before delegating to LiquidCore's source-plan
 calculator. It performs no water or E3 operation. The canonical build passed
 with zero errors and produced DLL hash
 `49F9E69FFF6A800841994CD13F6E0970D9E9861DA392013E9D84B3927CEBA481`.
+
+Workspace validation checkpoint `d548e89` adds
+`RunLiquidCoreInitialWorldDomainValidation`. Its focused cases accept a fully
+covered partition set and reject a gap, positive-volume overlap, and revision
+mismatch. It is a structural contract regression only; it does not synthesize
+terrain or water and does not authorize the production source caller.
