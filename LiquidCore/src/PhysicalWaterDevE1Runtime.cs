@@ -125,12 +125,8 @@ namespace PhysicalWater
         private readonly PhysicalWaterOneHitTerrainTruth _oneHitTerrainTruth = new PhysicalWaterOneHitTerrainTruth();
         private VolumetricWaterSample _latestPlayerWaterSample;
         private bool _hasLatestPlayerWaterSample;
-        private float _latestPlayerWaterSampleTime;
+        private float _latestPlayerWaterSampleIssuedTime;
         private float _nextPlayerWaterQueryTime;
-        private float _nextPlayerPresentationPulseTime;
-        private float _lastFiniteWaterSurfaceHeight;
-        private Vector3 _previousPlayerForward;
-        private readonly LiquidCorePlayerWaterInteractionState _playerInteraction = new LiquidCorePlayerWaterInteractionState();
         private LiquidCoreMicroVolumeConsolidation _microVolumeConsolidation;
         private long _microVolumeGeometryRevision = long.MinValue;
         private long _completedSimulationSteps;
@@ -244,64 +240,25 @@ namespace PhysicalWater
             _nextPlayerWaterQueryTime = Time.unscaledTime + 0.05f;
             VolumetricFiniteDomainController requestedDomain = _domain;
             Vector3 position = player.transform.position;
+            float issuedTime = Time.unscaledTime;
             requestedDomain.RequestWaterSamplesAsync(new[] { position }, samples =>
             {
                 if (_domain != requestedDomain || samples == null || samples.Length != 1) return;
                 _latestPlayerWaterSample = samples[0];
                 _hasLatestPlayerWaterSample = true;
-                _latestPlayerWaterSampleTime = Time.unscaledTime;
-                UpdatePlayerPresentationInteraction(player, samples[0]);
+                _latestPlayerWaterSampleIssuedTime = issuedTime;
             });
-        }
-
-        private void UpdatePlayerPresentationInteraction(Player player, VolumetricWaterSample sample)
-        {
-            if (player == null || _domain == null) return;
-            Vector3 position = player.transform.position;
-            bool inFiniteWater = sample.HasWaterColumn &&
-                                 sample.SurfaceHeight > position.y - 1.75f &&
-                                 sample.SurfaceHeight < position.y + 3.5f;
-            Rigidbody body = player.GetComponent<Rigidbody>();
-            float speed = body != null
-                ? new Vector2(body.linearVelocity.x, body.linearVelocity.z).magnitude
-                : 0f;
-            Vector3 forward = player.transform.forward;
-            float turning = _previousPlayerForward.sqrMagnitude > 0.5f
-                ? Vector3.Angle(_previousPlayerForward, forward)
-                : 0f;
-            _previousPlayerForward = forward;
-
-            float depth = inFiniteWater ? Mathf.Max(0f, sample.SurfaceHeight - position.y) : 0f;
-            LiquidCorePlayerWaterInteraction interaction = _playerInteraction.Evaluate(inFiniteWater, depth, speed, turning);
-
-            bool boundaryPulse = interaction.Kind == LiquidCorePlayerWaterInteractionKind.Enter ||
-                                 interaction.Kind == LiquidCorePlayerWaterInteractionKind.Exit;
-            float pulseInterval = interaction.Kind == LiquidCorePlayerWaterInteractionKind.Swim
-                ? 0.45f
-                : interaction.Kind == LiquidCorePlayerWaterInteractionKind.Wade ? 0.60f : 0.35f;
-            bool emitPulse = interaction.Kind != LiquidCorePlayerWaterInteractionKind.None &&
-                             (boundaryPulse || Time.unscaledTime >= _nextPlayerPresentationPulseTime);
-            if (emitPulse)
-            {
-                float surface = sample.HasWaterColumn ? sample.SurfaceHeight : _lastFiniteWaterSurfaceHeight;
-                _domain.SetPresentationInteraction(
-                    new Vector3(position.x, surface, position.z),
-                    interaction.Strength,
-                    interaction.Radius,
-                    Time.time);
-                _nextPlayerPresentationPulseTime = Time.unscaledTime + pulseInterval;
-            }
-            if (inFiniteWater) _lastFiniteWaterSurfaceHeight = sample.SurfaceHeight;
         }
 
         internal bool TryGetLatestPlayerWaterSample(Vector3 position, out VolumetricWaterSample sample)
         {
             sample = _latestPlayerWaterSample;
-            if (!_hasLatestPlayerWaterSample || Time.unscaledTime - _latestPlayerWaterSampleTime > 0.35f ||
-                !sample.HasWaterColumn) return false;
-            Vector2 delta = new Vector2(position.x - sample.Position.x, position.z - sample.Position.z);
-            return delta.sqrMagnitude <= 4f && sample.SurfaceHeight > position.y - 1.75f &&
-                   sample.SurfaceHeight < position.y + 3.5f;
+            if (!_hasLatestPlayerWaterSample || _domain == null ||
+                Time.unscaledTime - _latestPlayerWaterSampleIssuedTime > 0.35f)
+                return false;
+            float maximumHorizontalDisplacement = _domain.MacDomain.Settings.CellSize * 2f;
+            return LiquidCorePlayerWaterAuthorityResolver.TryResolveFinite(
+                sample, position, maximumHorizontalDisplacement, out _);
         }
 
         private static bool TestChordDown(KeyCode key)
@@ -1555,9 +1512,53 @@ namespace PhysicalWater
             if (pce == _subscribedCodyRuntime) return;
             if (_subscribedCodyRuntime != null)
                 _subscribedCodyRuntime.CodyCatchmentPublished -= OnCodyCatchmentPublished;
+            if (_subscribedCodyRuntime != null)
+                _subscribedCodyRuntime.CompleteInitialWorldDomainPublished -= OnCompleteInitialWorldDomainPublished;
             _subscribedCodyRuntime = pce;
             if (_subscribedCodyRuntime != null)
+            {
                 _subscribedCodyRuntime.CodyCatchmentPublished += OnCodyCatchmentPublished;
+                _subscribedCodyRuntime.CompleteInitialWorldDomainPublished += OnCompleteInitialWorldDomainPublished;
+            }
+        }
+
+        private void OnCompleteInitialWorldDomainPublished(LiquidCoreInitialWorldWaterDomain domain)
+        {
+            if (_streaming == null || _domain == null || !_domain.Initialized || domain == null)
+            {
+                PhysicalWaterPlugin.Log.LogWarning(
+                    "LiquidCore complete initial-water domain arrived before the E3 representation was ready; source commit deferred.");
+                return;
+            }
+            try
+            {
+                // SeaLevel is used only as the named initial reference head.
+                // PCE owns geometry/capacity; LiquidCore computes volume and
+                // exact atoms; E3 receives only those supplied transactions.
+                var rule = new LiquidCoreInitialWorldWaterSourceRule
+                {
+                    ReferenceHead = PhysicalWaterPlugin.Settings.SeaLevel.Value
+                };
+                LiquidCoreInitialWorldWaterSourcePlan plan = domain.ComputeSourcePlan(
+                    rule, "valheim-ocean-initial-v1",
+                    _domain.FlipDomain.ParticleVolumeAtomicScale);
+                if (!_streaming.TryCommitInitialWorldWaterSourcePlan(plan, out string reason))
+                {
+                    PhysicalWaterPlugin.Log.LogWarning(
+                        "LiquidCore complete initial-water source commit deferred/fail-closed: " + reason + ".");
+                    return;
+                }
+                PhysicalWaterPlugin.Log.LogInfo(
+                    "LiquidCore complete initial-water source committed: domain=" + domain.DomainId +
+                    ", partitions=" + plan.Partitions.Length + ", volume=" +
+                    plan.TotalSourceVolume.ToString("R", CultureInfo.InvariantCulture) +
+                    ", atoms=" + plan.TotalSourceAtoms + ".");
+            }
+            catch (Exception ex)
+            {
+                PhysicalWaterPlugin.Log.LogWarning(
+                    "LiquidCore complete initial-water source calculation/commit failed closed: " + ex.Message + ".");
+            }
         }
 
         private void OnWaterBodyRegistryPublished(long revision, LiquidCoreWaterBodyRefreshReason reason)
@@ -1719,15 +1720,16 @@ namespace PhysicalWater
             if (_domain != null && _domain.WaterBodyPublisher != null)
                 _domain.WaterBodyPublisher.Published -= OnWaterBodyRegistryPublished;
             if (_subscribedCodyRuntime != null)
-                _subscribedCodyRuntime.CodyCatchmentPublished -= OnCodyCatchmentPublished;
+            _subscribedCodyRuntime.CodyCatchmentPublished -= OnCodyCatchmentPublished;
+            if (_subscribedCodyRuntime != null)
+                _subscribedCodyRuntime.CompleteInitialWorldDomainPublished -= OnCompleteInitialWorldDomainPublished;
             _subscribedCodyRuntime = null;
+            _domain?.Shutdown();
             _streaming = null;
             _domain = null;
             if (_domainObject != null) Destroy(_domainObject);
             _domainObject = null;
             _hasLatestPlayerWaterSample = false;
-            _nextPlayerPresentationPulseTime = 0f;
-            _playerInteraction.Reset();
             _observedGeometryGeneration = -1;
             _appliedGeometryStateRevision = int.MinValue;
             _appliedGeometryRevisions.Clear();
