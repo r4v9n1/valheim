@@ -29,6 +29,55 @@ namespace PhysicalWater
         private bool _visible;
         private Vector3 _lastSnappedCenter = new Vector3(float.PositiveInfinity, 0f, float.PositiveInfinity);
 
+        internal bool PresentationEnabled { get { return _visible && _material != null && _patches.Count > 0; } }
+
+        internal int PatchCount { get { return _patches.Count; } }
+
+        internal int EnabledPatchCount
+        {
+            get
+            {
+                int count = 0;
+                for (int i = 0; i < _patches.Count; i++)
+                {
+                    if (_patches[i].Renderer != null && _patches[i].Renderer.enabled) count++;
+                }
+                return count;
+            }
+        }
+
+        internal bool HasCoverageAt(Vector3 worldPosition)
+        {
+            if (!PresentationEnabled || _root == null) return false;
+            Vector3 local = worldPosition - _root.position;
+            float outer = OuterHalfSizes[OuterHalfSizes.Length - 1];
+            return Mathf.Abs(local.x) <= outer && Mathf.Abs(local.z) <= outer;
+        }
+
+        internal string GetBindingDiagnostics()
+        {
+            string result = "rootExists=" + (_root != null) +
+                            ", rootY=" + (_root != null ? _root.position.y.ToString("F2") : "nan") +
+                            ", intendedMaterial=" + (_material != null && _material.shader != null && _material.shader.name == "R4V9N1/Physical Ocean Surface");
+            for (int i = 0; i < _patches.Count; i++)
+            {
+                LodPatch patch = _patches[i];
+                MeshRenderer renderer = patch.Renderer;
+                Mesh mesh = patch.Mesh;
+                Material material = renderer != null ? renderer.sharedMaterial : null;
+                result += "; LOD" + i +
+                          " enabled=" + (renderer != null && renderer.enabled) +
+                          " mesh=" + (mesh != null) +
+                          " v=" + (mesh != null ? mesh.vertexCount : 0) +
+                          " t=" + (mesh != null ? mesh.triangles.Length / 3 : 0) +
+                          " layer=" + (patch.Object != null ? patch.Object.layer : -1) +
+                          " material=" + (material != null ? material.name : "null") +
+                          " shader=" + (material != null && material.shader != null ? material.shader.name : "null") +
+                          " boundsY=" + (renderer != null ? renderer.bounds.center.y.ToString("F2") : "nan");
+            }
+            return result;
+        }
+
         // Power-of-two boundaries guarantee that neighbouring rings share the same seams.
         // Near cells are dramatically denser than the old ~4.8 m follow-grid cells.
         private static readonly float[] OuterHalfSizes = { 96f, 192f, 384f, 768f, 1536f };

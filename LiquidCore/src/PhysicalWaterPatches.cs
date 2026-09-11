@@ -798,6 +798,11 @@ namespace PhysicalWater
     internal static class CharacterCustomFixedUpdatePatch
     {
         private static readonly Dictionary<int, float> NextFeedByCharacterId = new Dictionary<int, float>();
+        private static float NextLocalPlayerAuthorityTrace;
+        private static readonly FieldInfo LiquidLevelField = AccessTools.Field(typeof(Character), "m_liquidLevel");
+        private static readonly FieldInfo WaterLevelField = AccessTools.Field(typeof(Character), "m_waterLevel");
+        private static readonly FieldInfo GroundContactField = AccessTools.Field(typeof(Character), "m_groundContact");
+        private static readonly MethodInfo InLiquidSwimDepthMethod = AccessTools.Method(typeof(Character), "InLiquidSwimDepth", Type.EmptyTypes);
 
         private static void Prefix(Character __instance)
         {
@@ -819,11 +824,18 @@ namespace PhysicalWater
                     if (__instance != null && __instance.IsPlayer() && __instance == Player.m_localPlayer && finite != null)
                     {
                         Vector3 finitePosition = __instance.transform.position;
-                        float finiteSurface = Floating.GetLiquidLevel(finitePosition, 1f, LiquidType.Water);
-                        if (finite.TryGetLatestPlayerWaterSample(finitePosition,
-                            out R4V9N1.PhysicalOcean.Volumetric.VolumetricWaterSample sample))
-                            finiteSurface = Mathf.Max(finiteSurface, sample.SurfaceHeight);
-                        __instance.SetLiquidLevel(finiteSurface, LiquidType.Water, finite);
+                        bool hasFiniteAuthority = finite.TryGetLatestPlayerWaterSample(finitePosition,
+                            out R4V9N1.PhysicalOcean.Volumetric.VolumetricWaterSample sample);
+                        float finiteSurface = hasFiniteAuthority ? sample.SurfaceHeight : float.NegativeInfinity;
+                        // The host query is a fallback for positions without an
+                        // accepted LC column, never a second height evaluated
+                        // alongside LC and never a max-composition authority.
+                        float hostSurface = hasFiniteAuthority
+                            ? float.NegativeInfinity
+                            : Floating.GetLiquidLevel(finitePosition, 1f, LiquidType.Water);
+                        float authoritativeSurface = R4V9N1.PhysicalOcean.Volumetric.LiquidCorePlayerWaterAuthorityResolver.SelectSurface(
+                            hasFiniteAuthority, finiteSurface, hostSurface);
+                        __instance.SetLiquidLevel(authoritativeSurface, LiquidType.Water, finite);
                     }
                     // Finite mode coexists with vanilla oceans. Feed their maximum
                     // explicitly so leaving an LC body cannot leave a stale level
@@ -864,8 +876,9 @@ namespace PhysicalWater
                 }
 
                 Vector3 position = __instance.transform.position;
-                float surface = system.GetCharacterSurfaceHeight(position);
-                if (surface > position.y - 1.75f)
+                float surface;
+                bool presentedSurface = system.TryGetPresentedCharacterSurface(position, out surface);
+                if (presentedSurface && surface > position.y - 1.75f)
                 {
                     ApplySmallCreatureSwimAssist(__instance, surface);
                     __instance.SetLiquidLevel(surface, LiquidType.Water, system);
@@ -887,6 +900,29 @@ namespace PhysicalWater
                 else
                 {
                     __instance.SetLiquidLevel(-10000f, LiquidType.Water, system);
+                }
+
+                if (__instance.IsPlayer() && __instance == Player.m_localPlayer && Time.time >= NextLocalPlayerAuthorityTrace)
+                {
+                    NextLocalPlayerAuthorityTrace = Time.time + 1f;
+                    float publishedLiquid = LiquidLevelField != null ? (float)LiquidLevelField.GetValue(__instance) : float.NaN;
+                    float waterLevel = WaterLevelField != null ? (float)WaterLevelField.GetValue(__instance) : float.NaN;
+                    bool groundContact = GroundContactField != null && (bool)GroundContactField.GetValue(__instance);
+                    bool swimDepthState = InLiquidSwimDepthMethod != null && (bool)InLiquidSwimDepthMethod.Invoke(__instance, null);
+                    PhysicalWaterPlugin.Log.LogInfo("LiquidCore player authority trace: " +
+                        "pos=" + position.ToString("F2") +
+                        ", wetSurface=" + surface.ToString("F2") +
+                        ", presented=" + presentedSurface +
+                        ", grid=" + system.GetPlayerGridDiagnostic() +
+                        ", publishedLiquid=" + publishedLiquid.ToString("F2") +
+                        ", waterLevel=" + waterLevel.ToString("F2") +
+                        ", swimDepth=" + __instance.m_swimDepth.ToString("F2") +
+                        ", groundContact=" + groundContact +
+                        ", canSwim=" + __instance.m_canSwim +
+                        ", isSwimming=" + __instance.IsSwimming() +
+                        ", swimDepthState=" + swimDepthState +
+                        ", inLiquid=" + __instance.InLiquid() +
+                        ", inWater=" + __instance.InWater() + ".");
                 }
             }
             catch (Exception ex)

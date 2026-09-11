@@ -9,6 +9,7 @@ $ValheimRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $Proje
 $WorkspaceRoot = Join-Path $ValheimRoot "workspace\LiquidCore"
 $UnityProject = Join-Path $WorkspaceRoot "UnityPhysicalOceanValidation"
 $UnityPackage = Join-Path $WorkspaceRoot "UnityPhysicalOcean"
+$SurfaceShader = Join-Path $UnityPackage "Runtime\Shaders\PhysicalOceanSurface.shader"
 $LocalBuildRoot = Join-Path $env:LOCALAPPDATA "R4V9N1\LiquidCore\UnityAssetBuild"
 $LocalUnityProject = Join-Path $LocalBuildRoot "UnityPhysicalOceanValidation"
 $LocalUnityPackage = Join-Path $LocalBuildRoot "UnityPhysicalOcean"
@@ -20,6 +21,18 @@ foreach ($required in @($UnityExe, $UnityProject, $UnityPackage)) {
     if (!(Test-Path -LiteralPath $required)) {
         throw "Missing required AssetBundle build input: $required"
     }
+}
+
+if (!(Test-Path -LiteralPath $SurfaceShader -PathType Leaf)) {
+    throw "Missing authoritative PhysicalOcean surface shader: $SurfaceShader"
+}
+
+# The bundled asset is not sufficient evidence of the intended visual contract.
+# Reject a source shader that has silently regressed to continuous smooth water:
+# the production surface must expose an explicit discrete cel-lighting path.
+$surfaceShaderText = Get-Content -LiteralPath $SurfaceShader -Raw
+if ($surfaceShaderText -notmatch 'CelBand' -or $surfaceShaderText -notmatch 'step\s*\(') {
+    throw "PhysicalOceanSurface.shader is missing the required discrete cel-lighting path (CelBand/step); smooth-water shader rejected."
 }
 
 New-Item -ItemType Directory -Force -Path $LocalUnityProject, $LocalOutputDir | Out-Null
@@ -57,7 +70,11 @@ $buildStartedUtc = [DateTime]::UtcNow
 
 $startInfo = [Diagnostics.ProcessStartInfo]::new()
 $startInfo.FileName = $UnityExe
-$startInfo.Arguments = "-batchmode -quit -projectPath `"$LocalUnityProject`" -executeMethod BuildPhysicalWaterBundle.Build -logFile `"$LocalUnityLog`""
+# Unity documents -diag-debug-shader-compiler as the deterministic mode that
+# launches one shader compiler and extends its timeout.  The default parallel
+# compiler repeatedly returned exit 0 after IPC worker death and missing
+# compute variants, so release bundles must use the serial compiler path.
+$startInfo.Arguments = "-batchmode -quit -diag-debug-shader-compiler -job-worker-count 1 -projectPath `"$LocalUnityProject`" -executeMethod BuildPhysicalWaterBundle.Build -logFile `"$LocalUnityLog`""
 $startInfo.UseShellExecute = $false
 $startInfo.CreateNoWindow = $true
 $startInfo.EnvironmentVariables["PHYSICALWATER_DIST_DIR"] = $LocalOutputDir
@@ -68,6 +85,27 @@ $process.WaitForExit()
 
 if ($process.ExitCode -ne 0 -or !(Test-Path -LiteralPath $LocalBundlePath -PathType Leaf)) {
     throw "Unity AssetBundle build failed (exit $($process.ExitCode)). See $LocalUnityLog"
+}
+$shaderDiagnostics = @(Select-String -LiteralPath $LocalUnityLog -CaseSensitive:$false -Pattern @(
+    'Shader error',
+    'Shader warning',
+    'Shader Compiler IPC Exception',
+    'Internal error communicating with the shader compiler',
+    'compiler executable disappeared'
+) | Where-Object {
+    # Unity's D3D11 compiler reports the persistent-column kernels' UAV count
+    # against the D3D11.0 limit even though the supported target is D3D11.1.
+    # Keep this known capability diagnostic visible in the complete log, but
+    # do not reject an otherwise valid bundle for it. Unknown warnings remain
+    # fatal so shader regressions cannot be hidden by the exception.
+    $line = $_.Line
+    -not ($line -match "Shader warning in 'PhysicalVolumetricFlip': Shader uses (9|10) UAVs.*D3D11\.0.*D3D11\.1 platforms at kernel (NormalizePersistentColumnSplitTransaction|PublishPersistentColumnCandidateColumns)")
+})
+if ($shaderDiagnostics.Count -ne 0) {
+    $summary = ($shaderDiagnostics | Select-Object -First 8 | ForEach-Object {
+        "line $($_.LineNumber): $($_.Line.Trim())"
+    }) -join [Environment]::NewLine
+    throw "Unity returned a bundle with shader compiler diagnostics; candidate rejected.`n$summary`nComplete log: $LocalUnityLog"
 }
 $bundle = Get-Item -LiteralPath $LocalBundlePath
 if ($bundle.LastWriteTimeUtc -lt $buildStartedUtc.AddSeconds(-5)) {

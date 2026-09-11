@@ -151,6 +151,15 @@ namespace PhysicalWater
         private float _lastLocalPlayerWaterSurface = -10000f;
         private float _lastLocalPlayerWaterDepth;
         private bool _lastLocalPlayerWaterExists;
+        private float _lastPlayerHydroDepth;
+        private float _lastPlayerBedHeight;
+        private bool _lastPlayerWetCell;
+        private bool _lastPlayerCoarseDomainWet;
+        private bool _lastPlayerInsideHydroTile;
+        private bool _lastPlayerCandidateFluid;
+        private bool _lastPlayerSolidCell;
+        private Vector2 _lastPlayerGrid;
+        private Vector3 _lastPlayerGridOrigin;
         private string _runtimeMaterialLabel = "none";
         private bool _hasUsableMaterial;
         private bool _masksDirty = true;
@@ -437,6 +446,27 @@ namespace PhysicalWater
                 return baseSurface + Mathf.Clamp(wave, -0.42f, 0.42f);
             }
             return GetSurfaceHeight(worldPosition, 0.45f);
+        }
+
+        internal bool TryGetPresentedCharacterSurface(Vector3 worldPosition, out float surface)
+        {
+            surface = GetCharacterSurfaceHeight(worldPosition);
+            if (surface <= -9990f || _lodOcean == null || !_lodOcean.HasCoverageAt(worldPosition))
+            {
+                surface = -10000f;
+                return false;
+            }
+            return true;
+        }
+
+        internal string GetPlayerGridDiagnostic()
+        {
+            return "grid=" + _lastPlayerGrid.ToString("F2") +
+                   ",origin=" + _lastPlayerGridOrigin.ToString("F2") +
+                   ",candidate=" + _lastPlayerCandidateFluid +
+                   ",solid=" + _lastPlayerSolidCell +
+                   ",hydroDepth=" + _lastPlayerHydroDepth.ToString("F3") +
+                   ",wet=" + _lastPlayerWetCell;
         }
 
         internal float GetRenderSurfaceHeight(Vector3 worldPosition)
@@ -1037,6 +1067,7 @@ namespace PhysicalWater
             Material bundledMaterial = TryLoadBundledWaterMaterial();
             bool bundledMaterialSupported = bundledMaterial != null &&
                                             bundledMaterial.shader != null &&
+                                            bundledMaterial.shader.name == "R4V9N1/Physical Ocean Surface" &&
                                             bundledMaterial.shader.isSupported &&
                                             bundledMaterial.passCount > 0;
             if (bundledMaterialSupported)
@@ -1056,24 +1087,10 @@ namespace PhysicalWater
             else
             {
                 string shaderName = bundledMaterial != null && bundledMaterial.shader != null ? bundledMaterial.shader.name : "missing";
-                PhysicalWaterPlugin.Log.LogError("PhysicalWater 0.3.17 UnityPhysicalOcean material/shader missing or unsupported (shader=" + shaderName + "). Vanilla water will NOT be used as a fallback.");
-                Material emergency = CreateSimpleFallbackWaterMaterial();
-                if (emergency != null)
-                {
-                    emergency.name = "PhysicalWater_EmergencyOwnSurface";
-                    if (emergency.HasProperty("_Color")) emergency.SetColor("_Color", new Color(0.015f, 0.20f, 0.30f, 0.72f));
-                    _runtimeMaterial = emergency;
-                    _runtimeMaterialLabel = "emergency-own:" + (emergency.shader != null ? emergency.shader.name : "no-shader");
-                    _meshRenderer.sharedMaterial = emergency;
-                    _farMeshRenderer.sharedMaterial = emergency;
-                    _hasUsableMaterial = true;
-                    PhysicalWaterPlugin.Log.LogError("PhysicalWater is using its own emergency surface material so the ocean remains visible. Fix the UnityPhysicalOcean shader before release quality.");
-                }
-                else
-                {
-                    _hasUsableMaterial = false;
-                    _runtimeMaterialLabel = "ERROR:PhysicalOceanMaterial:" + shaderName;
-                }
+                _hasUsableMaterial = false;
+                _runtimeMaterial = null;
+                _runtimeMaterialLabel = "ERROR:PhysicalOceanMaterial:" + shaderName;
+                PhysicalWaterPlugin.Log.LogError("LiquidCore failed closed: required cel-shaded material/shader is missing, unsupported, or not R4V9N1/Physical Ocean Surface (shader=" + shaderName + ", no generic fallback accepted).");
             }
 
             ConfigureReplacementRenderers();
@@ -2556,11 +2573,29 @@ namespace PhysicalWater
             Array.Clear(_hydroFaceEast, 0, _hydroFaceEast.Length);
             Array.Clear(_hydroFaceNorth, 0, _hydroFaceNorth.Length);
 
-            // Initialization is the only instant flood-fill. It seeds the existing open ocean from
-            // genuine Ocean-biome boundary cells. Isolated sub-sea basins are left dry.
+            // Initialization is the only instant flood-fill. The coarse domain is an already
+            // classified connected-ocean capture; seed every open local cell it identifies, not
+            // only the local tile perimeter. A player-centred tile can be wholly inside the ocean,
+            // so perimeter-only seeding leaves its valid ocean floor dry forever. Solid/obstacle
+            // cells remain excluded and isolated sub-sea basins remain dry because the coarse
+            // connected-domain classification does not mark them.
             Array.Clear(_waterMask, 0, _waterMask.Length);
             int head = 0;
             int tail = 0;
+            for (int y = 0; y < _resolution; y++)
+            {
+                for (int x = 0; x < _resolution; x++)
+                {
+                    int index = Index(x, y);
+                    if (!_candidateWaterMask[index] || _solidHydroMask[index]) continue;
+                    Vector3 world = new Vector3(_origin.x + x * _cellSize, seaLevel, _origin.z + y * _cellSize);
+                    if (IsCoarseOceanDomainWet(world))
+                    {
+                        _waterMask[index] = true;
+                        if (tail < _floodQueue.Length) _floodQueue[tail++] = index;
+                    }
+                }
+            }
             for (int x = 0; x < _resolution; x++)
             {
                 SeedHydroBoundary(Index(x, 0), ref tail);
@@ -4347,6 +4382,19 @@ namespace PhysicalWater
                                             ", shoreFoamEmitted=" + _shoreFoamEmissionCount +
                                             ", interactionParticles=" + _interactionEmissionCount +
                                             ", floatingProbeFallbacks=" + _floatingProbeFallbackCount +
+                                            ", lodPresentation=" + (_lodOcean != null && _lodOcean.PresentationEnabled) +
+                                            ", lodPatches=" + (_lodOcean != null ? _lodOcean.PatchCount : 0) +
+                                            ", lodEnabledPatches=" + (_lodOcean != null ? _lodOcean.EnabledPatchCount : 0) +
+                                            ", lodBindings=" + (_lodOcean != null ? _lodOcean.GetBindingDiagnostics() : "null") +
+                                            ", playerHydroDepth=" + _lastPlayerHydroDepth.ToString("F3") +
+                                            ", playerBed=" + _lastPlayerBedHeight.ToString("F2") +
+                                            ", playerWetCell=" + _lastPlayerWetCell +
+                                            ", playerCoarseDomainWet=" + _lastPlayerCoarseDomainWet +
+                                            ", playerInsideHydroTile=" + _lastPlayerInsideHydroTile +
+                                            ", playerCandidateFluid=" + _lastPlayerCandidateFluid +
+                                            ", playerSolidCell=" + _lastPlayerSolidCell +
+                                            ", playerGrid=" + _lastPlayerGrid.ToString("F2") +
+                                            ", gridOrigin=" + _lastPlayerGridOrigin.ToString("F2") +
                                             ", localPlayerWaterExists=" + _lastLocalPlayerWaterExists +
                                             ", localPlayerSurfaceY=" + _lastLocalPlayerWaterSurface.ToString("F2") +
                                             ", localPlayerDepth=" + _lastLocalPlayerWaterDepth.ToString("F2") +
@@ -4362,6 +4410,15 @@ namespace PhysicalWater
             Player player = Player.m_localPlayer;
             if (player == null)
             {
+                _lastPlayerHydroDepth = 0f;
+                _lastPlayerBedHeight = 0f;
+                _lastPlayerWetCell = false;
+                _lastPlayerCoarseDomainWet = false;
+                _lastPlayerInsideHydroTile = false;
+                _lastPlayerCandidateFluid = false;
+                _lastPlayerSolidCell = false;
+                _lastPlayerGrid = Vector2.zero;
+                _lastPlayerGridOrigin = Vector3.zero;
                 _lastLocalPlayerWaterExists = false;
                 _lastLocalPlayerWaterSurface = -10000f;
                 _lastLocalPlayerWaterDepth = 0f;
@@ -4369,6 +4426,27 @@ namespace PhysicalWater
             }
 
             Vector3 position = player.transform.position;
+            Vector2 grid = WorldToGrid(position);
+            _lastPlayerGrid = grid;
+            _lastPlayerGridOrigin = _origin;
+            _lastPlayerInsideHydroTile = grid.x >= 0f && grid.y >= 0f && grid.x <= _resolution - 1 && grid.y <= _resolution - 1;
+            _lastPlayerCoarseDomainWet = IsCoarseOceanDomainWet(position);
+            _lastPlayerHydroDepth = 0f;
+            _lastPlayerBedHeight = 0f;
+            _lastPlayerWetCell = false;
+            _lastPlayerCandidateFluid = false;
+            _lastPlayerSolidCell = false;
+            if (_lastPlayerInsideHydroTile && _hydroDepth != null && _waterMask != null)
+            {
+                int px = Mathf.Clamp(Mathf.RoundToInt(grid.x), 0, _resolution - 1);
+                int py = Mathf.Clamp(Mathf.RoundToInt(grid.y), 0, _resolution - 1);
+                int pi = Index(px, py);
+                _lastPlayerHydroDepth = _hydroDepth[pi];
+                _lastPlayerBedHeight = _effectiveBedHeights[pi];
+                _lastPlayerCandidateFluid = _candidateWaterMask[pi];
+                _lastPlayerSolidCell = _solidHydroMask[pi];
+                _lastPlayerWetCell = !_solidHydroMask[pi] && _waterMask[pi] && _hydroDepth[pi] > HydroMinWetDepth;
+            }
             float surface = GetSurfaceHeight(position, 1f);
             _lastLocalPlayerWaterSurface = surface;
             _lastLocalPlayerWaterExists = surface > -9990f;
