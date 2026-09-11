@@ -75,3 +75,8 @@ The authoritative workspace source revision for the guard is Git commit
 `build/Valheim/workspace/LiquidCore`; it is pushed to that workspace's
 `origin/main`. The repository integration/documentation revision is
 `eaab861` in `build/Valheim/repos/valheim`.
+
+The LiquidCore source calculator used by the build is additionally
+checkpointed in workspace commit `85e4a0e` (`LiquidCore: checkpoint initial
+source calculator`), also pushed. The source caller remains intentionally
+unwired until a complete global or partitioned domain is available.
