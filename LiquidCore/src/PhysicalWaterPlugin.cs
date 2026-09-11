@@ -468,7 +468,7 @@ namespace PhysicalWater
                     new AcceptableValueRange<int>(1, 4)));
             InitialWorldPceVerticalMin = config.Bind("InitialWorldPce", "VerticalMin", -100f,
                 "Explicit finite base-world PCE domain lower bound. This is geometry-domain metadata, not a water source.");
-            InitialWorldPceVerticalMax = config.Bind("InitialWorldPce", "VerticalMax", 200f,
+            InitialWorldPceVerticalMax = config.Bind("InitialWorldPce", "VerticalMax", 204f,
                 "Explicit finite base-world PCE domain upper bound. It must remain above the declared initial reference head.");
             InitialWorldPcePartitionSize = config.Bind("InitialWorldPce", "PartitionSize", 256f,
                 "Deterministic horizontal partition size for the complete base-world PCE provider.");
