@@ -13,6 +13,8 @@ namespace PhysicalWater
     {
         private static readonly FieldInfo WorldSizeField = typeof(WorldGenerator).GetField(
             "m_worldSize", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        private static readonly FieldInfo WorldSizeStaticField = typeof(WorldGenerator).GetField(
+            "worldSize", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
 
         internal static bool TryGetBounds(
             float verticalMin, float verticalMax, out Bounds bounds, out string error)
@@ -29,12 +31,14 @@ namespace PhysicalWater
                 error = "Base-world PCE vertical bounds are invalid.";
                 return false;
             }
-            if (WorldSizeField == null)
+            if (WorldSizeField == null && WorldSizeStaticField == null)
             {
-                error = "Current Valheim WorldGenerator has no m_worldSize field.";
+                error = "Current Valheim WorldGenerator has no supported world-size field.";
                 return false;
             }
-            object rawWorldSize = WorldSizeField.GetValue(WorldGenerator.instance);
+            object rawWorldSize = WorldSizeField != null
+                ? WorldSizeField.GetValue(WorldGenerator.instance)
+                : WorldSizeStaticField.GetValue(null);
             float worldSize;
             try { worldSize = Convert.ToSingle(rawWorldSize); }
             catch (Exception) { worldSize = float.NaN; }
