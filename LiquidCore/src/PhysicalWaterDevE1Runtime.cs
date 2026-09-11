@@ -1542,6 +1542,12 @@ namespace PhysicalWater
                     "LiquidCore complete initial-water domain arrived before the E3 representation was ready; source commit deferred.");
                 return;
             }
+            if (domain.SourceCatchmentId == 0UL)
+            {
+                PhysicalWaterPlugin.Log.LogInfo(
+                    "LiquidCore complete initial-water geometry is published but has no explicit CODY source catchment; source commit remains deferred.");
+                return;
+            }
             VolumetricFluidStateSnapshot persisted = _streaming.CapturePersistedState();
             const string initialSourceId = "valheim-ocean-initial-v1";
             if (persisted.InitialWorldSourceReceipts != null)

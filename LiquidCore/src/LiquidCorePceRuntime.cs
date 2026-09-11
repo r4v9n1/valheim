@@ -108,7 +108,6 @@ namespace PhysicalWater
         private string _baseWorldBootstrapDomainFingerprint;
         private string _baseWorldBootstrapAttemptKey;
         private BaseWorldPceBootstrapJob _baseWorldPceBootstrapJob;
-        private bool _baseWorldBootstrapReported;
         private bool _baseWorldBootstrapFailureReported;
         private bool _configuredSourceMarkerApplied;
         private bool _configuredSourceMarkerReported;
@@ -733,6 +732,7 @@ namespace PhysicalWater
             if (_codyRebuilds != null) _codyRebuilds.PublishReady();
             DispatchPendingCodyCoverage();
             TryApplyConfiguredSourceMarker();
+            TryAttachSourceCatchmentToPublishedDomain();
             TryBootstrapCompleteBaseWorldDomain();
         }
 
@@ -784,6 +784,22 @@ namespace PhysicalWater
                 System.Globalization.CultureInfo.InvariantCulture, out value) && value != 0UL;
         }
 
+        private void TryAttachSourceCatchmentToPublishedDomain()
+        {
+            LiquidCoreInitialWorldWaterDomain domain = _completeInitialWorldDomain;
+            if (domain == null || domain.SourceCatchmentId != 0UL) return;
+            if (!TryGetCodyInitialWaterSourceSeed(
+                    out CodyCatchmentDescriptor sourceSeed, out string sourceError)) return;
+            if (!TryResolveClosedPceCatchment(
+                    sourceSeed, domain.Partitions, out ulong globalSourceCatchmentId,
+                    out sourceError)) return;
+            domain.SourceCatchmentId = globalSourceCatchmentId;
+            CompleteInitialWorldDomainPublished?.Invoke(domain.Clone());
+            PhysicalWaterPlugin.Log.LogInfo(
+                "LiquidCore attached the explicit CODY initial-water source catchment to the published PCE domain: catchment=" +
+                globalSourceCatchmentId + ".");
+        }
+
         private void TryBootstrapCompleteBaseWorldDomain()
         {
             if (PhysicalWaterPlugin.Settings == null ||
@@ -805,17 +821,6 @@ namespace PhysicalWater
                     AdvanceBaseWorldPceBootstrapJob();
                     return;
                 }
-            }
-            if (!TryResolveCodyInitialWaterSourceCatchment(
-                    out ulong sourceCatchmentId, out string sourceError))
-            {
-                if (!_baseWorldBootstrapReported)
-                {
-                    PhysicalWaterPlugin.Log.LogInfo(
-                        "LiquidCore complete base-world PCE bootstrap deferred: " + sourceError + ".");
-                    _baseWorldBootstrapReported = true;
-                }
-                return;
             }
             float verticalMin = PhysicalWaterPlugin.Settings.InitialWorldPceVerticalMin.Value;
             float verticalMax = PhysicalWaterPlugin.Settings.InitialWorldPceVerticalMax.Value;
@@ -849,7 +854,7 @@ namespace PhysicalWater
             if (string.Equals(_baseWorldBootstrapWorldKey, worldKey, StringComparison.Ordinal) &&
                 string.Equals(_baseWorldBootstrapDomainFingerprint, domainFingerprint, StringComparison.Ordinal))
                 return;
-            string attemptKey = worldKey + ":" + domainFingerprint + ":" + sourceCatchmentId + ":" +
+            string attemptKey = worldKey + ":" + domainFingerprint + ":" +
                 geometryRevision + ":" +
                 verticalMin.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" +
                 verticalMax.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" +
@@ -862,7 +867,7 @@ namespace PhysicalWater
             {
                 WorldKey = worldKey,
                 DomainId = "valheim-world-ocean-" + worldKey,
-                SourceCatchmentId = sourceCatchmentId,
+                SourceCatchmentId = 0UL,
                 SourceBounds = sourceBounds,
                 PartitionBounds = partitionBounds,
                 PartitionSize = new Vector2(partitionSize, partitionSize),
@@ -978,23 +983,6 @@ namespace PhysicalWater
             string failure = valid ? string.Empty : closureError;
             if (valid)
             {
-                valid = TryResolveCodyInitialWaterSourceCatchment(
-                    out ulong sourceCatchmentId, out sourceError) &&
-                    sourceCatchmentId == job.SourceCatchmentId;
-                if (!valid && string.IsNullOrEmpty(sourceError))
-                    sourceError = "CODY source catchment changed during base-world PCE bootstrap.";
-            }
-            if (valid)
-            {
-                valid = TryGetCodyInitialWaterSourceSeed(out sourceSeed, out sourceError);
-            }
-            if (valid)
-            {
-                valid = TryResolveClosedPceCatchment(
-                    sourceSeed, closed, out globalSourceCatchmentId, out sourceError);
-            }
-            if (valid)
-            {
                 valid = VolumetricPceCompletePartitionAssembler.TryAssembleOwned(
                     job.DomainId, job.SourceBounds, job.PartitionSize,
                     job.GeometryRevision, job.DependencyRevisionHash, closed,
@@ -1013,7 +1001,17 @@ namespace PhysicalWater
                 }
                 return;
             }
-            domain.SourceCatchmentId = globalSourceCatchmentId;
+            // Geometry publication is independent of LiquidCore's one-time
+            // source selection. If an explicit CODY source marker already
+            // exists, attach its globally closed component now; otherwise the
+            // published domain remains source-unselected and the attachment is
+            // retried when the marker arrives.
+            if (TryGetCodyInitialWaterSourceSeed(out sourceSeed, out sourceError) &&
+                TryResolveClosedPceCatchment(sourceSeed, closed,
+                    out globalSourceCatchmentId, out sourceError))
+                domain.SourceCatchmentId = globalSourceCatchmentId;
+            else
+                domain.SourceCatchmentId = 0UL;
             if (!CanPublishCompleteBaseWorldPceDomain(domain, closed, out string preflightError))
             {
                 _baseWorldPceBootstrapJob = null;
