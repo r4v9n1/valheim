@@ -90,7 +90,9 @@ namespace PhysicalWater
         private Bounds _pendingCodyCoverageBounds;
         private long _pendingCodyGeometryRevision = -1;
         private string _baseWorldBootstrapWorldKey;
+        private string _baseWorldBootstrapAttemptKey;
         private bool _baseWorldBootstrapReported;
+        private bool _baseWorldBootstrapFailureReported;
         private bool _configuredSourceMarkerApplied;
         private bool _configuredSourceMarkerReported;
         internal static LiquidCorePceRuntime Instance { get; private set; }
@@ -762,14 +764,26 @@ namespace PhysicalWater
             }
             long geometryRevision = Math.Max(0, world.m_worldGenVersion);
             string dependencyRevision = "valheim-worldgen:" + world.m_seed + ":" + world.m_worldGenVersion;
+            string attemptKey = worldKey + ":" + sourceCatchmentId + ":" + geometryRevision + ":" +
+                verticalMin.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" +
+                verticalMax.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" +
+                partitionSize.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" +
+                cellSize.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+            if (string.Equals(_baseWorldBootstrapAttemptKey, attemptKey, StringComparison.Ordinal)) return;
+            _baseWorldBootstrapAttemptKey = attemptKey;
+            _baseWorldBootstrapFailureReported = false;
             if (!TryPublishBaseWorldPceDomainForCatchment(
                     "valheim-world-ocean-" + worldKey, sourceCatchmentId,
                     verticalMin, verticalMax, new Vector2(partitionSize, partitionSize),
                     cellSize, geometryRevision, dependencyRevision,
                     out LiquidCoreInitialWorldWaterDomain domain, out string error))
             {
-                PhysicalWaterPlugin.Log.LogWarning(
-                    "LiquidCore complete base-world PCE bootstrap deferred/fail-closed: " + error + ".");
+                if (!_baseWorldBootstrapFailureReported)
+                {
+                    PhysicalWaterPlugin.Log.LogWarning(
+                        "LiquidCore complete base-world PCE bootstrap deferred/fail-closed: " + error + ".");
+                    _baseWorldBootstrapFailureReported = true;
+                }
                 return;
             }
             _baseWorldBootstrapWorldKey = worldKey;
@@ -1352,6 +1366,13 @@ namespace PhysicalWater
             if (_codyL1 != null && _hasCodyWarmBounds && descriptor.DependencyBounds.Intersects(_codyWarmBounds))
                 _codyL1.Publish(descriptor);
             if (!_codyL2ArtifactRejected) _codyPersistenceWritable = true;
+            if (descriptor != null &&
+                TryGetCodyInitialWaterSourceSeed(out CodyCatchmentDescriptor sourceSeed, out _) &&
+                sourceSeed.CatchmentId == descriptor.CatchmentId)
+            {
+                _baseWorldBootstrapAttemptKey = null;
+                _baseWorldBootstrapFailureReported = false;
+            }
             CodyCatchmentPublished?.Invoke(descriptor);
             CodyCatchmentRebuildCoordinatorDiagnostics diagnostics = _codyRebuilds.Diagnostics;
             PhysicalWaterPlugin.Log.LogInfo(
