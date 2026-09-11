@@ -250,3 +250,9 @@ transfer so a committed out-of-window partition is stored without creating a
 local-grid source. Re-activating it must add zero source atoms. No existing
 solver, renderer, query, or legacy `_hydroDepth` authority was changed by
 this audit.
+
+Source transactions now carry the explicit PCE `SourcePartitionId`, and the
+complete-domain regression verifies both partition identities in the exact
+`8 m3` / `64000`-atom plan. Workspace checkpoint `ec52aad` contains this
+change. The rebuilt DLL SHA-256 is
+`7806B0F83F01C6FF75C6AB904EC1B5C6362AD84BEBD2767672ADE94FAC5FE81C`.
