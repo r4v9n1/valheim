@@ -1185,6 +1185,7 @@ namespace PhysicalWater
                         out VolumetricFiniteSolidUpdateDiagnostics preparedUpdate,
                         synchronizeDiagnostics: wasInitialPreparation)) return;
                 long appliedGeneration = _preparedGeometryGeneration;
+                long appliedGeometryRevision = _preparedGeometryStateRevision;
                 applyWatch.Stop();
                 _appliedGeometryStateRevision = _preparedGeometryStateRevision;
                 _appliedGeometryRevisions.Clear();
@@ -1199,6 +1200,7 @@ namespace PhysicalWater
                 pce.DiscardCausalGeometrySignalsThrough(appliedGeneration);
                 adapter.ReleaseCausalGeometryCoverage();
                 _nextCausalGeometryApplyTime = 0f;
+                PublishAppliedCapacityStorage(pce, appliedGeometryRevision);
                 pce.QueueCodyCatchmentCoverage(_domain, _geometryCoverageBounds);
                 string readyMarker = wasInitialPreparation ? "PW_E3_F6_READY" : "PW_E3_GEOMETRY_READY";
                 PhysicalWaterPlugin.Log.LogInfo(
@@ -1289,6 +1291,7 @@ namespace PhysicalWater
                 _preparedGeometryRevisions.Clear();
                 adapter.ReleaseCausalGeometryCoverage();
                 _nextCausalGeometryApplyTime = 0f;
+                PublishAppliedCapacityStorage(pce, stateRevision);
                 pce.QueueCodyCatchmentCoverage(_domain, _geometryCoverageBounds);
                 PhysicalWaterPlugin.Log.LogInfo(
                     "PW_E3_GEOMETRY_READY geometryReady=True, fillReady=True, simulationPaused=False; precise causal solid synchronization apply=" +
@@ -1310,6 +1313,19 @@ namespace PhysicalWater
                 " geometry preparation generation=" + generation + ", roots=" + _geometryRoots.Count +
                 ", exactPreparedRoots=" + _changedPreparedGeometry.Count +
                 (_preparedGeometryIsInitial ? ". Fill remains gated until atomic application." : ". Simulation continues against the preceding causal solid generation."));
+        }
+
+        private void PublishAppliedCapacityStorage(LiquidCorePceRuntime pce, long geometryRevision)
+        {
+            if (pce == null || _domain == null || pce.CodyL1 == null) return;
+            if (!pce.CodyL1.TryLookup(_domain.WorldBounds.center, out CodyCatchmentDescriptor catchment))
+            {
+                PhysicalWaterPlugin.Log.LogWarning(
+                    "LiquidCore PCE could not publish applied storage because no CODY catchment covers the active domain center.");
+                return;
+            }
+            if (!pce.PublishAppliedDomainCapacityStorage(_domain.MacDomain, catchment, geometryRevision, out string error))
+                PhysicalWaterPlugin.Log.LogWarning("LiquidCore PCE applied storage publication deferred: " + error + ".");
         }
 
         private void RequestGeometrySafety(long generation)

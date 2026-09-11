@@ -114,6 +114,46 @@ namespace PhysicalWater
             return true;
         }
 
+        internal bool PublishAppliedDomainCapacityStorage(
+            VolumetricWaterDomain domain,
+            CodyCatchmentDescriptor catchment,
+            long geometryRevision,
+            out string error)
+        {
+            error = string.Empty;
+            if (domain == null || catchment == null)
+            {
+                error = "PCE capacity publication requires an applied domain and CODY catchment.";
+                return false;
+            }
+            VolumetricWaterSettings settings = domain.Settings;
+            var descriptor = new VolumetricPceCapacityStorageDescriptor
+            {
+                CatchmentId = catchment.CatchmentId,
+                GeometryRevision = geometryRevision,
+                DependencyRevisionHash = catchment.DependencyRevisionHash,
+                WorldBounds = new Bounds(domain.WorldOrigin + new Vector3(
+                    settings.ResolutionX * settings.CellSize,
+                    settings.ResolutionY * settings.CellSize,
+                    settings.ResolutionZ * settings.CellSize) * 0.5f,
+                    new Vector3(settings.ResolutionX, settings.ResolutionY, settings.ResolutionZ) * settings.CellSize),
+                GridWorldOrigin = domain.WorldOrigin,
+                CellSize = settings.CellSize,
+                ResolutionX = settings.ResolutionX,
+                ResolutionY = settings.ResolutionY,
+                ResolutionZ = settings.ResolutionZ,
+                CellCapacity = domain.CaptureCutCellCapacitySync(),
+                CellStorageCurves = domain.CaptureHydraulicStorageSparseSync(),
+                CellStorageKnotCounts = domain.CaptureHydraulicStorageSparseCountsSync()
+            };
+            if (!PublishCapacityStorage(descriptor, out error)) return false;
+            PhysicalWaterPlugin.Log.LogInfo(
+                "LiquidCore PCE published geometry-only storage: catchment=" + catchment.CatchmentId +
+                ", geometryRevision=" + geometryRevision + ", dependency=" + catchment.DependencyRevisionHash +
+                ", cells=" + descriptor.CellCapacity.Length + ", sparseKnots=" + descriptor.CellStorageCurves.Length + ".");
+            return true;
+        }
+
         private void Awake()
         {
             _geometry = new ProbeColonyGeometryBridge(_world, new Vector3Int(32, 32, 32));
