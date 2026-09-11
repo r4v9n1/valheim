@@ -122,3 +122,22 @@ repository integration commit, exact authoritative workspace source commit,
 and built DLL hash. Older dirty workspace files belong to separate
 in-progress solver/renderer/persistence work and are intentionally excluded
 from this source-domain checkpoint.
+
+## Installed-host domain audit — 2026-09-11
+
+The installed Valheim 1.0 `WorldGenerator` was inspected from the retained
+managed assembly. It exposes a finite procedural terrain domain through
+`worldSize = 10000f`, `waterEdge = 10500f`, and deterministic
+`GetHeight(float,float)`/biome-generation methods. That is terrain geometry
+only. The API does not publish a complete ocean connected-component map,
+barrier/saddle topology, or a cell storage-capacity publication covering the
+world.
+
+Consequently the current PCE publication remains an active/player-centred
+window with `CompleteSourceDomain=false`. `WorldGenerator.GetBiome`,
+SeaLevel, renderer masks, and the active E3 window are not valid substitutes
+for the missing complete finite-water domain. No production
+`InitialWorldWaterSource` caller is wired, and no source receipt is created.
+This is deliberate fail-closed behavior: the next implementation must add a
+complete or explicitly partitioned geometry/capacity publication before any
+LiquidCore source atoms are computed or committed.
