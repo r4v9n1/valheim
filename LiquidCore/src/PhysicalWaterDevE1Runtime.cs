@@ -1324,9 +1324,19 @@ namespace PhysicalWater
                     "LiquidCore PCE could not publish applied storage because no CODY catchment covers the active domain center.");
                 return;
             }
+            if (catchment.Validity != CodyCatchmentValidity.Valid ||
+                !ContainsBounds(catchment.DependencyBounds, _domain.WorldBounds))
+            {
+                PhysicalWaterPlugin.Log.LogWarning(
+                    "LiquidCore PCE deferred applied storage because the valid CODY catchment does not fully cover the active E3 grid.");
+                return;
+            }
             if (!pce.PublishAppliedDomainCapacityStorage(_domain.MacDomain, catchment, geometryRevision, out string error))
                 PhysicalWaterPlugin.Log.LogWarning("LiquidCore PCE applied storage publication deferred: " + error + ".");
         }
+
+        private static bool ContainsBounds(Bounds outer, Bounds inner) =>
+            outer.Contains(inner.min) && outer.Contains(inner.max);
 
         private void RequestGeometrySafety(long generation)
         {
