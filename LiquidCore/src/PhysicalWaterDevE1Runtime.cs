@@ -383,8 +383,32 @@ namespace PhysicalWater
             new Terminal.ConsoleCommand("pw_e3_step", "advance paused E3 simulation by one 1/30 second step", StepCommand, false, false, false, false, true);
             new Terminal.ConsoleCommand("pw_e3_probe", "capture one blocking raw/fraction/presentation field probe", ProbeCommand, false, false, false, false, true);
             new Terminal.ConsoleCommand("pw_e3_snapshot", "save a replayable finite-fluid snapshot", SnapshotCommand, false, false, false, false, true);
+            new Terminal.ConsoleCommand("pw_pce_select_source", "select explicit CODY initial-water catchment: [id]", SelectInitialSourceCommand, false, false, false, false, true);
             new Terminal.ConsoleCommand("pw_e3_capture_terrain", "capture replayable Valheim terrain: [width] [depth] [spacing] [label]", CaptureTerrainCommand, false, false, false, false, true);
             new Terminal.ConsoleCommand("pw_terrain_capture", "capture replayable Valheim terrain: [width] [depth] [spacing] [label]", CaptureTerrainCommand, false, false, false, false, true);
+        }
+
+        private void SelectInitialSourceCommand(Terminal.ConsoleEventArgs args)
+        {
+            if (!PhysicalWaterPlugin.Settings.StageE1Enabled.Value)
+            {
+                Reply(args, "Stage E1 is disabled in config.");
+                return;
+            }
+            if (args == null || args.Length <= 1 ||
+                !LiquidCorePceRuntime.TryParseCatchmentId(args[1], out ulong catchmentId))
+            {
+                Reply(args, "Usage: pw_pce_select_source [non-zero catchment id].");
+                return;
+            }
+            LiquidCorePceRuntime pce = LiquidCorePceRuntime.Instance;
+            string error = string.Empty;
+            if (pce == null || !pce.TrySelectInitialWorldSourceCatchment(catchmentId, out error))
+            {
+                Reply(args, "Initial-water source selection rejected: " + error);
+                return;
+            }
+            Reply(args, "Initial-water source selected: catchment=" + catchmentId + ". Complete-domain source commit remains idempotent.");
         }
 
         private void CreateDomainCommand(Terminal.ConsoleEventArgs args)

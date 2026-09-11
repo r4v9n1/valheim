@@ -769,7 +769,24 @@ namespace PhysicalWater
                 "LiquidCore applied explicit CODY initial-water source marker: catchment=" + catchmentId + ".");
         }
 
-        private static bool TryParseCatchmentId(string text, out ulong value)
+        internal bool TrySelectInitialWorldSourceCatchment(ulong catchmentId, out string error)
+        {
+            error = string.Empty;
+            if (catchmentId == 0UL || _codyL2 == null)
+            {
+                error = "CODY initial-water source selection is not ready.";
+                return false;
+            }
+            if (!_codyL2.TryPublishInitialWaterSourceSeed(catchmentId, out error)) return false;
+            _configuredSourceMarkerApplied = true;
+            _codyPersistenceWritable = true;
+            TryAttachSourceCatchmentToPublishedDomain();
+            PhysicalWaterPlugin.Log.LogInfo(
+                "LiquidCore selected explicit CODY initial-water source catchment: catchment=" + catchmentId + ".");
+            return true;
+        }
+
+        internal static bool TryParseCatchmentId(string text, out ulong value)
         {
             value = 0UL;
             string normalized = text.Trim();
