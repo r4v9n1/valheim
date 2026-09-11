@@ -186,6 +186,34 @@ namespace PhysicalWater
                 dependencyRevisionHash, out descriptor, out error);
         }
 
+        internal bool TryBuildBaseWorldPcePartitions(
+            float verticalMin, float verticalMax, Vector2 partitionSize, float cellSize,
+            long geometryRevision, string dependencyRevisionHash,
+            out Bounds sourceBounds,
+            out VolumetricPceCapacityStorageDescriptor[] partitions,
+            out string error)
+        {
+            sourceBounds = default(Bounds);
+            partitions = Array.Empty<VolumetricPceCapacityStorageDescriptor>();
+            if (!TryEnumerateBaseWorldPcePartitions(
+                    verticalMin, verticalMax, partitionSize,
+                    out sourceBounds, out Bounds[] bounds, out error)) return false;
+
+            var result = new VolumetricPceCapacityStorageDescriptor[bounds.Length];
+            for (int i = 0; i < bounds.Length; i++)
+            {
+                if (!TryBuildBaseTerrainPcePartition(
+                        bounds[i], partitionSize, cellSize, geometryRevision,
+                        dependencyRevisionHash, out result[i], out error))
+                {
+                    partitions = Array.Empty<VolumetricPceCapacityStorageDescriptor>();
+                    return false;
+                }
+            }
+            partitions = result;
+            return true;
+        }
+
         internal bool PublishCapacityStorage(
             VolumetricPceCapacityStorageDescriptor descriptor, out string error)
         {
