@@ -64,7 +64,7 @@ namespace PhysicalWater
             {
                 float worldX = partitionBounds.min.x + (x + 0.5f) * cellSize;
                 float worldZ = partitionBounds.min.z + (z + 0.5f) * cellSize;
-                if (!sampler(worldX, worldZ, out float height))
+                if (!sampler(worldX, worldZ, out float height) || !Finite(height))
                 {
                     heights = Array.Empty<float>();
                     error = "Valheim base terrain sampler returned no height.";
