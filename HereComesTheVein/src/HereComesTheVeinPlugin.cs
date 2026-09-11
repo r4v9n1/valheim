@@ -15,7 +15,7 @@ namespace HereComesTheVein
     {
         public const string PluginGuid = "com.r4v9n1.herecomesthevein";
         public const string PluginName = "HereComesTheVein";
-        public const string PluginVersion = "0.1.8";
+        public const string PluginVersion = "0.1.9";
 
         internal const int IronOreSharePercent = 40;
 
@@ -604,6 +604,20 @@ namespace HereComesTheVein
         private static bool IsCopperOreName(string itemName)
         {
             return string.Equals(itemName?.Replace("(Clone)", ""), "CopperOre", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [HarmonyPatch(typeof(Player), nameof(Player.SetGuardianPower))]
+    internal static class ElderGuardianPowerProgressionPatch
+    {
+        private static void Postfix(string name)
+        {
+            if (!string.Equals(name, "GP_TheElder", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            ZoneSystem.instance?.SetGlobalKey("defeated_gd_king");
         }
     }
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.9
+
+- Promotes Elder guardian-power activation to the server-wide Elder defeat progression key.
+
 ## 0.1.8
 
 - Added loaded-scene detection for an Elder trophy displayed near an OfferingBowl altar.

@@ -1,6 +1,6 @@
 ﻿param(
     [switch]$Install,
-    [string]$Version = "0.1.8",
+    [string]$Version = "0.1.9",
     [string]$ValheimDir = ""
 )
 
