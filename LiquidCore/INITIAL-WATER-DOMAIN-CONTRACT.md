@@ -99,3 +99,26 @@ Workspace checkpoint `2a75f5d` fixes the namespace imports and the focused
 Unity 6000.0.61f1/D3D11 run passes all four cases (`RESULT: PASS`). The
 canonical DLL remains build-clean with hash
 `87927CB81000A313C6E5F8A774FB0EF1CB4C3E6557526C2631C5A0B2EFFF1429`.
+
+## Durable checkpoint provenance audit — 2026-09-11
+
+The authoritative UnityPhysicalOcean source is already Git-controlled in
+`build/Valheim/workspace/LiquidCore` as the `PhysicalWaterUnity` repository;
+it is not copied into `repos/valheim`. Its current durable source checkpoint
+is workspace commit `2a75f5d`
+(`LiquidCore: pass complete-domain Unity regression`), and that commit is
+present on `origin/main` at
+`https://github.com/r4v9n1/PhysicalWaterUnity.git`.
+
+The corresponding repository integration/documentation checkpoint is
+`dccc801` (`LiquidCore: record focused domain regression pass`) in
+`build/Valheim/repos/valheim`, present on its configured `origin/main`.
+The verified build product from the workspace source is
+`LiquidCore.dll`, SHA-256
+`87927CB81000A313C6E5F8A774FB0EF1CB4C3E6557526C2631C5A0B2EFFF1429`.
+
+These three identifiers are the recovery/provenance tuple for this gate:
+repository integration commit, exact authoritative workspace source commit,
+and built DLL hash. Older dirty workspace files belong to separate
+in-progress solver/renderer/persistence work and are intentionally excluded
+from this source-domain checkpoint.
