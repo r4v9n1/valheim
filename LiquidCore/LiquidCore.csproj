@@ -47,6 +47,7 @@
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricPceGlobalConnectivityClosure.cs" Link="Probes\VolumetricPceGlobalConnectivityClosure.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricPceInitialSourceRelation.cs" Link="Probes\VolumetricPceInitialSourceRelation.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\CodyInitialWorldSourceRelation.cs" Link="Probes\CodyInitialWorldSourceRelation.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\CodyInitialWorldSourceRelationStore.cs" Link="Probes\CodyInitialWorldSourceRelationStore.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\LiquidCoreInitialWorldWaterDomain.cs" Link="Volumetric\LiquidCoreInitialWorldWaterDomain.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricInitialWorldWaterSource.cs" Link="Volumetric\VolumetricInitialWorldWaterSource.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyRuntime.cs" Link="Probes\ProbeColonyRuntime.cs" />
