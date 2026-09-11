@@ -1173,8 +1173,11 @@ namespace PhysicalWater
                 error = "Base terrain snapshot has no horizontal columns.";
                 return false;
             }
-            long count = (long)(columnsX + 2) * (columnsZ + 2);
-            if (count > int.MaxValue)
+            long snapshotColumnsX = (long)columnsX + 2L;
+            long snapshotColumnsZ = (long)columnsZ + 2L;
+            long count = snapshotColumnsX * snapshotColumnsZ;
+            if (snapshotColumnsX > int.MaxValue || snapshotColumnsZ > int.MaxValue ||
+                count > int.MaxValue)
             {
                 error = "Base terrain snapshot is too large.";
                 return false;
@@ -1197,8 +1200,11 @@ namespace PhysicalWater
             }
             int startX = Mathf.RoundToInt((partitionBounds.min.x - job.SourceBounds.min.x) / job.CellSize);
             int startZ = Mathf.RoundToInt((partitionBounds.min.z - job.SourceBounds.min.z) / job.CellSize);
-            if (startX < 0 || startZ < 0 || startX + nx > job.TerrainColumnsX ||
-                startZ + nz > job.TerrainColumnsZ || columnHeights.Length != nx * nz)
+            long columnCount = (long)nx * nz;
+            if (startX < 0 || startZ < 0 ||
+                (long)startX + nx > job.TerrainColumnsX ||
+                (long)startZ + nz > job.TerrainColumnsZ ||
+                columnCount > int.MaxValue || columnHeights.Length != (int)columnCount)
             {
                 error = "Base terrain partition does not fit the captured column domain.";
                 return false;
