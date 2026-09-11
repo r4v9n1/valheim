@@ -69,3 +69,9 @@ The authoritative workspace source hash after this guard is
 `BEE970E96C442078B6357506DD59B02B096E8F517C69F6988D25A0DEA2ACD7E4`; the
 canonical build passed with zero errors and produced DLL hash
 `30FB5D178360F1657B325AC01B6436915C923B93EFA42E850669A512CBBC9DC5`.
+
+The authoritative workspace source revision for the guard is Git commit
+`55bde11` (`LiquidCore: guard complete PCE source domains`) in
+`build/Valheim/workspace/LiquidCore`; it is pushed to that workspace's
+`origin/main`. The repository integration/documentation revision is
+`eaab861` in `build/Valheim/repos/valheim`.
