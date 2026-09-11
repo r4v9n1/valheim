@@ -35,6 +35,46 @@ namespace PhysicalWater
                 }, out descriptor, out error);
         }
 
+        internal static bool TryCaptureColumnTerrainHeights(
+            Bounds partitionBounds, float cellSize, HeightSampler sampler,
+            out float[] heights, out int resolutionX, out int resolutionZ,
+            out string error)
+        {
+            heights = Array.Empty<float>();
+            resolutionX = 0;
+            resolutionZ = 0;
+            error = string.Empty;
+            if (sampler == null || !Finite(partitionBounds) ||
+                partitionBounds.size.x <= 0f || partitionBounds.size.z <= 0f ||
+                !Finite(cellSize) || cellSize <= 0f)
+            {
+                error = "Base terrain column capture received invalid geometry inputs.";
+                return false;
+            }
+            resolutionX = ExactResolution(partitionBounds.size.x, cellSize);
+            resolutionZ = ExactResolution(partitionBounds.size.z, cellSize);
+            if (resolutionX <= 0 || resolutionZ <= 0)
+            {
+                error = "Base terrain column capture bounds are not aligned to cell size.";
+                return false;
+            }
+            heights = new float[resolutionX * resolutionZ];
+            for (int z = 0; z < resolutionZ; z++)
+            for (int x = 0; x < resolutionX; x++)
+            {
+                float worldX = partitionBounds.min.x + (x + 0.5f) * cellSize;
+                float worldZ = partitionBounds.min.z + (z + 0.5f) * cellSize;
+                if (!sampler(worldX, worldZ, out float height))
+                {
+                    heights = Array.Empty<float>();
+                    error = "Valheim base terrain sampler returned no height.";
+                    return false;
+                }
+                heights[x + resolutionX * z] = height;
+            }
+            return true;
+        }
+
         internal static bool TryBuild(
             Bounds partitionBounds, Vector2 partitionSize, float cellSize,
             long geometryRevision, string dependencyRevisionHash,
