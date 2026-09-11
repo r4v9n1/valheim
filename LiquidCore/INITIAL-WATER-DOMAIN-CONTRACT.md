@@ -232,3 +232,21 @@ geometry-only clone/validation support. The production caller still has no
 complete domain to publish, so no source transaction or water ledger mutation
 is performed. The DLL built from this checkpoint has SHA-256
 `B06D30915066F7F962EF2AB51D0076BFCFE31E354B27378561592CDF339BC4CF`.
+
+## E3 partition-materialization audit — 2026-09-11
+
+The existing `VolumetricStreamingDomain.TryCommitInitialWorldWaterSource`
+path was traced before wiring the publication event. It currently retains one
+initial-source receipt and requires the supplied atomic ledger length to equal
+the active E3 domain cell count; it also rejects any non-empty active or
+dormant representation before materializing the ledger. That is safe for the
+old controlled fixture but cannot consume a complete global domain or a
+sequence of dormant source partitions.
+
+Consequently the complete-domain publication seam is intentionally not wired
+to E3 commit yet. The next production change must add partition-keyed,
+persistent source receipts and an E3-compatible dormant/materialization
+transfer so a committed out-of-window partition is stored without creating a
+local-grid source. Re-activating it must add zero source atoms. No existing
+solver, renderer, query, or legacy `_hydroDepth` authority was changed by
+this audit.
