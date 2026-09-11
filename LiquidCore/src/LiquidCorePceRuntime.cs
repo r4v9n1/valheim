@@ -225,6 +225,40 @@ namespace PhysicalWater
                 provisional, out closed, out error);
         }
 
+        internal bool TryPublishBaseWorldPceDomain(
+            string domainId, float verticalMin, float verticalMax,
+            Vector2 partitionSize, float cellSize, long geometryRevision,
+            string dependencyRevisionHash,
+            out LiquidCoreInitialWorldWaterDomain domain, out string error)
+        {
+            domain = null;
+            if (!TryBuildBaseWorldPcePartitions(
+                    verticalMin, verticalMax, partitionSize, cellSize,
+                    geometryRevision, dependencyRevisionHash,
+                    out Bounds sourceBounds,
+                    out VolumetricPceCapacityStorageDescriptor[] provisional,
+                    out error)) return false;
+            if (!TryCloseBaseWorldPcePartitions(
+                    sourceBounds, partitionSize, geometryRevision,
+                    dependencyRevisionHash, provisional,
+                    out VolumetricPceCapacityStorageDescriptor[] closed,
+                    out error)) return false;
+            if (!VolumetricPceCompletePartitionAssembler.TryAssemble(
+                    domainId, sourceBounds, partitionSize, geometryRevision,
+                    dependencyRevisionHash, closed, out domain, out error))
+            {
+                domain = null;
+                return false;
+            }
+            for (int i = 0; i < closed.Length; i++)
+                if (!PublishCapacityStorage(closed[i], out error))
+                {
+                    domain = null;
+                    return false;
+                }
+            return PublishCompleteInitialWorldDomain(domain, out error);
+        }
+
         internal bool PublishCapacityStorage(
             VolumetricPceCapacityStorageDescriptor descriptor, out string error)
         {
