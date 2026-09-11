@@ -178,7 +178,9 @@ namespace PhysicalWater
             LiquidCoreInitialWorldWaterDomain publishedDomain = null;
             bool hasCompleteDomain = pce != null &&
                 pce.TryGetCompleteInitialWorldDomain(out publishedDomain);
-            bool hasSourceCatchment = hasCompleteDomain && publishedDomain.SourceCatchmentId != 0UL;
+            bool hasSourceCatchment = hasCompleteDomain &&
+                (publishedDomain.SourceCatchmentId != 0UL ||
+                 (publishedDomain.SourceCatchmentIds != null && publishedDomain.SourceCatchmentIds.Length > 0));
             bool assetsReady = _macShader != null && _flipShader != null && _surfaceShader != null && _surfaceMaterial != null;
             if (_streaming == null)
             {
@@ -1631,7 +1633,8 @@ namespace PhysicalWater
                     "LiquidCore complete initial-water domain arrived before the E3 representation was ready; source commit deferred.");
                 return;
             }
-            if (domain.SourceCatchmentId == 0UL)
+            if (domain.SourceCatchmentId == 0UL &&
+                (domain.SourceCatchmentIds == null || domain.SourceCatchmentIds.Length == 0))
             {
                 PhysicalWaterPlugin.Log.LogInfo(
                     "LiquidCore complete initial-water geometry is published but has no explicit CODY source catchment; source commit remains deferred.");
@@ -1663,7 +1666,9 @@ namespace PhysicalWater
                 var rule = new LiquidCoreInitialWorldWaterSourceRule
                 {
                     ReferenceHead = PhysicalWaterPlugin.Settings.SeaLevel.Value,
-                    SourceCatchmentId = domain.SourceCatchmentId
+                    SourceCatchmentId = domain.SourceCatchmentId,
+                    SourceCatchmentIds = domain.SourceCatchmentIds == null
+                        ? null : (ulong[])domain.SourceCatchmentIds.Clone()
                 };
                 if (!_streaming.TryComputeAndCommitInitialWorldWaterSource(
                         domain.Partitions, rule, initialSourceId,

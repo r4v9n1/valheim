@@ -113,6 +113,7 @@ namespace PhysicalWater
         private CodyCatchmentCache _codyL2;
         private CodyCatchmentRebuildCoordinator _codyRebuilds;
         private string _codyL2Path;
+        private string _codyInitialWorldSourceRelationPath;
         private bool _codyPersistenceWritable;
         private bool _codyL2ArtifactRejected;
         private bool _hasCodyWarmBounds;
@@ -502,6 +503,45 @@ namespace PhysicalWater
             return true;
         }
 
+        private bool TryResolvePersistedSourceRelation(
+            string worldKey, long geometryRevision, string dependencyRevisionHash,
+            IReadOnlyList<VolumetricPceCapacityStorageDescriptor> closed,
+            out ulong[] sourceCatchmentIds, out string error)
+        {
+            sourceCatchmentIds = Array.Empty<ulong>();
+            error = string.Empty;
+            CodyInitialWorldSourceRelation relation = _codyL2?.InitialWorldSourceRelation ??
+                _codyL1?.InitialWorldSourceRelation;
+            if (relation == null)
+            {
+                error = "No persisted CODY initial-world source relation.";
+                return false;
+            }
+            if (!relation.Validate(out error) ||
+                !string.Equals(relation.WorldKey, worldKey, StringComparison.Ordinal) ||
+                relation.GeometryRevision != geometryRevision ||
+                !string.Equals(relation.DependencyRevisionHash, dependencyRevisionHash, StringComparison.Ordinal))
+            {
+                if (string.IsNullOrEmpty(error)) error = "Persisted CODY source relation is stale for the closed world domain.";
+                return false;
+            }
+            var present = new HashSet<ulong>();
+            for (int i = 0; i < closed.Count; i++)
+            {
+                ulong[] membership = closed[i]?.CellCatchmentIds;
+                if (membership == null) continue;
+                for (int j = 0; j < membership.Length; j++) if (membership[j] != 0UL) present.Add(membership[j]);
+            }
+            for (int i = 0; i < relation.SourceCatchmentIds.Length; i++)
+                if (!present.Contains(relation.SourceCatchmentIds[i]))
+                {
+                    error = "Persisted CODY source relation names a catchment absent from final PCE closure.";
+                    return false;
+                }
+            sourceCatchmentIds = (ulong[])relation.SourceCatchmentIds.Clone();
+            return true;
+        }
+
         private static bool TryResolveClosedPceCatchment(
             CodyCatchmentDescriptor sourceSeed,
             IReadOnlyList<VolumetricPceCapacityStorageDescriptor> closed,
@@ -859,13 +899,27 @@ namespace PhysicalWater
         private void TryAttachSourceCatchmentToPublishedDomain()
         {
             LiquidCoreInitialWorldWaterDomain domain = _completeInitialWorldDomain;
-            if (domain == null || domain.SourceCatchmentId != 0UL) return;
+            if (domain == null || domain.SourceCatchmentId != 0UL ||
+                (domain.SourceCatchmentIds != null && domain.SourceCatchmentIds.Length > 0)) return;
+            if (TryResolvePersistedSourceRelation(
+                    _baseWorldBootstrapWorldKey, domain.GeometryRevision, domain.DependencyRevisionHash,
+                    domain.Partitions, out ulong[] persistedIds, out _))
+            {
+                domain.SourceCatchmentIds = persistedIds;
+                domain.SourceCatchmentId = persistedIds.Length == 1 ? persistedIds[0] : 0UL;
+                CompleteInitialWorldDomainPublished?.Invoke(domain.Clone());
+                PhysicalWaterPlugin.Log.LogInfo(
+                    "LiquidCore replayed the persisted CODY initial-water source relation: catchments=" +
+                    string.Join(",", Array.ConvertAll(persistedIds, id => id.ToString())) + ".");
+                return;
+            }
             if (!TryGetCodyInitialWaterSourceSeed(
                     out CodyCatchmentDescriptor sourceSeed, out string sourceError)) return;
             if (!TryResolveClosedPceCatchment(
                     sourceSeed, domain.Partitions, out ulong globalSourceCatchmentId,
                     out sourceError)) return;
             domain.SourceCatchmentId = globalSourceCatchmentId;
+            domain.SourceCatchmentIds = new[] { globalSourceCatchmentId };
             CompleteInitialWorldDomainPublished?.Invoke(domain.Clone());
             PhysicalWaterPlugin.Log.LogInfo(
                 "LiquidCore attached the explicit CODY initial-water source catchment to the published PCE domain: catchment=" +
@@ -1158,13 +1212,26 @@ namespace PhysicalWater
             // exists, attach its globally closed component now; otherwise the
             // published domain remains source-unselected and the attachment is
             // retried when the marker arrives.
-            if (TryGetCodyInitialWaterSourceSeed(out sourceSeed, out sourceError) &&
-                TryResolveClosedPceCatchment(sourceSeed, closed,
-                    out globalSourceCatchmentId, out sourceError))
+            if (TryResolvePersistedSourceRelation(
+                    job.WorldKey, job.GeometryRevision, job.DependencyRevisionHash,
+                    closed, out ulong[] persistedSourceIds, out string persistedSourceError))
+            {
+                domain.SourceCatchmentIds = persistedSourceIds;
+                domain.SourceCatchmentId = persistedSourceIds.Length == 1 ? persistedSourceIds[0] : 0UL;
+                sourceError = string.Empty;
+            }
+            else if (TryGetCodyInitialWaterSourceSeed(out sourceSeed, out sourceError) &&
+                     TryResolveClosedPceCatchment(sourceSeed, closed,
+                         out globalSourceCatchmentId, out sourceError))
+            {
                 domain.SourceCatchmentId = globalSourceCatchmentId;
+                domain.SourceCatchmentIds = new[] { globalSourceCatchmentId };
+            }
             else
             {
                 domain.SourceCatchmentId = 0UL;
+                domain.SourceCatchmentIds = Array.Empty<ulong>();
+                if (string.IsNullOrEmpty(sourceError)) sourceError = persistedSourceError;
                 LogUnselectedClosedPceCatchments(closed, sourceError);
             }
             if (!CanPublishCompleteBaseWorldPceDomain(domain, closed, out string preflightError))
@@ -1817,9 +1884,24 @@ namespace PhysicalWater
             _codyRebuilds.Published += OnCodyCatchmentRebuilt;
             _codyL2Path = Path.Combine(Paths.ConfigPath, "LiquidCore",
                 "cody-catchments-v" + schemaVersion + ".bin");
+            _codyInitialWorldSourceRelationPath = Path.Combine(Paths.ConfigPath, "LiquidCore",
+                "cody-initial-world-source-v1.bin");
             try
             {
                 int loaded = CodyCatchmentL2Store.Load(_codyL2Path, _codyL2);
+                try
+                {
+                    CodyInitialWorldSourceRelation relation =
+                        CodyInitialWorldSourceRelationStore.Load(_codyInitialWorldSourceRelationPath);
+                    if (relation != null && !_codyL2.TryPublishInitialWorldSourceRelation(relation, out string relationError))
+                        PhysicalWaterPlugin.Log.LogWarning(
+                            "LiquidCore rejected persisted CODY initial-world source relation: " + relationError + ".");
+                }
+                catch (Exception relationException)
+                {
+                    PhysicalWaterPlugin.Log.LogWarning(
+                        "LiquidCore rejected persisted CODY initial-world source relation: " + relationException.Message + ".");
+                }
                 _codyPersistenceWritable = true;
                 PhysicalWaterPlugin.Log.LogInfo(
                     "LiquidCore CODY catchment cache ready: game=" + gameFingerprint +
