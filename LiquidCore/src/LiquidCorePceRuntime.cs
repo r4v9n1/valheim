@@ -788,6 +788,25 @@ namespace PhysicalWater
                 "LiquidCore applied explicit CODY initial-water source marker: catchment=" + catchmentId + ".");
         }
 
+        private void RearmConfiguredSourceMarkerIfAffected(
+            IReadOnlyList<ulong> affectedCatchmentIds)
+        {
+            if (affectedCatchmentIds == null || PhysicalWaterPlugin.Settings == null) return;
+            if (!TryParseCatchmentId(
+                    PhysicalWaterPlugin.Settings.InitialWorldPceSourceCatchmentId.Value,
+                    out ulong configuredId)) return;
+            for (int i = 0; i < affectedCatchmentIds.Count; i++)
+            {
+                if (affectedCatchmentIds[i] != configuredId) continue;
+                // The invalidated descriptor cannot carry a valid marker.
+                // Re-arm only the explicit configured identity; the next
+                // Update may apply it after CODY publishes a valid rebuild.
+                _configuredSourceMarkerApplied = false;
+                _configuredSourceMarkerReported = false;
+                return;
+            }
+        }
+
         internal bool TrySelectInitialWorldSourceCatchment(ulong catchmentId, out string error)
         {
             error = string.Empty;
@@ -1924,6 +1943,7 @@ namespace PhysicalWater
             _codyInvalidated.Clear();
             int l2Invalidated = _codyL2.ApplyDependencyChange(change.SourceId, change.Revision, dirty, _codyInvalidated);
             int l1Invalidated = _codyL1.ApplyDependencyChange(change.SourceId, change.Revision, dirty);
+            RearmConfiguredSourceMarkerIfAffected(_codyInvalidated);
             if (l2Invalidated == 0 && l1Invalidated == 0) return;
             if (!_codyL2ArtifactRejected) _codyPersistenceWritable = true;
             PhysicalWaterPlugin.Log.LogInfo(
