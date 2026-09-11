@@ -15,7 +15,7 @@ namespace HereComesTheVein
     {
         public const string PluginGuid = "com.r4v9n1.herecomesthevein";
         public const string PluginName = "HereComesTheVein";
-        public const string PluginVersion = "0.1.7";
+        public const string PluginVersion = "0.1.8";
 
         internal const int IronOreSharePercent = 40;
 
@@ -559,6 +559,25 @@ namespace HereComesTheVein
                     if (itemPrefab != null && string.Equals(itemPrefab.name, "TrophyTheElder", StringComparison.OrdinalIgnoreCase))
                     {
                         return true;
+                    }
+                }
+
+                Component bowlComponent = bowl as Component;
+                if (bowlComponent != null)
+                {
+                    GameObject[] sceneObjects = Resources.FindObjectsOfTypeAll<GameObject>();
+                    foreach (GameObject sceneObject in sceneObjects)
+                    {
+                        if (sceneObject == null || !sceneObject.scene.IsValid() ||
+                            !sceneObject.name.Replace("(Clone)", "").Contains("TrophyTheElder", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        if (Vector3.Distance(bowlComponent.transform.position, sceneObject.transform.position) <= 25f)
+                        {
+                            return true;
+                        }
                     }
                 }
             }

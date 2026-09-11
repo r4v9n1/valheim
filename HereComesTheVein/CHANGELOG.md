@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.8
+
+- Added loaded-scene detection for an Elder trophy displayed near an OfferingBowl altar.
+
 ## 0.1.7
 
 - Added an activated Elder OfferingBowl trophy fallback for restored worlds missing the global Elder defeat key.
