@@ -214,3 +214,13 @@ enumerated non-overlapping partition provider that publishes complete storage
 curves and membership for every source partition, with a stable revision and
 aggregate coverage proof. Until that provider exists, the current fail-closed
 behavior is preserved.
+
+The complete-domain membership guard was strengthened in workspace checkpoint
+`c0e8233` and pushed to the authoritative `PhysicalWaterUnity` remote. A
+focused Unity regression now rejects an open complete-domain cell with zero
+catchment identity and reports `MEMBERSHIP: PASS`; the complete fixture still
+reports the exact `8 m3` / `64000`-atom plan. The canonical DLL rebuilt with
+zero errors and ten existing warnings; its SHA-256 is
+`C7326860D21366682EC67A39B756FF6560DA0A5CEE3A0299A880410EA3363010`.
+This validates the contract guard only; it does not promote the active E3
+window into a real global source domain.
