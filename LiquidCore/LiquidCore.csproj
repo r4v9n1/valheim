@@ -41,6 +41,8 @@
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyChangeQueue.cs" Link="Probes\ProbeColonyChangeQueue.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyEventBridge.cs" Link="Probes\ProbeColonyEventBridge.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyCausalGeometrySignals.cs" Link="Probes\ProbeColonyCausalGeometrySignals.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricPceCapacityStorage.cs" Link="Probes\VolumetricPceCapacityStorage.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricInitialWorldWaterSource.cs" Link="Volumetric\VolumetricInitialWorldWaterSource.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyRuntime.cs" Link="Probes\ProbeColonyRuntime.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyDiscoverySchedule.cs" Link="Probes\ProbeColonyDiscoverySchedule.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\ProbeColonyCatchmentTopology.cs" Link="Probes\ProbeColonyCatchmentTopology.cs" />
