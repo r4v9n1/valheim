@@ -542,6 +542,39 @@ namespace PhysicalWater
             return true;
         }
 
+        private void PersistResolvedSourceRelation(
+            BaseWorldPceBootstrapJob job, ulong[] sourceCatchmentIds)
+        {
+            if (job == null || sourceCatchmentIds == null || sourceCatchmentIds.Length == 0 ||
+                _codyL2 == null || string.IsNullOrEmpty(_codyInitialWorldSourceRelationPath)) return;
+            var relation = new CodyInitialWorldSourceRelation
+            {
+                WorldKey = job.WorldKey,
+                GeometryRevision = job.GeometryRevision,
+                DependencyRevisionHash = job.DependencyRevisionHash,
+                RelationRevision = job.GeometryRevision,
+                SourceCatchmentIds = (ulong[])sourceCatchmentIds.Clone()
+            };
+            if (!_codyL2.TryPublishInitialWorldSourceRelation(relation, out string publishError))
+            {
+                PhysicalWaterPlugin.Log.LogWarning(
+                    "LiquidCore could not retain the resolved CODY initial-world source relation: " + publishError + ".");
+                return;
+            }
+            try
+            {
+                CodyInitialWorldSourceRelationStore.Save(_codyInitialWorldSourceRelationPath, relation);
+                PhysicalWaterPlugin.Log.LogInfo(
+                    "LiquidCore persisted the resolved CODY initial-world source relation: catchments=" +
+                    string.Join(",", Array.ConvertAll(sourceCatchmentIds, id => id.ToString())) + ".");
+            }
+            catch (Exception ex)
+            {
+                PhysicalWaterPlugin.Log.LogWarning(
+                    "LiquidCore could not persist the resolved CODY initial-world source relation: " + ex.Message + ".");
+            }
+        }
+
         private static bool TryResolveClosedPceCatchment(
             CodyCatchmentDescriptor sourceSeed,
             IReadOnlyList<VolumetricPceCapacityStorageDescriptor> closed,
@@ -1226,6 +1259,7 @@ namespace PhysicalWater
             {
                 domain.SourceCatchmentId = globalSourceCatchmentId;
                 domain.SourceCatchmentIds = new[] { globalSourceCatchmentId };
+                PersistResolvedSourceRelation(job, domain.SourceCatchmentIds);
             }
             else
             {
