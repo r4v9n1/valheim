@@ -1923,19 +1923,6 @@ namespace PhysicalWater
             try
             {
                 int loaded = CodyCatchmentL2Store.Load(_codyL2Path, _codyL2);
-                try
-                {
-                    CodyInitialWorldSourceRelation relation =
-                        CodyInitialWorldSourceRelationStore.Load(_codyInitialWorldSourceRelationPath);
-                    if (relation != null && !_codyL2.TryPublishInitialWorldSourceRelation(relation, out string relationError))
-                        PhysicalWaterPlugin.Log.LogWarning(
-                            "LiquidCore rejected persisted CODY initial-world source relation: " + relationError + ".");
-                }
-                catch (Exception relationException)
-                {
-                    PhysicalWaterPlugin.Log.LogWarning(
-                        "LiquidCore rejected persisted CODY initial-world source relation: " + relationException.Message + ".");
-                }
                 _codyPersistenceWritable = true;
                 PhysicalWaterPlugin.Log.LogInfo(
                     "LiquidCore CODY catchment cache ready: game=" + gameFingerprint +
@@ -1949,6 +1936,23 @@ namespace PhysicalWater
                 _codyPersistenceWritable = false;
                 _codyL2ArtifactRejected = true;
                 PhysicalWaterPlugin.Log.LogWarning("LiquidCore CODY rejected its L2 cache and will keep an empty L1: " + ex.Message);
+            }
+            // The semantic source relation is an independent CODY artifact;
+            // its replay must not be suppressed by an unrelated L2 cache
+            // deserialization failure. Final PCE closure still validates its
+            // world, revision, and membership contract before attachment.
+            try
+            {
+                CodyInitialWorldSourceRelation relation =
+                    CodyInitialWorldSourceRelationStore.Load(_codyInitialWorldSourceRelationPath);
+                if (relation != null && !_codyL2.TryPublishInitialWorldSourceRelation(relation, out string relationError))
+                    PhysicalWaterPlugin.Log.LogWarning(
+                        "LiquidCore rejected persisted CODY initial-world source relation: " + relationError + ".");
+            }
+            catch (Exception relationException)
+            {
+                PhysicalWaterPlugin.Log.LogWarning(
+                    "LiquidCore rejected persisted CODY initial-world source relation: " + relationException.Message + ".");
             }
         }
 
