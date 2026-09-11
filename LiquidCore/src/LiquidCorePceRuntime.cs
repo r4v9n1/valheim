@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using BepInEx;
 using R4V9N1.PhysicalOcean.Cody;
 using R4V9N1.PhysicalOcean.Probes;
@@ -55,6 +56,17 @@ namespace PhysicalWater
         internal readonly List<VolumetricPceCapacityStorageDescriptor> ProvisionalPartitions =
             new List<VolumetricPceCapacityStorageDescriptor>();
         internal int NextPartition;
+    }
+
+    internal sealed class BaseWorldPceClosureResult
+    {
+        internal BaseWorldPceBootstrapJob Job;
+        internal bool Valid;
+        internal VolumetricPceCapacityStorageDescriptor[] Closed;
+        internal string Error;
+        internal double ElapsedMilliseconds;
+        internal long ManagedBefore;
+        internal long ManagedAfter;
     }
 
     internal sealed class LiquidCorePceRuntime : MonoBehaviour
@@ -113,6 +125,7 @@ namespace PhysicalWater
         private string _baseWorldBootstrapDomainFingerprint;
         private string _baseWorldBootstrapAttemptKey;
         private BaseWorldPceBootstrapJob _baseWorldPceBootstrapJob;
+        private Task<BaseWorldPceClosureResult> _baseWorldPceClosureTask;
         private bool _baseWorldBootstrapFailureReported;
         private string _baseWorldBootstrapGateState;
         private bool _configuredSourceMarkerApplied;
@@ -1046,12 +1059,54 @@ namespace PhysicalWater
             CodyCatchmentDescriptor sourceSeed = null;
             ulong globalSourceCatchmentId = 0UL;
             LiquidCoreInitialWorldWaterDomain domain = null;
-            long closureManagedBefore = GC.GetTotalMemory(false);
-            var closureWatch = System.Diagnostics.Stopwatch.StartNew();
-            bool valid = VolumetricPceGlobalConnectivityClosure.TryCloseOwned(
-                job.SourceBounds, job.PartitionSize, job.GeometryRevision,
-                job.DependencyRevisionHash, job.ProvisionalPartitions,
-                out closed, out closureError);
+            if (_baseWorldPceClosureTask == null)
+            {
+                BaseWorldPceBootstrapJob closureJob = job;
+                _baseWorldPceClosureTask = Task.Run(() =>
+                {
+                    long managedBefore = GC.GetTotalMemory(false);
+                    var watch = System.Diagnostics.Stopwatch.StartNew();
+                    bool resultValid = VolumetricPceGlobalConnectivityClosure.TryCloseOwned(
+                        closureJob.SourceBounds, closureJob.PartitionSize,
+                        closureJob.GeometryRevision, closureJob.DependencyRevisionHash,
+                        closureJob.ProvisionalPartitions, out VolumetricPceCapacityStorageDescriptor[] resultClosed,
+                        out string resultError);
+                    watch.Stop();
+                    return new BaseWorldPceClosureResult
+                    {
+                        Job = closureJob,
+                        Valid = resultValid,
+                        Closed = resultClosed,
+                        Error = resultError,
+                        ElapsedMilliseconds = watch.Elapsed.TotalMilliseconds,
+                        ManagedBefore = managedBefore,
+                        ManagedAfter = GC.GetTotalMemory(false)
+                    };
+                });
+                PhysicalWaterPlugin.Log.LogInfo(
+                    "LiquidCore complete base-world PCE closure scheduled off-thread: partitions=" +
+                    job.PartitionBounds.Length + ".");
+                return;
+            }
+            if (!_baseWorldPceClosureTask.IsCompleted) return;
+            BaseWorldPceClosureResult closureResult;
+            try
+            {
+                closureResult = _baseWorldPceClosureTask.GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                _baseWorldPceClosureTask = null;
+                _baseWorldPceBootstrapJob = null;
+                PhysicalWaterPlugin.Log.LogWarning(
+                    "LiquidCore complete base-world PCE closure failed closed off-thread: " + ex.Message + ".");
+                return;
+            }
+            _baseWorldPceClosureTask = null;
+            if (!ReferenceEquals(closureResult.Job, job)) return;
+            closed = closureResult.Closed ?? Array.Empty<VolumetricPceCapacityStorageDescriptor>();
+            closureError = closureResult.Error ?? string.Empty;
+            bool valid = closureResult.Valid;
             string failure = valid ? string.Empty : closureError;
             if (valid)
             {
@@ -1060,14 +1115,12 @@ namespace PhysicalWater
                     job.GeometryRevision, job.DependencyRevisionHash, closed,
                     out domain, out assemblyError);
             }
-            closureWatch.Stop();
-            long closureManagedAfter = GC.GetTotalMemory(false);
             PhysicalWaterPlugin.Log.LogInfo(
                 "LiquidCore complete base-world PCE closure telemetry: partitions=" +
                 job.PartitionBounds.Length + ", valid=" + valid + ", elapsedMs=" +
-                closureWatch.Elapsed.TotalMilliseconds.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) +
-                ", managedBefore=" + closureManagedBefore + ", managedAfter=" + closureManagedAfter +
-                ", managedDelta=" + (closureManagedAfter - closureManagedBefore) + ".");
+                closureResult.ElapsedMilliseconds.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) +
+                ", managedBefore=" + closureResult.ManagedBefore + ", managedAfter=" + closureResult.ManagedAfter +
+                ", managedDelta=" + (closureResult.ManagedAfter - closureResult.ManagedBefore) + ".");
             if (!valid)
             {
                 _baseWorldPceBootstrapJob = null;
