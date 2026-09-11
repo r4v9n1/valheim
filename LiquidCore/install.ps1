@@ -116,7 +116,10 @@ function Set-LiquidCoreConfigValue {
     Set-Content -LiteralPath $Path -Value $lines -Encoding UTF8
 }
 
-Set-LiquidCoreConfigValue -Path $ConfigPath -Section "General" -Key "Enabled" -Value "false"
+# The finite E1 path is a LiquidCore-enabled mode even though it deliberately
+# keeps legacy replacement disabled. Do not write a contradictory disabled
+# General flag when the caller explicitly requested E1 streaming.
+Set-LiquidCoreConfigValue -Path $ConfigPath -Section "General" -Key "Enabled" -Value ($EnableFiniteStreaming.ToString().ToLowerInvariant())
 Set-LiquidCoreConfigValue -Path $ConfigPath -Section "General" -Key "DryOceanFloorBaseline" -Value "false"
 Set-LiquidCoreConfigValue -Path $ConfigPath -Section "General" -Key "RenderPreviewSurface" -Value "false"
 Set-LiquidCoreConfigValue -Path $ConfigPath -Section "Integration" -Key "OverrideWaterQueries" -Value "false"
