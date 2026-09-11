@@ -53,6 +53,7 @@ DryRunStaticPieceServerOwnership = false
 PlayerBuiltPiecesOnly = true
 RequireWearNTear = true
 OwnershipScanIntervalSeconds = 5
+EnableBackgroundOwnershipAudit = true
 MaxClaimsPerScan = 250
 ZdoRecordsPerScan = 25000
 MaintenanceOwnershipScanIntervalSeconds = 30
@@ -75,7 +76,7 @@ OwnershipSummaryIntervalSeconds = 30
 
 `LogWatchedOwnershipClaims` can be enabled for focused testing of sensitive interactive prefabs such as beds, chests, portals, fires, crafting stations, signs, item stands, wards, doors, and gates. It is off by default for large-world testing. The periodic summary logs compact claim totals every 30 seconds.
 
-The ownership cache is stored beside the BepInEx config as `r4v9n1.terramizerserver.ownership-cache.tsv`. It preserves known eligible claimed ZDO ids across restarts, then warm-starts by directly looking up those ZDO ids and assigning the current server session id. It also persists the broad ZDO scan cursor and completed pass count so large-world scans can resume near the last flushed position after restart and return to lower-cost maintenance scanning once the first full pass is done.
+The background ownership audit and ownership cache are enabled by default. The cache is stored beside the BepInEx config as `r4v9n1.terramizerserver.ownership-cache.tsv`. It preserves known eligible claimed ZDO ids across restarts, then warm-starts by directly looking up those ZDO ids and assigning the current server session id. It also persists the broad ZDO scan cursor and completed pass count so large-world scans can resume near the last flushed position after restart and return to lower-cost maintenance scanning once the first full pass is done.
 
 TerramizerServer answers a lightweight companion RPC so Terramizer clients can auto-enable their server-companion smoothing profile reliably. It still refreshes Valheim server-synced metadata as a fallback for older Terramizer clients.
 

@@ -983,9 +983,15 @@ namespace PhysicalWater
                 ReportBaseWorldBootstrapGate("settings-unavailable");
                 return;
             }
-            if (!PhysicalWaterPlugin.Settings.StageE1Enabled.Value)
+            // The complete base-world provider is geometry/topology work and
+            // must not depend on the player-centred E3 representation. Keep
+            // the default disabled, but allow the existing read-only
+            // geometry-diagnostics mode to exercise the global provider
+            // without creating an E3 water domain or source transaction.
+            if (!PhysicalWaterPlugin.Settings.StageE1Enabled.Value &&
+                !PhysicalWaterPlugin.Settings.ValheimGeometryDiagnosticsEnabled.Value)
             {
-                ReportBaseWorldBootstrapGate("stage-e1-disabled");
+                ReportBaseWorldBootstrapGate("global-provider-disabled");
                 return;
             }
             if (WorldGenerator.instance == null)
