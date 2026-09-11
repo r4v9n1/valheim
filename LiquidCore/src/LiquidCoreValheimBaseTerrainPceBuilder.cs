@@ -61,7 +61,13 @@ namespace PhysicalWater
                 error = "Base terrain PCE partition bounds are not aligned to cell size.";
                 return false;
             }
-            int cellCount = nx * ny * nz;
+            long cellCountLong = (long)nx * ny * nz;
+            if (cellCountLong > int.MaxValue)
+            {
+                error = "Base terrain PCE partition contains too many storage cells.";
+                return false;
+            }
+            int cellCount = (int)cellCountLong;
             var capacity = new float[cellCount];
             var columnTerrainHeights = new float[nx * nz];
             var components = new int[cellCount];
