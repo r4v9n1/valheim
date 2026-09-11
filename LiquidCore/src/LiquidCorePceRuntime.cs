@@ -304,6 +304,26 @@ namespace PhysicalWater
             domain = null;
             if (!TryResolveCodySourceCatchment(sourceSeedPosition, out ulong sourceCatchmentId, out error))
                 return false;
+            return TryPublishBaseWorldPceDomainForCatchment(
+                domainId, sourceCatchmentId, verticalMin, verticalMax, partitionSize,
+                cellSize, geometryRevision, dependencyRevisionHash, out domain, out error);
+        }
+
+        // The production bootstrap consumes an explicit CODY-selected
+        // catchment identity. It must not select a source from the player,
+        // biome, SeaLevel, renderer coverage, or the active E3 window.
+        internal bool TryPublishBaseWorldPceDomainForCatchment(
+            string domainId, ulong sourceCatchmentId,
+            float verticalMin, float verticalMax, Vector2 partitionSize,
+            float cellSize, long geometryRevision, string dependencyRevisionHash,
+            out LiquidCoreInitialWorldWaterDomain domain, out string error)
+        {
+            domain = null;
+            if (sourceCatchmentId == 0UL)
+            {
+                error = "Complete base-world PCE publication requires an explicit non-zero CODY catchment identity.";
+                return false;
+            }
             if (!TryBuildBaseWorldPcePartitions(
                     verticalMin, verticalMax, partitionSize, cellSize,
                     geometryRevision, dependencyRevisionHash,
