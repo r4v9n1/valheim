@@ -172,6 +172,21 @@ namespace PhysicalWater
             return true;
         }
 
+        internal bool TryResolveCodyInitialWaterSourceCatchment(
+            out ulong catchmentId, out string error)
+        {
+            catchmentId = 0UL;
+            error = string.Empty;
+            if (_codyL1 == null ||
+                !_codyL1.TryGetInitialWaterSourceSeed(out CodyCatchmentDescriptor descriptor))
+            {
+                error = "CODY has not published a validated initial-water source seed.";
+                return false;
+            }
+            catchmentId = descriptor.CatchmentId;
+            return catchmentId != 0UL;
+        }
+
         internal bool TryBuildCompleteInitialWorldDomain(
             string domainId, Bounds sourceBounds, long geometryRevision,
             string dependencyRevisionHash,
