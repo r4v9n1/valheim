@@ -50,11 +50,10 @@ namespace PhysicalWater
         internal long GeometryRevision;
         internal string DependencyRevisionHash;
         internal long EstimatedCompactGeometryBytes;
-        // Provisional geometry is captured once per deterministic partition.
-        // Closure must consume that exact snapshot rather than resampling the
-        // entire world after the incremental bootstrap budget is exhausted.
-        internal readonly List<VolumetricPceCapacityStorageDescriptor> ProvisionalPartitions =
-            new List<VolumetricPceCapacityStorageDescriptor>();
+        // Partition bounds and revisions are retained; provisional dense
+        // descriptors are intentionally not retained. Streaming closure
+        // reloads deterministic base geometry and owns only the completed
+        // descriptor set, keeping peak bootstrap memory bounded.
         internal int NextPartition;
     }
 
@@ -1167,7 +1166,6 @@ namespace PhysicalWater
                     }
                     return;
                 }
-                job.ProvisionalPartitions.Add(descriptor);
                 job.NextPartition++;
                 if (job.NextPartition == 1 ||
                     job.NextPartition == job.PartitionBounds.Length ||
@@ -1195,11 +1193,11 @@ namespace PhysicalWater
                 {
                     long managedBefore = GC.GetTotalMemory(false);
                     var watch = System.Diagnostics.Stopwatch.StartNew();
-                    bool resultValid = VolumetricPceGlobalConnectivityClosure.TryCloseOwned(
-                        closureJob.SourceBounds, closureJob.PartitionSize,
-                        closureJob.GeometryRevision, closureJob.DependencyRevisionHash,
-                        closureJob.ProvisionalPartitions, out VolumetricPceCapacityStorageDescriptor[] resultClosed,
-                        out string resultError);
+                    var streamedClosed = new List<VolumetricPceCapacityStorageDescriptor>(
+                        closureJob.PartitionBounds.Length);
+                    bool resultValid = TryCloseBaseWorldPcePartitionsStreaming(
+                        closureJob, streamedClosed, out string resultError);
+                    VolumetricPceCapacityStorageDescriptor[] resultClosed = streamedClosed.ToArray();
                     watch.Stop();
                     return new BaseWorldPceClosureResult
                     {
