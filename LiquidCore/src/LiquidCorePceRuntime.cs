@@ -214,6 +214,17 @@ namespace PhysicalWater
             return true;
         }
 
+        internal bool TryCloseBaseWorldPcePartitions(
+            Bounds sourceBounds, Vector2 partitionSize,
+            long geometryRevision, string dependencyRevisionHash,
+            IReadOnlyList<VolumetricPceCapacityStorageDescriptor> provisional,
+            out VolumetricPceCapacityStorageDescriptor[] closed, out string error)
+        {
+            return VolumetricPceGlobalConnectivityClosure.TryClose(
+                sourceBounds, partitionSize, geometryRevision, dependencyRevisionHash,
+                provisional, out closed, out error);
+        }
+
         internal bool PublishCapacityStorage(
             VolumetricPceCapacityStorageDescriptor descriptor, out string error)
         {
