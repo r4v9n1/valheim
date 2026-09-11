@@ -151,6 +151,32 @@ namespace PhysicalWater
             return true;
         }
 
+        private bool PublishCompleteInitialWorldDomainOwned(
+            LiquidCoreInitialWorldWaterDomain domain, out string error)
+        {
+            error = string.Empty;
+            if (domain == null || !domain.ValidateComplete(out error)) return false;
+            if (_completeInitialWorldDomain != null)
+            {
+                if (!string.Equals(_completeInitialWorldDomain.DomainId, domain.DomainId,
+                        StringComparison.Ordinal))
+                {
+                    error = "PCE complete source publication changed the stable domain identity.";
+                    return false;
+                }
+                if (domain.GeometryRevision < _completeInitialWorldDomain.GeometryRevision)
+                {
+                    error = "PCE complete source publication is older than the retained geometry revision.";
+                    return false;
+                }
+            }
+            // Ownership is transferred from the provider-owned closed
+            // descriptor set. Subscribers receive an isolated clone.
+            _completeInitialWorldDomain = domain;
+            CompleteInitialWorldDomainPublished?.Invoke(_completeInitialWorldDomain.Clone());
+            return true;
+        }
+
         internal bool TryGetCapacityStorage(ulong catchmentId,
             out VolumetricPceCapacityStorageDescriptor descriptor)
         {
@@ -969,7 +995,7 @@ namespace PhysicalWater
             }
             if (valid)
             {
-                valid = VolumetricPceCompletePartitionAssembler.TryAssemble(
+                valid = VolumetricPceCompletePartitionAssembler.TryAssembleOwned(
                     job.DomainId, job.SourceBounds, job.PartitionSize,
                     job.GeometryRevision, job.DependencyRevisionHash, closed,
                     out domain, out assemblyError);
@@ -1013,7 +1039,7 @@ namespace PhysicalWater
                     return;
                 }
             }
-            if (!PublishCompleteInitialWorldDomain(domain, out string domainError))
+            if (!PublishCompleteInitialWorldDomainOwned(domain, out string domainError))
             {
                 _baseWorldPceBootstrapJob = null;
                 if (!_baseWorldBootstrapFailureReported)
