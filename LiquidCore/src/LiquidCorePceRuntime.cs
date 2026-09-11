@@ -37,6 +37,22 @@ namespace PhysicalWater
         internal bool DatabaseHit;
     }
 
+    internal sealed class BaseWorldPceBootstrapJob
+    {
+        internal string WorldKey;
+        internal string DomainId;
+        internal ulong SourceCatchmentId;
+        internal Bounds SourceBounds;
+        internal Bounds[] PartitionBounds;
+        internal Vector2 PartitionSize;
+        internal float CellSize;
+        internal long GeometryRevision;
+        internal string DependencyRevisionHash;
+        internal int NextPartition;
+        internal readonly List<VolumetricPceCapacityStorageDescriptor> Provisional =
+            new List<VolumetricPceCapacityStorageDescriptor>();
+    }
+
     internal sealed class LiquidCorePceRuntime : MonoBehaviour
     {
         private readonly ProbeColonyWorld _world = new ProbeColonyWorld();
@@ -91,6 +107,7 @@ namespace PhysicalWater
         private long _pendingCodyGeometryRevision = -1;
         private string _baseWorldBootstrapWorldKey;
         private string _baseWorldBootstrapAttemptKey;
+        private BaseWorldPceBootstrapJob _baseWorldPceBootstrapJob;
         private bool _baseWorldBootstrapReported;
         private bool _baseWorldBootstrapFailureReported;
         private bool _configuredSourceMarkerApplied;
@@ -738,6 +755,19 @@ namespace PhysicalWater
             World world = ZNet.GetWorldIfIsHost();
             if (world == null || world.m_uid == 0L) return;
             string worldKey = world.m_uid.ToString("X16");
+            if (_baseWorldPceBootstrapJob != null)
+            {
+                if (!string.Equals(_baseWorldPceBootstrapJob.WorldKey, worldKey, StringComparison.Ordinal))
+                {
+                    _baseWorldPceBootstrapJob = null;
+                    _baseWorldBootstrapAttemptKey = null;
+                }
+                else
+                {
+                    AdvanceBaseWorldPceBootstrapJob();
+                    return;
+                }
+            }
             if (string.Equals(_baseWorldBootstrapWorldKey, worldKey, StringComparison.Ordinal)) return;
             if (!TryResolveCodyInitialWaterSourceCatchment(
                     out ulong sourceCatchmentId, out string sourceError))
@@ -773,11 +803,9 @@ namespace PhysicalWater
             if (string.Equals(_baseWorldBootstrapAttemptKey, attemptKey, StringComparison.Ordinal)) return;
             _baseWorldBootstrapAttemptKey = attemptKey;
             _baseWorldBootstrapFailureReported = false;
-            if (!TryPublishBaseWorldPceDomainForCatchment(
-                    "valheim-world-ocean-" + worldKey, sourceCatchmentId,
+            if (!TryEnumerateBaseWorldPcePartitions(
                     verticalMin, verticalMax, new Vector2(partitionSize, partitionSize),
-                    cellSize, geometryRevision, dependencyRevision,
-                    out LiquidCoreInitialWorldWaterDomain domain, out string error))
+                    out Bounds sourceBounds, out Bounds[] partitionBounds, out string error))
             {
                 if (!_baseWorldBootstrapFailureReported)
                 {
@@ -787,10 +815,136 @@ namespace PhysicalWater
                 }
                 return;
             }
-            _baseWorldBootstrapWorldKey = worldKey;
+            _baseWorldPceBootstrapJob = new BaseWorldPceBootstrapJob
+            {
+                WorldKey = worldKey,
+                DomainId = "valheim-world-ocean-" + worldKey,
+                SourceCatchmentId = sourceCatchmentId,
+                SourceBounds = sourceBounds,
+                PartitionBounds = partitionBounds,
+                PartitionSize = new Vector2(partitionSize, partitionSize),
+                CellSize = cellSize,
+                GeometryRevision = geometryRevision,
+                DependencyRevisionHash = dependencyRevision
+            };
+            AdvanceBaseWorldPceBootstrapJob();
+        }
+
+        private void AdvanceBaseWorldPceBootstrapJob()
+        {
+            BaseWorldPceBootstrapJob job = _baseWorldPceBootstrapJob;
+            if (job == null) return;
+            if (job.NextPartition < job.PartitionBounds.Length)
+            {
+                if (!TryBuildBaseTerrainPcePartition(
+                        job.PartitionBounds[job.NextPartition], job.PartitionSize,
+                        job.CellSize, job.GeometryRevision, job.DependencyRevisionHash,
+                        out VolumetricPceCapacityStorageDescriptor descriptor, out string error))
+                {
+                    _baseWorldPceBootstrapJob = null;
+                    if (!_baseWorldBootstrapFailureReported)
+                    {
+                        PhysicalWaterPlugin.Log.LogWarning(
+                            "LiquidCore complete base-world PCE bootstrap deferred/fail-closed: " + error + ".");
+                        _baseWorldBootstrapFailureReported = true;
+                    }
+                    return;
+                }
+                job.Provisional.Add(descriptor);
+                job.NextPartition++;
+                return;
+            }
+            VolumetricPceCapacityStorageDescriptor[] closed = Array.Empty<VolumetricPceCapacityStorageDescriptor>();
+            string closureError = string.Empty;
+            string sourceError = string.Empty;
+            string assemblyError = string.Empty;
+            CodyCatchmentDescriptor sourceSeed = null;
+            ulong globalSourceCatchmentId = 0UL;
+            LiquidCoreInitialWorldWaterDomain domain = null;
+            bool valid = TryCloseBaseWorldPcePartitions(
+                job.SourceBounds, job.PartitionSize, job.GeometryRevision,
+                job.DependencyRevisionHash, job.Provisional,
+                out closed, out closureError);
+            string failure = valid ? string.Empty : closureError;
+            if (valid)
+            {
+                valid = TryResolveCodyInitialWaterSourceCatchment(
+                    out ulong sourceCatchmentId, out sourceError) &&
+                    sourceCatchmentId == job.SourceCatchmentId;
+                if (!valid && string.IsNullOrEmpty(sourceError))
+                    sourceError = "CODY source catchment changed during base-world PCE bootstrap.";
+            }
+            if (valid)
+            {
+                valid = TryGetCodyInitialWaterSourceSeed(out sourceSeed, out sourceError);
+            }
+            if (valid)
+            {
+                valid = TryResolveClosedPceCatchment(
+                    sourceSeed, closed, out globalSourceCatchmentId, out sourceError);
+            }
+            if (valid)
+            {
+                valid = VolumetricPceCompletePartitionAssembler.TryAssemble(
+                    job.DomainId, job.SourceBounds, job.PartitionSize,
+                    job.GeometryRevision, job.DependencyRevisionHash, closed,
+                    out domain, out assemblyError);
+            }
+            if (!valid)
+            {
+                _baseWorldPceBootstrapJob = null;
+                if (string.IsNullOrEmpty(failure)) failure = sourceError;
+                if (string.IsNullOrEmpty(failure)) failure = assemblyError;
+                if (!_baseWorldBootstrapFailureReported)
+                {
+                    PhysicalWaterPlugin.Log.LogWarning(
+                        "LiquidCore complete base-world PCE bootstrap deferred/fail-closed: " + failure + ".");
+                    _baseWorldBootstrapFailureReported = true;
+                }
+                return;
+            }
+            domain.SourceCatchmentId = globalSourceCatchmentId;
+            if (!CanPublishCompleteBaseWorldPceDomain(domain, closed, out string preflightError))
+            {
+                _baseWorldPceBootstrapJob = null;
+                if (!_baseWorldBootstrapFailureReported)
+                {
+                    PhysicalWaterPlugin.Log.LogWarning(
+                        "LiquidCore complete base-world PCE bootstrap deferred/fail-closed: " + preflightError + ".");
+                    _baseWorldBootstrapFailureReported = true;
+                }
+                return;
+            }
+            for (int i = 0; i < closed.Length; i++)
+            {
+                if (!PublishCapacityStorage(closed[i], out string publishError))
+                {
+                    _baseWorldPceBootstrapJob = null;
+                    if (!_baseWorldBootstrapFailureReported)
+                    {
+                        PhysicalWaterPlugin.Log.LogWarning(
+                            "LiquidCore complete base-world PCE bootstrap deferred/fail-closed: " + publishError + ".");
+                        _baseWorldBootstrapFailureReported = true;
+                    }
+                    return;
+                }
+            }
+            if (!PublishCompleteInitialWorldDomain(domain, out string domainError))
+            {
+                _baseWorldPceBootstrapJob = null;
+                if (!_baseWorldBootstrapFailureReported)
+                {
+                    PhysicalWaterPlugin.Log.LogWarning(
+                        "LiquidCore complete base-world PCE bootstrap deferred/fail-closed: " + domainError + ".");
+                    _baseWorldBootstrapFailureReported = true;
+                }
+                return;
+            }
+            _baseWorldPceBootstrapJob = null;
+            _baseWorldBootstrapWorldKey = job.WorldKey;
             PhysicalWaterPlugin.Log.LogInfo(
-                "LiquidCore complete base-world PCE domain published: world=" + worldKey +
-                ", partitions=" + domain.Partitions.Length + ", geometryRevision=" + geometryRevision + ".");
+                "LiquidCore complete base-world PCE domain published: world=" + job.WorldKey +
+                ", partitions=" + closed.Length + ", geometryRevision=" + job.GeometryRevision + ".");
         }
 
         private static string BuildBaseWorldDependencyRevision(
