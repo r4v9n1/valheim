@@ -176,6 +176,16 @@ namespace PhysicalWater
                 sourceBounds, partitionSize, out partitions, out error);
         }
 
+        internal bool TryBuildBaseTerrainPcePartition(
+            Bounds partitionBounds, Vector2 partitionSize, float cellSize,
+            long geometryRevision, string dependencyRevisionHash,
+            out VolumetricPceCapacityStorageDescriptor descriptor, out string error)
+        {
+            return LiquidCoreValheimBaseTerrainPceBuilder.TryBuildFromWorldGenerator(
+                partitionBounds, partitionSize, cellSize, geometryRevision,
+                dependencyRevisionHash, out descriptor, out error);
+        }
+
         internal bool PublishCapacityStorage(
             VolumetricPceCapacityStorageDescriptor descriptor, out string error)
         {
