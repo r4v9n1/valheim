@@ -1537,6 +1537,7 @@ namespace PhysicalWater
                 sourceSeed.CatchmentId == descriptor.CatchmentId)
             {
                 _baseWorldPceBootstrapJob = null;
+                _baseWorldBootstrapWorldKey = null;
                 _baseWorldBootstrapAttemptKey = null;
                 _baseWorldBootstrapFailureReported = false;
             }
