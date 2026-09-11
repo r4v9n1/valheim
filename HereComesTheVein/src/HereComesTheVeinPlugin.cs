@@ -569,7 +569,7 @@ namespace HereComesTheVein
                     foreach (GameObject sceneObject in sceneObjects)
                     {
                         if (sceneObject == null || !sceneObject.scene.IsValid() ||
-                            !sceneObject.name.Replace("(Clone)", "").Contains("TrophyTheElder", StringComparison.OrdinalIgnoreCase))
+                            sceneObject.name.Replace("(Clone)", "").IndexOf("TrophyTheElder", StringComparison.OrdinalIgnoreCase) < 0)
                         {
                             continue;
                         }
