@@ -888,6 +888,16 @@ namespace PhysicalWater
                 }
                 job.Provisional.Add(descriptor);
                 job.NextPartition++;
+                if (job.NextPartition == 1 ||
+                    job.NextPartition == job.PartitionBounds.Length ||
+                    (job.NextPartition % 16) == 0)
+                {
+                    PhysicalWaterPlugin.Log.LogInfo(
+                        "LiquidCore complete base-world PCE partition sampled: " +
+                        job.NextPartition + "/" + job.PartitionBounds.Length +
+                        ", id=" + descriptor.SourcePartitionId +
+                        ", cells=" + descriptor.CellCapacity.Length + ".");
+                }
                 return;
             }
             VolumetricPceCapacityStorageDescriptor[] closed = Array.Empty<VolumetricPceCapacityStorageDescriptor>();
