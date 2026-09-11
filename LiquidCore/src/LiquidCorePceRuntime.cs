@@ -164,6 +164,18 @@ namespace PhysicalWater
                 partitions, out domain, out error);
         }
 
+        internal bool TryEnumerateBaseWorldPcePartitions(
+            float verticalMin, float verticalMax, Vector2 partitionSize,
+            out Bounds sourceBounds, out Bounds[] partitions, out string error)
+        {
+            sourceBounds = default(Bounds);
+            partitions = Array.Empty<Bounds>();
+            if (!LiquidCoreValheimBaseWorldDomain.TryGetBounds(
+                    verticalMin, verticalMax, out sourceBounds, out error)) return false;
+            return VolumetricPceSourcePartitionGrid.TryBuild(
+                sourceBounds, partitionSize, out partitions, out error);
+        }
+
         internal bool PublishCapacityStorage(
             VolumetricPceCapacityStorageDescriptor descriptor, out string error)
         {
