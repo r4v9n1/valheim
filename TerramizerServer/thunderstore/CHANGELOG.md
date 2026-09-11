@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.3
+
+- Enabled the background ownership audit by default so the ownership cache performs its initial broad scan, warm-start, and maintenance cycle without manual configuration.
+
 ## 1.0.2
 
 - Replaced the package icon with a custom-made, non-AI-generated icon.

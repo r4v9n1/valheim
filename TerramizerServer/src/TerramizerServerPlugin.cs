@@ -153,7 +153,7 @@ namespace TerramizerServer
                 "Maximum ZDO ownership changes allowed per maintenance scan after the first full broad pass.", 1, 5000);
             _maintenanceZdoRecordsPerScan = BindRange("ExperimentalOwnership", "MaintenanceZdoRecordsPerScan", 1000,
                 "Maximum persistent ZDO records inspected per maintenance scan after the first full broad pass.", 100, 100000);
-            _enableBackgroundOwnershipAudit = Config.Bind("ExperimentalOwnership", "EnableBackgroundOwnershipAudit", false,
+            _enableBackgroundOwnershipAudit = Config.Bind("ExperimentalOwnership", "EnableBackgroundOwnershipAudit", true,
                 "Run the legacy whole-world ZDO ownership audit. Disabled by default because event-driven claims cover newly loaded structures without scanning the live world table.");
             _enableOwnershipCache = Config.Bind("OwnershipCache", "EnableOwnershipCache", true,
                 "Store known eligible claimed ZDOs so restart warm-start can quickly reassign them to the new server session id.");
