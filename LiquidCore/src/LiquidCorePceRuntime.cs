@@ -131,6 +131,18 @@ namespace PhysicalWater
             return _capacityStorageByCatchment.TryGetValue(catchmentId, out descriptor);
         }
 
+        internal bool TryBuildCompleteInitialWorldDomain(
+            string domainId, Bounds sourceBounds, long geometryRevision,
+            string dependencyRevisionHash,
+            out LiquidCoreInitialWorldWaterDomain domain, out string error)
+        {
+            var partitions = new List<VolumetricPceCapacityStorageDescriptor>(
+                _capacityStorageByCatchment.Values);
+            return LiquidCoreInitialWorldWaterDomain.TryAssembleComplete(
+                domainId, sourceBounds, geometryRevision, dependencyRevisionHash,
+                partitions, out domain, out error);
+        }
+
         internal bool PublishCapacityStorage(
             VolumetricPceCapacityStorageDescriptor descriptor, out string error)
         {
