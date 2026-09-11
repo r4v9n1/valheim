@@ -256,3 +256,11 @@ complete-domain regression verifies both partition identities in the exact
 `8 m3` / `64000`-atom plan. Workspace checkpoint `ec52aad` contains this
 change. The rebuilt DLL SHA-256 is
 `7806B0F83F01C6FF75C6AB904EC1B5C6362AD84BEBD2767672ADE94FAC5FE81C`.
+
+Partition-keyed receipt persistence was added in workspace checkpoint
+`f0e8845`. PWFS format 14 stores stable source ID, partition ID, geometry
+revision, dependency revision, and exact source atoms; older PWFS version 13
+receipts remain readable through the legacy single-receipt fallback. The
+persistence regression passes the two-partition receipt round trip. This is
+receipt provenance only: additional partitions are still rejected until the
+E3 dormant/materialization transfer is implemented.
