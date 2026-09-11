@@ -1,6 +1,7 @@
 param(
     [string]$ValheimDir = "C:\Program Files (x86)\Steam\steamapps\common\Valheim",
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Release",
+    [string]$GameManagedDir = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -9,7 +10,11 @@ $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $LocalProjectRoot = Join-Path $env:LOCALAPPDATA "R4V9N1\LiquidCore"
 $ObjDir = Join-Path $LocalProjectRoot "obj"
 $DistDir = Join-Path $LocalProjectRoot "dist"
-$ManagedDir = Join-Path $ValheimDir "valheim_Data\Managed"
+$ManagedDir = if ([string]::IsNullOrWhiteSpace($GameManagedDir)) {
+    Join-Path $ValheimDir "valheim_Data\Managed"
+} else {
+    [System.IO.Path]::GetFullPath($GameManagedDir)
+}
 $BepInExCoreDir = Join-Path $ValheimDir "BepInEx\core"
 $DllPath = Join-Path $DistDir "LiquidCore.dll"
 
