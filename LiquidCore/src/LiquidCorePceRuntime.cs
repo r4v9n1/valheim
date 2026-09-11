@@ -49,6 +49,11 @@ namespace PhysicalWater
         internal long GeometryRevision;
         internal string DependencyRevisionHash;
         internal long EstimatedCompactGeometryBytes;
+        // Provisional geometry is captured once per deterministic partition.
+        // Closure must consume that exact snapshot rather than resampling the
+        // entire world after the incremental bootstrap budget is exhausted.
+        internal readonly List<VolumetricPceCapacityStorageDescriptor> ProvisionalPartitions =
+            new List<VolumetricPceCapacityStorageDescriptor>();
         internal int NextPartition;
     }
 
@@ -989,6 +994,7 @@ namespace PhysicalWater
                     }
                     return;
                 }
+                job.ProvisionalPartitions.Add(descriptor);
                 job.NextPartition++;
                 if (job.NextPartition == 1 ||
                     job.NextPartition == job.PartitionBounds.Length ||
@@ -1002,18 +1008,17 @@ namespace PhysicalWater
                 }
                 return;
             }
-            VolumetricPceCapacityStorageDescriptor[] closed = Array.Empty<VolumetricPceCapacityStorageDescriptor>();
+            VolumetricPceCapacityStorageDescriptor[] closed;
             string closureError = string.Empty;
             string sourceError = string.Empty;
             string assemblyError = string.Empty;
             CodyCatchmentDescriptor sourceSeed = null;
             ulong globalSourceCatchmentId = 0UL;
             LiquidCoreInitialWorldWaterDomain domain = null;
-            var closedList = new List<VolumetricPceCapacityStorageDescriptor>(
-                job.PartitionBounds.Length);
-            bool valid = TryCloseBaseWorldPcePartitionsStreaming(
-                job, closedList, out closureError);
-            if (valid) closed = closedList.ToArray();
+            bool valid = VolumetricPceGlobalConnectivityClosure.TryClose(
+                job.SourceBounds, job.PartitionSize, job.GeometryRevision,
+                job.DependencyRevisionHash, job.ProvisionalPartitions,
+                out closed, out closureError);
             string failure = valid ? string.Empty : closureError;
             if (valid)
             {
