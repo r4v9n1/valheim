@@ -25,6 +25,11 @@ $EnableGeometryDiagnostics = (-not $EnableFiniteStreaming).ToString().ToLowerInv
 
 New-Item -ItemType Directory -Force -Path $PluginDir | Out-Null
 Copy-Item -LiteralPath $DllPath -Destination $PluginDllPath -Force
+$builtDllHash = (Get-FileHash -LiteralPath $DllPath -Algorithm SHA256).Hash
+$installedDllHash = (Get-FileHash -LiteralPath $PluginDllPath -Algorithm SHA256).Hash
+if ($builtDllHash -ne $installedDllHash) {
+    throw "Installed LiquidCore DLL hash does not match the validated build output. expected=$builtDllHash actual=$installedDllHash"
+}
 
 $BundlePath = Join-Path $LocalDistDir $BundleName
 if (!(Test-Path -LiteralPath $BundlePath -PathType Leaf)) {
@@ -149,6 +154,7 @@ Set-LiquidCoreConfigValue -Path $ConfigPath -Section "StageE1" -Key "MaxSubsteps
 
 Write-Host "Installed LiquidCore locally:" -ForegroundColor Green
 Write-Host $PluginDllPath
+Write-Host "Installed LiquidCore DLL SHA256: $installedDllHash" -ForegroundColor DarkGray
 if (Test-Path -LiteralPath $PluginBundlePath -PathType Leaf) {
     Write-Host "Installed LiquidCore Unity asset bundle (legacy asset identity preserved):" -ForegroundColor Green
     Write-Host $PluginBundlePath
