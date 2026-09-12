@@ -1262,6 +1262,33 @@ namespace PhysicalWater
                 _nextCausalGeometryApplyTime = 0f;
                 PublishAppliedCapacityStorage(pce, appliedGeometryRevision);
                 pce.QueueCodyCatchmentCoverage(_domain, _geometryCoverageBounds);
+
+                if (_streaming.HasCommittedInitialWorldWaterSource &&
+                    !_streaming.HasActiveInitialWorldWaterRepresentation)
+                {
+                    if (_streaming.TryMaterializeInitialWorldWaterForActiveWindow(
+                            out LiquidCoreInitialWaterMaterializationResult materialization,
+                            out string materializationError))
+                    {
+                        PhysicalWaterPlugin.Log.LogInfo(
+                            "PW_E3_INITIAL_SOURCE_MATERIALIZED activeWater=True" +
+                            ", consumedCoarseAtoms=" + materialization.ConsumedSourceAtoms +
+                            ", producedFineAtoms=" + materialization.ProducedDestinationAtoms +
+                            ", retainedCoarseAtoms=" + materialization.SourceAtomsRetainedForExactConversion +
+                            ", conversionDivisor=" + materialization.SourceAtomConversionDivisor +
+                            ", volume=" + materialization.TransferredVolume.ToString("R", CultureInfo.InvariantCulture) + "m3" +
+                            ", sourceCells=" + materialization.TouchedSourceCells +
+                            ", destinationCells=" + materialization.TouchedDestinationCells +
+                            ", partitions=" + materialization.TouchedPartitions + ".");
+                    }
+                    else
+                    {
+                        PhysicalWaterPlugin.Log.LogWarning(
+                            "PW_E3_INITIAL_SOURCE_MATERIALIZATION deferred/fail-closed: " +
+                            materializationError + ".");
+                    }
+                }
+
                 string readyMarker = wasInitialPreparation ? "PW_E3_F6_READY" : "PW_E3_GEOMETRY_READY";
                 PhysicalWaterPlugin.Log.LogInfo(
                     readyMarker + " geometryReady=True, fillReady=True, simulationPaused=False; prepared causal solid synchronization apply=" +
