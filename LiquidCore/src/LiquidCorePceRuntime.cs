@@ -1001,7 +1001,8 @@ namespace PhysicalWater
             // geometry-diagnostics mode to exercise the global provider
             // without creating an E3 water domain or source transaction.
             if (!PhysicalWaterPlugin.Settings.StageE1Enabled.Value &&
-                !PhysicalWaterPlugin.Settings.ValheimGeometryDiagnosticsEnabled.Value)
+                !PhysicalWaterPlugin.Settings.ValheimGeometryDiagnosticsEnabled.Value &&
+                !PhysicalWaterPlugin.Settings.InitialWorldPceEnabled.Value)
             {
                 ReportBaseWorldBootstrapGate("global-provider-disabled");
                 return;
