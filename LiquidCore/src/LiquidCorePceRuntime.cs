@@ -1308,8 +1308,10 @@ namespace PhysicalWater
                     job.PendingPartitionColumnCursor = 0;
                     job.PendingPartitionColumnHeights = new float[columnsX * columnsZ];
                 }
-                float budgetMilliseconds = PhysicalWaterPlugin.Settings == null ? 4f :
+                float configuredBudgetMilliseconds = PhysicalWaterPlugin.Settings == null ? 4f :
                     PhysicalWaterPlugin.Settings.ValheimGeometryIncrementalBudgetMilliseconds.Value;
+                float budgetMilliseconds = Finite(configuredBudgetMilliseconds) ?
+                    Math.Max(1f, configuredBudgetMilliseconds) : 4f;
                 var watch = System.Diagnostics.Stopwatch.StartNew();
                 int columnCount = job.PendingPartitionColumnHeights.Length;
                 while (job.PendingPartitionColumnCursor < columnCount)
@@ -1345,7 +1347,7 @@ namespace PhysicalWater
                     }
                     job.PendingPartitionColumnHeights[cursor] = height;
                     job.PendingPartitionColumnCursor++;
-                    if (watch.Elapsed.TotalMilliseconds >= Math.Max(1f, budgetMilliseconds))
+                    if (watch.Elapsed.TotalMilliseconds >= budgetMilliseconds)
                         break;
                 }
                 if (job.PendingPartitionColumnCursor < columnCount) return;
