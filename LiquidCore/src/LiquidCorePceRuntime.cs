@@ -150,6 +150,27 @@ namespace PhysicalWater
         internal event Action<VolumetricPceCapacityStorageDescriptor> CapacityStoragePublished;
         internal event Action<LiquidCoreInitialWorldWaterDomain> CompleteInitialWorldDomainPublished;
 
+        /// <summary>
+        /// Allocation-free frame-loop readiness query. This intentionally
+        /// exposes only immutable readiness state; callers that need the
+        /// complete domain continue to use TryGetCompleteInitialWorldDomain,
+        /// which returns an isolated clone.
+        /// </summary>
+        internal bool TryGetCompleteInitialWorldDomainReadiness(
+            out bool hasSourceCatchment)
+        {
+            LiquidCoreInitialWorldWaterDomain domain =
+                _completeInitialWorldDomain;
+
+            hasSourceCatchment =
+                domain != null &&
+                (domain.SourceCatchmentId != 0UL ||
+                 (domain.SourceCatchmentIds != null &&
+                  domain.SourceCatchmentIds.Length > 0));
+
+            return domain != null;
+        }
+
         internal bool TryGetCompleteInitialWorldDomain(
             out LiquidCoreInitialWorldWaterDomain domain)
         {

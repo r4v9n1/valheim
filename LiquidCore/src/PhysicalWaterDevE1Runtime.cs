@@ -176,15 +176,20 @@ namespace PhysicalWater
         private void Update()
         {
             LiquidCorePceRuntime pce = LiquidCorePceRuntime.Instance;
-            LiquidCoreInitialWorldWaterDomain publishedDomain = null;
-            bool hasCompleteDomain = pce != null &&
-                pce.TryGetCompleteInitialWorldDomain(out publishedDomain);
-            bool hasSourceCatchment = hasCompleteDomain &&
-                (publishedDomain.SourceCatchmentId != 0UL ||
-                 (publishedDomain.SourceCatchmentIds != null && publishedDomain.SourceCatchmentIds.Length > 0));
-            bool assetsReady = _macShader != null && _flipShader != null && _surfaceShader != null && _surfaceMaterial != null;
+            bool assetsReady = _macShader != null && _flipShader != null &&
+                               _surfaceShader != null && _surfaceMaterial != null;
+
             if (_streaming == null)
             {
+                bool hasCompleteDomain = false;
+                bool hasSourceCatchment = false;
+
+                if (pce != null)
+                {
+                    hasCompleteDomain =
+                        pce.TryGetCompleteInitialWorldDomainReadiness(
+                            out hasSourceCatchment);
+                }
                 if (Player.m_localPlayer == null)
                     ReportActivationGate("local-player-unavailable");
                 else if (!assetsReady)
