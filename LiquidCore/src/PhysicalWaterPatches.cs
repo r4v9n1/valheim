@@ -1069,7 +1069,7 @@ namespace PhysicalWater
         {
             try
             {
-                if (__instance == null || !PhysicalWaterSystem.IsEnabled()) return;
+                if (__instance == null || !VanillaWaterSuppression.IsActive()) return;
                 HideWaterVolumeRenderers(__instance);
             }
             catch (Exception ex)
@@ -1089,7 +1089,7 @@ namespace PhysicalWater
     {
         private static bool Prefix(ref float __result)
         {
-            if (!PhysicalWaterSystem.IsEnabled())
+            if (!VanillaWaterSuppression.IsActive())
             {
                 return true;
             }
@@ -1109,7 +1109,7 @@ namespace PhysicalWater
 
         private static void TryHide(WaterVolume waterVolume)
         {
-            if (PhysicalWaterSystem.IsEnabled())
+            if (VanillaWaterSuppression.IsActive())
             {
                 VanillaWaterSuppression.HideRenderers(waterVolume);
             }
@@ -1121,7 +1121,7 @@ namespace PhysicalWater
     {
         private static void Postfix(WaterVolume __instance)
         {
-            if (PhysicalWaterSystem.IsEnabled())
+            if (VanillaWaterSuppression.IsActive())
             {
                 VanillaWaterSuppression.HideRenderers(__instance);
             }
@@ -1133,7 +1133,7 @@ namespace PhysicalWater
     {
         private static bool Prefix()
         {
-            return !PhysicalWaterSystem.IsEnabled();
+            return !VanillaWaterSuppression.IsActive();
         }
     }
 
@@ -1142,7 +1142,7 @@ namespace PhysicalWater
     {
         private static bool Prefix()
         {
-            return !PhysicalWaterSystem.IsEnabled();
+            return !VanillaWaterSuppression.IsActive();
         }
     }
 
@@ -1151,7 +1151,7 @@ namespace PhysicalWater
     {
         private static bool Prefix()
         {
-            return !PhysicalWaterSystem.IsEnabled();
+            return !VanillaWaterSuppression.IsActive();
         }
     }
 
@@ -1160,7 +1160,7 @@ namespace PhysicalWater
     {
         private static void Postfix(LiquidSurface __instance)
         {
-            if (PhysicalWaterSystem.IsEnabled())
+            if (VanillaWaterSuppression.IsActive())
             {
                 VanillaWaterSuppression.HideRenderers(__instance);
             }
@@ -1172,7 +1172,7 @@ namespace PhysicalWater
     {
         private static bool Prefix(LiquidSurface __instance, ref float __result)
         {
-            if (!PhysicalWaterSystem.IsEnabled() ||
+            if (!VanillaWaterSuppression.IsActive() ||
                 __instance == null)
             {
                 return true;
@@ -1199,7 +1199,7 @@ namespace PhysicalWater
     {
         private static bool Prefix(LiquidSurface __instance)
         {
-            if (!PhysicalWaterSystem.IsEnabled() ||
+            if (!VanillaWaterSuppression.IsActive() ||
                 __instance == null)
             {
                 return true;
@@ -1221,7 +1221,7 @@ namespace PhysicalWater
     {
         private static bool Prefix(LiquidSurface __instance)
         {
-            if (!PhysicalWaterSystem.IsEnabled() ||
+            if (!VanillaWaterSuppression.IsActive() ||
                 __instance == null)
             {
                 return true;
@@ -1243,7 +1243,7 @@ namespace PhysicalWater
     {
         private static bool Prefix(LiquidSurface __instance)
         {
-            if (!PhysicalWaterSystem.IsEnabled() || __instance == null)
+            if (!VanillaWaterSuppression.IsActive() || __instance == null)
             {
                 return true;
             }
@@ -1261,6 +1261,23 @@ namespace PhysicalWater
 
     internal static class VanillaWaterSuppression
     {
+        internal static bool IsActive()
+        {
+            if (PhysicalWaterSystem.IsEnabled()) return true;
+            PhysicalWaterDevE1Runtime finite = PhysicalWaterDevE1Runtime.Instance;
+            return finite != null && finite.HasCommittedInitialWorldWaterSource;
+        }
+
+        internal static void HideExistingWaterRenderers()
+        {
+            if (!IsActive() || WaterVolume.Instances == null) return;
+            for (int i = 0; i < WaterVolume.Instances.Count; i++)
+            {
+                WaterVolume waterVolume = WaterVolume.Instances[i];
+                if (waterVolume != null) HideRenderers(waterVolume);
+            }
+        }
+
         internal static void HideRenderers(WaterVolume waterVolume)
         {
             if (waterVolume == null)

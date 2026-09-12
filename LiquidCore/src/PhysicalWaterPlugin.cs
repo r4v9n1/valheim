@@ -71,6 +71,13 @@ namespace PhysicalWater
                 PatchRequired(typeof(ShipCustomFixedUpdatePatch), "Ship vanilla-water physics suppression");
                 PatchRequired(typeof(CharacterCustomFixedUpdatePatch), "Character liquid-level feed");
                 PatchSafely(typeof(GameCameraGetCameraPositionPatch), "underwater camera clamp bypass");
+                _systemObject = new GameObject("R4V9N1_PhysicalWaterSystem");
+                DontDestroyOnLoad(_systemObject);
+                _systemObject.AddComponent<PhysicalWaterSystem>();
+            }
+
+            if (legacyReplacementEnabled || Settings.StageE1Enabled.Value)
+            {
                 PatchRequired(typeof(WaterVolumeGetWaterSurfacePatch), "WaterVolume.GetWaterSurface suppression");
                 PatchRequired(typeof(WaterVolumeAwakePatch), "vanilla WaterVolume visual suppression hook");
                 PatchRequired(typeof(WaterVolumeStartPatch), "vanilla WaterVolume startup visual suppression hook");
@@ -83,10 +90,6 @@ namespace PhysicalWater
                 PatchRequired(typeof(LiquidSurfaceOnTriggerEnterPatch), "vanilla LiquidSurface trigger-enter suppression hook");
                 PatchRequired(typeof(LiquidSurfaceOnTriggerExitPatch), "vanilla LiquidSurface trigger-exit suppression hook");
                 PatchRequired(typeof(LiquidSurfaceFixedUpdatePatch), "vanilla LiquidSurface floater suppression hook");
-
-                _systemObject = new GameObject("R4V9N1_PhysicalWaterSystem");
-                DontDestroyOnLoad(_systemObject);
-                _systemObject.AddComponent<PhysicalWaterSystem>();
             }
 
             bool geometryAdapterRequired = Settings.ValheimGeometryDiagnosticsEnabled.Value ||
