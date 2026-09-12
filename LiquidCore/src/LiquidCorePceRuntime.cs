@@ -56,6 +56,10 @@ namespace PhysicalWater
         internal int TerrainColumnsX;
         internal int TerrainColumnsZ;
         internal float[] TerrainColumnHeights;
+        internal float[] PendingPartitionColumnHeights;
+        internal int PendingPartitionColumnsX;
+        internal int PendingPartitionColumnsZ;
+        internal int PendingPartitionColumnCursor;
         // Partition bounds and revisions are retained; provisional dense
         // descriptors are intentionally not retained. Streaming closure
         // reloads deterministic base geometry and owns only the completed
@@ -1298,27 +1302,76 @@ namespace PhysicalWater
             if (job.NextPartition < job.PartitionBounds.Length)
             {
                 Bounds partitionBounds = job.PartitionBounds[job.NextPartition];
-                if (!LiquidCoreValheimBaseTerrainPceBuilder.TryCaptureColumnTerrainHeights(
-                        partitionBounds, job.CellSize,
-                        (float x, float z, out float height) =>
-                        {
-                            height = WorldGenerator.instance == null ? 0f :
-                                WorldGenerator.instance.GetHeight(x, z);
-                            return WorldGenerator.instance != null && Finite(height);
-                        }, out float[] columnHeights, out int columnsX, out int columnsZ,
-                        out string error))
+                if (job.PendingPartitionColumnHeights == null)
                 {
-                    _baseWorldPceBootstrapJob = null;
-                    if (!_baseWorldBootstrapFailureReported)
+                    if (!LiquidCoreValheimBaseTerrainPceBuilder.TryGetColumnCaptureShape(
+                            partitionBounds, job.CellSize, out int columnsX,
+                            out int columnsZ, out string shapeError))
                     {
-                        PhysicalWaterPlugin.Log.LogWarning(
-                            "LiquidCore complete base-world PCE bootstrap deferred/fail-closed: " + error + ".");
-                        _baseWorldBootstrapFailureReported = true;
+                        _baseWorldPceBootstrapJob = null;
+                        if (!_baseWorldBootstrapFailureReported)
+                        {
+                            PhysicalWaterPlugin.Log.LogWarning(
+                                "LiquidCore complete base-world PCE bootstrap deferred/fail-closed: " + shapeError + ".");
+                            _baseWorldBootstrapFailureReported = true;
+                        }
+                        return;
                     }
-                    return;
+                    job.PendingPartitionColumnsX = columnsX;
+                    job.PendingPartitionColumnsZ = columnsZ;
+                    job.PendingPartitionColumnCursor = 0;
+                    job.PendingPartitionColumnHeights = new float[columnsX * columnsZ];
                 }
+                float budgetMilliseconds = PhysicalWaterPlugin.Settings == null ? 4f :
+                    PhysicalWaterPlugin.Settings.ValheimGeometryIncrementalBudgetMilliseconds.Value;
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                int columnCount = job.PendingPartitionColumnHeights.Length;
+                while (job.PendingPartitionColumnCursor < columnCount)
+                {
+                    int cursor = job.PendingPartitionColumnCursor;
+                    int x = cursor % job.PendingPartitionColumnsX;
+                    int z = cursor / job.PendingPartitionColumnsX;
+                    float worldX = partitionBounds.min.x + (x + 0.5f) * job.CellSize;
+                    float worldZ = partitionBounds.min.z + (z + 0.5f) * job.CellSize;
+                    if (WorldGenerator.instance == null || !Finite(worldX) ||
+                        !Finite(worldZ))
+                    {
+                        _baseWorldPceBootstrapJob = null;
+                        if (!_baseWorldBootstrapFailureReported)
+                        {
+                            PhysicalWaterPlugin.Log.LogWarning(
+                                "LiquidCore complete base-world PCE bootstrap deferred/fail-closed: Valheim base terrain sampler returned no height.");
+                            _baseWorldBootstrapFailureReported = true;
+                        }
+                        return;
+                    }
+                    float height = WorldGenerator.instance.GetHeight(worldX, worldZ);
+                    if (!Finite(height))
+                    {
+                        _baseWorldPceBootstrapJob = null;
+                        if (!_baseWorldBootstrapFailureReported)
+                        {
+                            PhysicalWaterPlugin.Log.LogWarning(
+                                "LiquidCore complete base-world PCE bootstrap deferred/fail-closed: Valheim base terrain sampler returned no height.");
+                            _baseWorldBootstrapFailureReported = true;
+                        }
+                        return;
+                    }
+                    job.PendingPartitionColumnHeights[cursor] = height;
+                    job.PendingPartitionColumnCursor++;
+                    if (watch.Elapsed.TotalMilliseconds >= Math.Max(1f, budgetMilliseconds))
+                        break;
+                }
+                if (job.PendingPartitionColumnCursor < columnCount) return;
+                float[] columnHeights = job.PendingPartitionColumnHeights;
+                int capturedColumnsX = job.PendingPartitionColumnsX;
+                int capturedColumnsZ = job.PendingPartitionColumnsZ;
+                job.PendingPartitionColumnHeights = null;
+                job.PendingPartitionColumnsX = 0;
+                job.PendingPartitionColumnsZ = 0;
+                job.PendingPartitionColumnCursor = 0;
                 if (!CaptureBaseTerrainHeightSnapshot(job, partitionBounds,
-                        columnHeights, columnsX, columnsZ, out error))
+                        columnHeights, capturedColumnsX, capturedColumnsZ, out string error))
                 {
                     _baseWorldPceBootstrapJob = null;
                     if (!_baseWorldBootstrapFailureReported)
@@ -1339,7 +1392,7 @@ namespace PhysicalWater
                         job.NextPartition + "/" + job.PartitionBounds.Length +
                         ", id=" + VolumetricPceSourcePartitionGrid.StablePartitionId(
                             partitionBounds, job.PartitionSize) +
-                        ", columns=" + (columnsX * columnsZ) + ".");
+                        ", columns=" + (capturedColumnsX * capturedColumnsZ) + ".");
                 }
                 return;
             }
