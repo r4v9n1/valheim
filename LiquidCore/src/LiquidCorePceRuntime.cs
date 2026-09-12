@@ -123,6 +123,7 @@ namespace PhysicalWater
         private CodyCatchmentRebuildCoordinator _codyRebuilds;
         private string _codyL2Path;
         private string _codyInitialWorldSourceRelationPath;
+        private string _codyInitialWorldSourceRelationLoadedWorldKey;
         private bool _codyPersistenceWritable;
         private bool _codyL2ArtifactRejected;
         private bool _hasCodyWarmBounds;
@@ -1019,6 +1020,7 @@ namespace PhysicalWater
             }
             ReportBaseWorldBootstrapGate("ready:" + world.m_uid.ToString("X16"));
             string worldKey = world.m_uid.ToString("X16");
+            LoadWorldSourceRelation(worldKey);
             float verticalMin = PhysicalWaterPlugin.Settings.InitialWorldPceVerticalMin.Value;
             float verticalMax = PhysicalWaterPlugin.Settings.InitialWorldPceVerticalMax.Value;
             float partitionSize = PhysicalWaterPlugin.Settings.InitialWorldPcePartitionSize.Value;
@@ -2163,8 +2165,6 @@ namespace PhysicalWater
             _codyRebuilds.Published += OnCodyCatchmentRebuilt;
             _codyL2Path = Path.Combine(Paths.ConfigPath, "LiquidCore",
                 "cody-catchments-v" + schemaVersion + ".bin");
-            _codyInitialWorldSourceRelationPath = Path.Combine(Paths.ConfigPath, "LiquidCore",
-                "cody-initial-world-source-v1.bin");
             try
             {
                 int loaded = CodyCatchmentL2Store.Load(_codyL2Path, _codyL2);
@@ -2182,6 +2182,17 @@ namespace PhysicalWater
                 _codyL2ArtifactRejected = true;
                 PhysicalWaterPlugin.Log.LogWarning("LiquidCore CODY rejected its L2 cache and will keep an empty L1: " + ex.Message);
             }
+        }
+
+        private void LoadWorldSourceRelation(string worldKey)
+        {
+            if (_codyL2 == null || string.IsNullOrWhiteSpace(worldKey) ||
+                string.Equals(_codyInitialWorldSourceRelationLoadedWorldKey,
+                    worldKey, StringComparison.Ordinal)) return;
+            _codyL2.ClearInitialWorldSourceRelation();
+            _codyInitialWorldSourceRelationLoadedWorldKey = worldKey;
+            _codyInitialWorldSourceRelationPath = Path.Combine(Paths.ConfigPath,
+                "LiquidCore", "cody-initial-world-source-v1-" + worldKey + ".bin");
             // The semantic source relation is an independent CODY artifact;
             // its replay must not be suppressed by an unrelated L2 cache
             // deserialization failure. Final PCE closure still validates its
