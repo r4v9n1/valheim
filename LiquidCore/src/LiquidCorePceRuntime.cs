@@ -1021,20 +1021,6 @@ namespace PhysicalWater
             }
             ReportBaseWorldBootstrapGate("ready:" + world.m_uid.ToString("X16"));
             string worldKey = world.m_uid.ToString("X16");
-            if (_baseWorldPceBootstrapJob != null)
-            {
-                if (!string.Equals(_baseWorldPceBootstrapJob.WorldKey, worldKey, StringComparison.Ordinal))
-                {
-                    _baseWorldPceBootstrapJob = null;
-                    _baseWorldBootstrapDomainFingerprint = null;
-                    _baseWorldBootstrapAttemptKey = null;
-                }
-                else
-                {
-                    AdvanceBaseWorldPceBootstrapJob();
-                    return;
-                }
-            }
             float verticalMin = PhysicalWaterPlugin.Settings.InitialWorldPceVerticalMin.Value;
             float verticalMax = PhysicalWaterPlugin.Settings.InitialWorldPceVerticalMax.Value;
             float partitionSize = PhysicalWaterPlugin.Settings.InitialWorldPcePartitionSize.Value;
@@ -1073,6 +1059,23 @@ namespace PhysicalWater
                 verticalMax.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" +
                 partitionSize.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ":" +
                 cellSize.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+            if (_baseWorldPceBootstrapJob != null)
+            {
+                if (string.Equals(_baseWorldPceBootstrapJob.WorldKey, worldKey,
+                        StringComparison.Ordinal) &&
+                    string.Equals(_baseWorldBootstrapAttemptKey, attemptKey,
+                        StringComparison.Ordinal))
+                {
+                    AdvanceBaseWorldPceBootstrapJob();
+                    return;
+                }
+                // The same world can acquire a new world-generation revision
+                // or explicit domain settings while a capture is in flight.
+                // Never resume that stale snapshot under the new identity.
+                _baseWorldPceBootstrapJob = null;
+                _baseWorldBootstrapDomainFingerprint = null;
+                _baseWorldBootstrapAttemptKey = null;
+            }
             if (string.Equals(_baseWorldBootstrapAttemptKey, attemptKey, StringComparison.Ordinal)) return;
             _baseWorldBootstrapAttemptKey = attemptKey;
             _baseWorldBootstrapFailureReported = false;
