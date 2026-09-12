@@ -997,9 +997,9 @@ namespace PhysicalWater
             }
             // The complete base-world provider is geometry/topology work and
             // must not depend on the player-centred E3 representation. Keep
-            // the default disabled, but allow the existing read-only
-            // geometry-diagnostics mode to exercise the global provider
-            // without creating an E3 water domain or source transaction.
+            // E3 independently default-disabled, while allowing the
+            // host-only global provider to run without creating an E3 water
+            // domain or source transaction.
             if (!PhysicalWaterPlugin.Settings.StageE1Enabled.Value &&
                 !PhysicalWaterPlugin.Settings.ValheimGeometryDiagnosticsEnabled.Value &&
                 !PhysicalWaterPlugin.Settings.InitialWorldPceEnabled.Value)
@@ -1613,7 +1613,7 @@ namespace PhysicalWater
             }
             PhysicalWaterPlugin.Log.LogInfo(
                 "LiquidCore complete base-world PCE source remains unselected: " +
-                "explicit CODY source marker is required; closedCatchmentCount=" + ids.Count +
+                "validated CODY source relation or the default initial-head policy is required; closedCatchmentCount=" + ids.Count +
                 ", closedCatchments=" + string.Join(",", values) +
                 ", reason=" + (string.IsNullOrEmpty(sourceError) ? "no validated CODY source seed" : sourceError) + ".");
         }
