@@ -72,6 +72,7 @@ namespace PhysicalWater
 
     internal sealed class PhysicalWaterValheimWorldGeometryAdapter : MonoBehaviour
     {
+        private const int InitialCausalDiscoveryBatchSize = 8;
         internal event Action<ValheimPceGeometryChange> PceGeometryChanged;
         private sealed class Source
         {
@@ -1056,7 +1057,26 @@ namespace PhysicalWater
                 }
             }
 
-            int maxDiscoveryChunks = Mathf.Max(1, PhysicalWaterPlugin.Settings.ValheimGeometryDiscoveryChunksPerScan.Value);
+            int configuredDiscoveryChunks = Mathf.Max(
+                1,
+                PhysicalWaterPlugin.Settings.ValheimGeometryDiscoveryChunksPerScan.Value);
+
+            bool causalDiscovery =
+                PhysicalWaterPlugin.Settings.StageE1Enabled.Value &&
+                _discoverySchedule.CausalRequestActive;
+
+            // Background discovery keeps the configured conservative cadence.
+            // Explicit causal startup coverage is different: E3 is paused and
+            // waiting for these exact tiles, so amortizing one 8m tile every
+            // 250ms creates a minute-scale activation gate. Process a compact
+            // local batch while preserving the same required-tile authority.
+            int maxDiscoveryChunks =
+                causalDiscovery
+                    ? Mathf.Max(
+                        configuredDiscoveryChunks,
+                        InitialCausalDiscoveryBatchSize)
+                    : configuredDiscoveryChunks;
+
             if (fullConsistency)
                 foreach (ChunkKey key in _activeChunks) _pendingDiscoveryChunks.Add(key);
             for (int i = 0; i < _loadedChunks.Count; i++) _pendingDiscoveryChunks.Add(_loadedChunks[i]);
@@ -1069,26 +1089,82 @@ namespace PhysicalWater
             }
 
             _discoveryChunks.Clear();
-            foreach (ChunkKey key in _priorityDiscoveryChunks)
+
+            if (causalDiscovery)
             {
-                if (_discoveryChunks.Count >= maxDiscoveryChunks) break;
-                if (_activeChunks.Contains(key)) _discoveryChunks.Add(key);
+                // Seed one deterministic priority tile near the causal-window
+                // center. SelectPendingDiscoveryChunks then grows the rest of
+                // the batch by Manhattan proximity, keeping the enclosing
+                // Physics.OverlapBox compact instead of joining arbitrary
+                // HashSet tiles into one huge AABB.
+                if (TrySelectCausalPrioritySeed(
+                        discoveryTileSize,
+                        out ChunkKey causalSeed))
+                {
+                    _discoveryChunks.Add(causalSeed);
+                }
             }
+            else
+            {
+                foreach (ChunkKey key in _priorityDiscoveryChunks)
+                {
+                    if (_discoveryChunks.Count >= maxDiscoveryChunks) break;
+                    if (_activeChunks.Contains(key))
+                        _discoveryChunks.Add(key);
+                }
+            }
+
             foreach (ChunkKey key in _dirtyDiscoveryChunks)
             {
                 if (!_activeChunks.Contains(key)) continue;
+
                 _pendingDiscoveryChunks.Add(key);
-                if (_discoveryChunks.Count < maxDiscoveryChunks) _discoveryChunks.Add(key);
+
+                // During causal startup all required work is selected through
+                // the compact nearest-neighbor batch above. Background/event
+                // discovery retains the historical immediate behavior.
+                if (!causalDiscovery &&
+                    _discoveryChunks.Count < maxDiscoveryChunks)
+                {
+                    _discoveryChunks.Add(key);
+                }
             }
+
             _dirtyDiscoveryChunks.Clear();
-            bool requiredOnly = PhysicalWaterPlugin.Settings.StageE1Enabled.Value && _discoverySchedule.CoverageWindowActive;
-            SelectPendingDiscoveryChunks(maxDiscoveryChunks, requiredOnly);
-            if (_discoveryChunks.Count > 0) _discoverySchedule.BeginUpdate();
+
+            bool requiredOnly =
+                PhysicalWaterPlugin.Settings.StageE1Enabled.Value &&
+                _discoverySchedule.CoverageWindowActive;
+
+            SelectPendingDiscoveryChunks(
+                maxDiscoveryChunks,
+                requiredOnly);
+
+            if (_discoveryChunks.Count > 0)
+                _discoverySchedule.BeginUpdate();
+
+            int priorityBefore =
+                _priorityDiscoveryChunks.Count;
+
             foreach (ChunkKey key in _discoveryChunks)
             {
                 _pendingDiscoveryChunks.Remove(key);
                 _priorityDiscoveryChunks.Remove(key);
                 _discoverySchedule.Complete(key);
+            }
+
+            if (causalDiscovery &&
+                priorityBefore != _priorityDiscoveryChunks.Count &&
+                (_priorityDiscoveryChunks.Count == 0 ||
+                 (_priorityDiscoveryChunks.Count % 32) == 0))
+            {
+                PhysicalWaterPlugin.Log.LogInfo(
+                    "LiquidCore PCE causal discovery progress: batch=" +
+                    _discoveryChunks.Count +
+                    ", remainingPriority=" +
+                    _priorityDiscoveryChunks.Count +
+                    ", requiredTiles=" +
+                    _discoverySchedule.RequiredCount + ".");
             }
             for (int i = 0; i < _evictedChunks.Count; i++) _discoveryCache.Remove(_evictedChunks[i]);
 
@@ -1944,6 +2020,52 @@ namespace PhysicalWater
             return true;
         }
 
+        private bool TrySelectCausalPrioritySeed(
+            float discoveryTileSize,
+            out ChunkKey seed)
+        {
+            seed = default(ChunkKey);
+
+            float size = Mathf.Max(8f, discoveryTileSize);
+
+            int centerX =
+                Mathf.FloorToInt(
+                    _causalCoverageBounds.center.x / size);
+
+            int centerZ =
+                Mathf.FloorToInt(
+                    _causalCoverageBounds.center.z / size);
+
+            bool found = false;
+            int bestDistance = int.MaxValue;
+
+            foreach (ChunkKey candidate in _priorityDiscoveryChunks)
+            {
+                if (!_activeChunks.Contains(candidate) ||
+                    !_discoverySchedule.IsRequired(candidate))
+                {
+                    continue;
+                }
+
+                int distance =
+                    Math.Abs(candidate.X - centerX) +
+                    Math.Abs(candidate.Z - centerZ);
+
+                if (!found ||
+                    distance < bestDistance ||
+                    (distance == bestDistance &&
+                     (candidate.X < seed.X ||
+                      (candidate.X == seed.X &&
+                       candidate.Z < seed.Z))))
+                {
+                    found = true;
+                    seed = candidate;
+                    bestDistance = distance;
+                }
+            }
+
+            return found;
+        }
         private void SelectPendingDiscoveryChunks(int maxChunks, bool requiredOnly)
         {
             while (_discoveryChunks.Count < maxChunks)
