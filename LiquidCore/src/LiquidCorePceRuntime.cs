@@ -122,6 +122,7 @@ namespace PhysicalWater
         private CodyCatchmentCache _codyL2;
         private CodyCatchmentRebuildCoordinator _codyRebuilds;
         private string _codyL2Path;
+        private string _codyL2LoadedWorldKey;
         private string _codyInitialWorldSourceRelationPath;
         private string _codyInitialWorldSourceRelationLoadedWorldKey;
         private bool _codyPersistenceWritable;
@@ -1020,6 +1021,7 @@ namespace PhysicalWater
             }
             ReportBaseWorldBootstrapGate("ready:" + world.m_uid.ToString("X16"));
             string worldKey = world.m_uid.ToString("X16");
+            LoadWorldCodyCache(worldKey);
             LoadWorldSourceRelation(worldKey);
             float verticalMin = PhysicalWaterPlugin.Settings.InitialWorldPceVerticalMin.Value;
             float verticalMax = PhysicalWaterPlugin.Settings.InitialWorldPceVerticalMax.Value;
@@ -2165,14 +2167,27 @@ namespace PhysicalWater
             _codyRebuilds.Published += OnCodyCatchmentRebuilt;
             _codyL2Path = Path.Combine(Paths.ConfigPath, "LiquidCore",
                 "cody-catchments-v" + schemaVersion + ".bin");
+        }
+
+        private void LoadWorldCodyCache(string worldKey)
+        {
+            if (_codyL2 == null || string.IsNullOrWhiteSpace(worldKey) ||
+                string.Equals(_codyL2LoadedWorldKey, worldKey, StringComparison.Ordinal)) return;
+            if (!string.IsNullOrEmpty(_codyL2LoadedWorldKey)) FlushCody();
+            _codyL1.Clear();
+            _codyL2.Clear();
+            _codyL2LoadedWorldKey = worldKey;
+            _codyL2Path = Path.Combine(Paths.ConfigPath, "LiquidCore",
+                "cody-catchments-v" + CodyCatchmentSchemaVersion + "-" + worldKey + ".bin");
+            _codyL2ArtifactRejected = false;
+            _codyPersistenceWritable = false;
             try
             {
                 int loaded = CodyCatchmentL2Store.Load(_codyL2Path, _codyL2);
                 _codyPersistenceWritable = true;
                 PhysicalWaterPlugin.Log.LogInfo(
-                    "LiquidCore CODY catchment cache ready: game=" + gameFingerprint +
-                    ", mods=" + modFingerprint + ", schema=" + schemaVersion +
-                    ", region=" + CodyRegionWorldSize + "m, L2=" + loaded + ", L1=0.");
+                    "LiquidCore CODY catchment cache ready for world=" + worldKey +
+                    ": L2=" + loaded + ", L1=0.");
             }
             catch (Exception ex)
             {
@@ -2180,7 +2195,7 @@ namespace PhysicalWater
                 // Do not overwrite it with an empty cache on shutdown.
                 _codyPersistenceWritable = false;
                 _codyL2ArtifactRejected = true;
-                PhysicalWaterPlugin.Log.LogWarning("LiquidCore CODY rejected its L2 cache and will keep an empty L1: " + ex.Message);
+                PhysicalWaterPlugin.Log.LogWarning("LiquidCore CODY rejected its world-scoped L2 cache and will keep an empty L1: " + ex.Message);
             }
         }
 
