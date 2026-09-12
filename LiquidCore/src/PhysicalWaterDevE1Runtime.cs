@@ -555,15 +555,34 @@ namespace PhysicalWater
             _appliedGeometryRevisions.Clear();
             _coverageWindowOrigin = new Vector3(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
             _domain.Paused = true;
+
+            double persistenceStartMs =
+                createWatch.Elapsed.TotalMilliseconds;
+
             PhysicalWaterPersistenceRuntime.TryRestore(_streaming);
+
+            double persistenceRestoreMs =
+                createWatch.Elapsed.TotalMilliseconds - persistenceStartMs;
+
             // Restore the persisted E3 receipt before replaying the complete
             // domain. A later geometry publication is reconciliation-only and
             // must never recreate the finite initial source.
+            double sourceReplayStartMs =
+                createWatch.Elapsed.TotalMilliseconds;
+
             ReplayCompleteInitialWorldDomainIfAvailable();
-            double restoreMs = createWatch.Elapsed.TotalMilliseconds - initializeMs;
+
+            double sourceReplayMs =
+                createWatch.Elapsed.TotalMilliseconds - sourceReplayStartMs;
+
+            double coverageStartMs =
+                createWatch.Elapsed.TotalMilliseconds;
+
             EnsureGeometryCoverage();
             SynchronizeGeometryIfReady();
-            double coverageMs = createWatch.Elapsed.TotalMilliseconds - initializeMs - restoreMs;
+
+            double coverageMs =
+                createWatch.Elapsed.TotalMilliseconds - coverageStartMs;
             VolumetricWaterSettings macSettings = _domain.MacDomain.Settings;
             string message = "E3 streaming window created: origin=" + Format(_domain.WorldOrigin) +
                              ", logicalRegion=" + (macSettings.CellSize * 32f).ToString("F0") + "x" + (macSettings.CellSize * 32f).ToString("F0") + "m" +
@@ -576,7 +595,8 @@ namespace PhysicalWater
                 "initializeMs=" + initializeMs.ToString("F3", CultureInfo.InvariantCulture) +
                 ", macWarmupMs=" + _domain.MacDomain.ComputeWarmupMilliseconds.ToString("F3", CultureInfo.InvariantCulture) +
                 ", flipWarmupMs=" + _domain.FlipDomain.ComputeWarmupMilliseconds.ToString("F3", CultureInfo.InvariantCulture) +
-                ", persistenceRestoreMs=" + restoreMs.ToString("F3", CultureInfo.InvariantCulture) +
+                ", persistenceRestoreMs=" + persistenceRestoreMs.ToString("F3", CultureInfo.InvariantCulture) +
+                ", sourceReplayMs=" + sourceReplayMs.ToString("F3", CultureInfo.InvariantCulture) +
                 ", coverageGateMs=" + coverageMs.ToString("F3", CultureInfo.InvariantCulture) +
                 ", totalMs=" + createWatch.Elapsed.TotalMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + ".");
             Reply(args, message);
@@ -1786,9 +1806,64 @@ namespace PhysicalWater
             _domain.WaterBodyPublisher.RequestRefresh(LiquidCoreWaterBodyRefreshReason.Explicit);
         }
 
+        private void TryResumeInitialWorldWaterAfterCodyPublish(
+            CodyCatchmentDescriptor descriptor)
+        {
+            if (_streaming == null ||
+                _domain == null ||
+                _subscribedCodyRuntime == null ||
+                !_streaming.HasCommittedInitialWorldWaterSource ||
+                _streaming.HasActiveInitialWorldWaterRepresentation ||
+                _appliedGeometryStateRevision == int.MinValue)
+            {
+                return;
+            }
+
+            // Only the rebuilt descriptor that actually proves coverage of the
+            // active E3 grid may reopen this startup gate.
+            if (descriptor.Validity != CodyCatchmentValidity.Valid ||
+                !descriptor.DependencyBounds.Contains(_domain.WorldBounds.center) ||
+                !ContainsBounds(descriptor.DependencyBounds, _domain.WorldBounds))
+            {
+                return;
+            }
+
+            PublishAppliedCapacityStorage(
+                _subscribedCodyRuntime,
+                _appliedGeometryStateRevision);
+
+            if (_streaming.TryMaterializeInitialWorldWaterForActiveWindow(
+                    out LiquidCoreInitialWaterMaterializationResult materialization,
+                    out string materializationError))
+            {
+                PhysicalWaterPlugin.Log.LogInfo(
+                    "PW_E3_INITIAL_SOURCE_MATERIALIZED trigger=CODY-rebuild" +
+                    ", activeWater=True" +
+                    ", consumedCoarseAtoms=" + materialization.ConsumedSourceAtoms +
+                    ", producedFineAtoms=" + materialization.ProducedDestinationAtoms +
+                    ", retainedCoarseAtoms=" + materialization.SourceAtomsRetainedForExactConversion +
+                    ", conversionDivisor=" + materialization.SourceAtomConversionDivisor +
+                    ", volume=" +
+                    materialization.TransferredVolume.ToString(
+                        "R", CultureInfo.InvariantCulture) + "m3" +
+                    ", sourceCells=" + materialization.TouchedSourceCells +
+                    ", destinationCells=" + materialization.TouchedDestinationCells +
+                    ", partitions=" + materialization.TouchedPartitions + ".");
+            }
+            else
+            {
+                PhysicalWaterPlugin.Log.LogWarning(
+                    "PW_E3_INITIAL_SOURCE_MATERIALIZATION CODY-retry deferred/fail-closed: " +
+                    materializationError + ".");
+            }
+        }
         private void OnCodyCatchmentPublished(CodyCatchmentDescriptor descriptor)
         {
-            if (_domain == null || descriptor == null || _pendingMvcBodies.Count == 0) return;
+            if (_domain == null || descriptor == null) return;
+
+            TryResumeInitialWorldWaterAfterCodyPublish(descriptor);
+
+            if (_pendingMvcBodies.Count == 0) return;
             _mvcBodyScratch.Clear();
             foreach (ulong bodyId in _pendingMvcBodies) _mvcBodyScratch.Add(bodyId);
             for (int i = 0; i < _mvcBodyScratch.Count; i++)
