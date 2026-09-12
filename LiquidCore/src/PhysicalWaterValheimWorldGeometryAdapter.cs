@@ -457,6 +457,17 @@ namespace PhysicalWater
             _causalCoverageBounds = worldBounds;
             _discoverySchedule.BeginCausalCoverageWindow();
 
+            // Causal coverage owns the discovery scheduler until its required
+            // tiles and downstream geometry work have drained. Periodic
+            // consistency work starts only after that gate has been released.
+            float consistencyInterval = Mathf.Max(
+                15f,
+                PhysicalWaterPlugin.Settings.ValheimGeometryFullConsistencyInterval.Value);
+
+            _nextConsistencyScanTime = Mathf.Max(
+                _nextConsistencyScanTime,
+                Time.realtimeSinceStartup + consistencyInterval);
+
             float tileSize = Mathf.Max(4f, PhysicalWaterPlugin.Settings.ValheimGeometryDiscoveryTileSize.Value);
             _chunkScratch.Clear();
             AddWorldChunks(worldBounds, tileSize, _chunkScratch);
@@ -510,7 +521,15 @@ namespace PhysicalWater
             LiquidCorePceRuntime existingPce = LiquidCorePceRuntime.Instance;
             if (existingPce != null) existingPce.Attach(this);
             _nextScanTime = 0f;
-            _nextConsistencyScanTime = 0f;
+
+            // A newly-created adapter must service explicit causal coverage
+            // before any low-frequency consistency work becomes eligible.
+            float initialConsistencyInterval = Mathf.Max(
+                15f,
+                PhysicalWaterPlugin.Settings.ValheimGeometryFullConsistencyInterval.Value);
+
+            _nextConsistencyScanTime =
+                Time.realtimeSinceStartup + initialConsistencyInterval;
             PhysicalWaterPlugin.Log.LogInfo("PhysicalWater Valheim geometry adapter created. It reuses cached discovery chunks, profiles scan stages, preserves the causal geometry queue, and supplies Stage E finite domains when explicitly enabled.");
         }
 
@@ -1022,7 +1041,9 @@ namespace PhysicalWater
 
             float now = Time.realtimeSinceStartup;
             float consistencyInterval = Mathf.Max(15f, PhysicalWaterPlugin.Settings.ValheimGeometryFullConsistencyInterval.Value);
-            bool fullConsistency = now >= _nextConsistencyScanTime;
+            bool fullConsistency =
+                !_discoverySchedule.CausalRequestActive &&
+                now >= _nextConsistencyScanTime;
             if (fullConsistency)
             {
                 _nextConsistencyScanTime = now + consistencyInterval;
