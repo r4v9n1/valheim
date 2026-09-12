@@ -11,11 +11,12 @@ or vanilla-water fallback. Active/dormant ownership preserves stable particle
 IDs, volume, velocity, and APIC state; future occupancy/SDF fields are prepared
 off-frame with causal geometry revisions before a whole-cell window rebase.
 
-Finite streaming remains disabled by default through the compatibility
-`[StageE1] Enabled` key. It does not replace the global ocean, suppress vanilla
-water, or hook gameplay water, players, ships, fish, swimming, buoyancy, or
-far-ocean rendering. The focused diagnostic controls are `pw_e3_*` or F6-F10;
-the old `pw_e1_*` names remain aliases.
+Finite streaming is enabled by default for new installations through the
+`[StageE1] Enabled` key. Existing config values remain authoritative. The
+finite path is source-gated by complete PCE/CODY state and remains fail-closed
+without it; it does not create water from a local window. The focused
+diagnostic controls are `pw_e3_*` or F6-F10; the old `pw_e1_*` names remain
+aliases.
 
 The preserved devD6.4 adapter adds 8 m fine-tiled live discovery around the preserved
 32 m causal SDF queue, targeted event streaming, and state-filtered door updates

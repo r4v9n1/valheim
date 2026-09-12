@@ -491,8 +491,8 @@ namespace PhysicalWater
             ValheimGeometryIncrementalBudgetMilliseconds = config.Bind("ValheimGeometryAdapter", "IncrementalBudgetMilliseconds", 4f,
                 new ConfigDescription("Target budget for a simple event-triggered geometry update.",
                     new AcceptableValueRange<float>(1f, 20f)));
-            StageE1Enabled = config.Bind("StageE1", "Enabled", false,
-                "Compatibility switch for the experimental E3 finite streaming APIC/FLIP mode. It preserves vanilla water and adds bounded authoritative finite-water queries for the local player; disabled by default.");
+            StageE1Enabled = config.Bind("StageE1", "Enabled", true,
+                "Production finite streaming APIC/FLIP mode. Existing config values remain authoritative; new installs enable the validated finite client path and keep source creation fail-closed until complete PCE/CODY prerequisites exist.");
             StageE1RenderSurface = config.Bind("StageE1", "RenderSurface", true,
                 "Render the Stage C reconstructed E1 debug surface for the explicitly created finite domain.");
             StageE1TelemetryInterval = config.Bind("StageE1", "TelemetryInterval", 2f,
