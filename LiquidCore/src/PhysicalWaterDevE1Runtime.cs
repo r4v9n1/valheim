@@ -1685,6 +1685,7 @@ namespace PhysicalWater
                     ", partitions=" + domain.Partitions.Length + ", volume=" +
                     totalSourceVolume.ToString("R", CultureInfo.InvariantCulture) +
                     ", atoms=" + totalSourceAtoms + ".");
+                VanillaWaterSuppression.HideExistingWaterRenderers();
             }
             catch (Exception ex)
             {
