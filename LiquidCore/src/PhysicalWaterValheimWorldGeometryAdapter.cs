@@ -52,6 +52,8 @@ namespace PhysicalWater
         internal ValheimWorldGeometryChangeKind ChangeKind;
         internal Bounds OldWorldBounds;
         internal Bounds NewWorldBounds;
+        internal Bounds CausalDirtyWorldBounds;
+        internal bool HasCausalDirtyWorldBounds;
         internal Vector3Int DirtyMin;
         internal Vector3Int DirtyMax;
         internal uint Revision;
@@ -1542,6 +1544,15 @@ namespace PhysicalWater
             if (dirtyRegion.Valid && source != null)
             {
                 long readyTimestamp = Stopwatch.GetTimestamp();
+                // Source bounds describe the reusable whole object. Preserve
+                // the causal edit bounds separately so a local height edit
+                // does not invalidate every catchment touched by its terrain.
+                bool hasCausalBounds = changeKind == ValheimWorldGeometryChangeKind.MovedOrChanged &&
+                    record != null && (record.HasOldBounds || record.HasNewBounds);
+                Bounds causalBounds = hasCausalBounds
+                    ? (record.HasNewBounds ? record.NewBounds : record.OldBounds) : default(Bounds);
+                if (hasCausalBounds && record.HasOldBounds && record.HasNewBounds)
+                    causalBounds.Encapsulate(record.OldBounds);
                 PceGeometryChanged?.Invoke(new ValheimPceGeometryChange
                 {
                     SourceId = source.Id,
@@ -1551,6 +1562,8 @@ namespace PhysicalWater
                     ChangeKind = changeKind,
                     OldWorldBounds = oldBounds,
                     NewWorldBounds = newBounds,
+                    CausalDirtyWorldBounds = causalBounds,
+                    HasCausalDirtyWorldBounds = hasCausalBounds,
                     DirtyMin = dirtyRegion.Min,
                     DirtyMax = dirtyRegion.Max,
                     Revision = (uint)Mathf.Max(0, source.Revision),

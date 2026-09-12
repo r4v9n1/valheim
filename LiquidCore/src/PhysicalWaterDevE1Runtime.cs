@@ -690,7 +690,7 @@ namespace PhysicalWater
                 Player.m_localPlayer.Message(
                     MessageHud.MessageType.TopLeft,
                     "PhysicalWater E3 status logged: particles=" + streaming.TotalParticles +
-                    ", volume=" + streaming.TotalVolume.ToString("F2") + "m3, crossings=" + streaming.SeamCrossings + ".");
+                    ", represented volume=" + streaming.TotalVolume.ToString("F2") + "m3, crossings=" + streaming.SeamCrossings + ".");
             }
         }
 
@@ -1271,7 +1271,6 @@ namespace PhysicalWater
                         out VolumetricFiniteSolidUpdateDiagnostics preparedUpdate,
                         synchronizeDiagnostics: wasInitialPreparation)) return;
                 long appliedGeneration = _preparedGeometryGeneration;
-                long appliedGeometryRevision = _preparedGeometryStateRevision;
                 applyWatch.Stop();
                 _appliedGeometryStateRevision = _preparedGeometryStateRevision;
                 _appliedGeometryRevisions.Clear();
@@ -1286,7 +1285,7 @@ namespace PhysicalWater
                 pce.DiscardCausalGeometrySignalsThrough(appliedGeneration);
                 adapter.ReleaseCausalGeometryCoverage();
                 _nextCausalGeometryApplyTime = 0f;
-                bool appliedStoragePublished = PublishAppliedCapacityStorage(pce, appliedGeometryRevision);
+                bool appliedStoragePublished = PublishAppliedCapacityStorage(pce);
                 pce.QueueCodyCatchmentCoverage(_domain, _geometryCoverageBounds);
 
                 if (appliedStoragePublished && _streaming.HasCommittedInitialWorldWaterSource &&
@@ -1404,7 +1403,7 @@ namespace PhysicalWater
                 _preparedGeometryRevisions.Clear();
                 adapter.ReleaseCausalGeometryCoverage();
                 _nextCausalGeometryApplyTime = 0f;
-                PublishAppliedCapacityStorage(pce, stateRevision);
+                PublishAppliedCapacityStorage(pce);
                 pce.QueueCodyCatchmentCoverage(_domain, _geometryCoverageBounds);
                 PhysicalWaterPlugin.Log.LogInfo(
                     "PW_E3_GEOMETRY_READY geometryReady=True, fillReady=True, simulationPaused=False; precise causal solid synchronization apply=" +
@@ -1428,7 +1427,7 @@ namespace PhysicalWater
                 (_preparedGeometryIsInitial ? ". Fill remains gated until atomic application." : ". Simulation continues against the preceding causal solid generation."));
         }
 
-        private bool PublishAppliedCapacityStorage(LiquidCorePceRuntime pce, long geometryRevision)
+        private bool PublishAppliedCapacityStorage(LiquidCorePceRuntime pce)
         {
             if (pce == null || _domain == null || pce.CodyL1 == null) return false;
             if (!pce.CodyL1.TryGetCoverage(_domain.WorldBounds, out CodyCatchmentDescriptor[] catchments))
@@ -1437,7 +1436,11 @@ namespace PhysicalWater
                     "LiquidCore PCE deferred applied storage until valid bounded CODY catchments cover the complete active grid.");
                 return false;
             }
-            if (!pce.PublishAppliedDomainCapacityStorage(_domain.MacDomain, catchments, geometryRevision, out string error))
+            // The source-state XOR is an identity, not an ordered revision.
+            // Publication's stale-generation guard must use the generation
+            // of the solid fields actually applied to this domain.
+            if (!pce.PublishAppliedDomainCapacityStorage(_domain.MacDomain, catchments,
+                    _domain.AppliedGeometryGeneration, out string error))
             {
                 PhysicalWaterPlugin.Log.LogWarning("LiquidCore PCE applied storage publication deferred: " + error + ".");
                 return false;
@@ -1814,9 +1817,7 @@ namespace PhysicalWater
                 return;
             }
 
-            if (!PublishAppliedCapacityStorage(
-                _subscribedCodyRuntime,
-                _appliedGeometryStateRevision)) return;
+            if (!PublishAppliedCapacityStorage(_subscribedCodyRuntime)) return;
             if (_streaming.HasActiveInitialWorldWaterRepresentation) return;
 
             if (_streaming.TryMaterializeInitialWorldWaterForActiveWindow(

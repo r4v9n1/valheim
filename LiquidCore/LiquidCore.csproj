@@ -24,6 +24,7 @@
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricFlipDensityDiagnostics.cs" Link="Volumetric\VolumetricFlipDensityDiagnostics.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricFlipSettings.cs" Link="Volumetric\VolumetricFlipSettings.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricFlipDomain.cs" Link="Volumetric\VolumetricFlipDomain.cs" />
+    <Compile Include="$(LiquidCoreCoreDir)\Runtime\LiquidCoreExactColumnCarry.cs" Link="Volumetric\LiquidCoreExactColumnCarry.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricSolidGeometrySdf.cs" Link="Volumetric\VolumetricSolidGeometrySdf.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricTerrainFixture.cs" Link="Volumetric\VolumetricTerrainFixture.cs" />
     <Compile Include="$(LiquidCoreCoreDir)\Runtime\VolumetricFiniteDomain.cs" Link="Volumetric\VolumetricFiniteDomain.cs" />

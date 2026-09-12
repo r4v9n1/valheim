@@ -2441,6 +2441,7 @@ namespace PhysicalWater
             if (_codyL1 == null || _codyL2 == null || string.IsNullOrWhiteSpace(change.SourceId)) return;
             Bounds dirty = change.HasNewWorldBounds ? change.NewWorldBounds : change.OldWorldBounds;
             if (change.HasOldWorldBounds && change.HasNewWorldBounds) dirty.Encapsulate(change.OldWorldBounds);
+            if (change.HasCausalDirtyWorldBounds) dirty = change.CausalDirtyWorldBounds;
             _codyInvalidated.Clear();
             int l2Invalidated = _codyL2.ApplyDependencyChange(change.SourceId, change.Revision, dirty, _codyInvalidated);
             int l1Invalidated = _codyL1.ApplyDependencyChange(change.SourceId, change.Revision, dirty);
