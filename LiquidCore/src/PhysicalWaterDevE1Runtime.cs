@@ -1884,6 +1884,9 @@ namespace PhysicalWater
 
         internal VolumetricStreamingDomainController Streaming => _streaming;
 
+        internal bool HasCommittedInitialWorldWaterSource =>
+            _streaming != null && _streaming.HasCommittedInitialWorldWaterSource;
+
         private static float ParsePositive(Terminal.ConsoleEventArgs args, int index, float fallback)
         {
             return Mathf.Clamp(Parse(args, index, fallback), 0.75f, 18f);
