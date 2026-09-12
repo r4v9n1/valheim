@@ -51,13 +51,8 @@ namespace PhysicalWater
                 error = "Base terrain column capture received invalid geometry inputs.";
                 return false;
             }
-            resolutionX = ExactResolution(partitionBounds.size.x, cellSize);
-            resolutionZ = ExactResolution(partitionBounds.size.z, cellSize);
-            if (resolutionX <= 0 || resolutionZ <= 0)
-            {
-                error = "Base terrain column capture bounds are not aligned to cell size.";
-                return false;
-            }
+            if (!TryGetColumnCaptureShape(partitionBounds, cellSize,
+                    out resolutionX, out resolutionZ, out error)) return false;
             long columnCount = (long)resolutionX * resolutionZ;
             if (columnCount > int.MaxValue)
             {
@@ -77,6 +72,35 @@ namespace PhysicalWater
                     return false;
                 }
                 heights[x + resolutionX * z] = height;
+            }
+            return true;
+        }
+
+        internal static bool TryGetColumnCaptureShape(
+            Bounds partitionBounds, float cellSize,
+            out int resolutionX, out int resolutionZ, out string error)
+        {
+            resolutionX = 0;
+            resolutionZ = 0;
+            error = string.Empty;
+            if (!Finite(partitionBounds) || partitionBounds.size.x <= 0f ||
+                partitionBounds.size.z <= 0f || !Finite(cellSize) || cellSize <= 0f)
+            {
+                error = "Base terrain column capture received invalid geometry inputs.";
+                return false;
+            }
+            resolutionX = ExactResolution(partitionBounds.size.x, cellSize);
+            resolutionZ = ExactResolution(partitionBounds.size.z, cellSize);
+            if (resolutionX <= 0 || resolutionZ <= 0)
+            {
+                error = "Base terrain column capture bounds are not aligned to cell size.";
+                return false;
+            }
+            long columnCount = (long)resolutionX * resolutionZ;
+            if (columnCount > int.MaxValue)
+            {
+                error = "Base terrain column capture contains too many columns.";
+                return false;
             }
             return true;
         }
