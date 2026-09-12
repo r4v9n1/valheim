@@ -129,6 +129,17 @@ namespace PhysicalWater
 
         internal Document Data { get; private set; }
         internal bool Loaded { get; private set; }
+
+        // Runtime identity is deliberately separate from certified embedded
+        // knowledge. A changed mod set may make embedded prefab recipes stale,
+        // but it must not make the current runtime impossible to fingerprint
+        // or prevent CODY from creating a correctly keyed empty cache.
+        internal bool EmbeddedDocumentValid { get; private set; }
+        internal bool GameFingerprintMatched { get; private set; }
+        internal bool ModSetFingerprintMatched { get; private set; }
+        internal string CurrentGameBuildFingerprint { get; private set; }
+        internal string CurrentModFingerprint { get; private set; }
+
         internal int AssetCacheHits { get; private set; }
         internal int AssetCacheMisses { get; private set; }
         internal int SignalCacheHits { get; private set; }
@@ -141,43 +152,97 @@ namespace PhysicalWater
         internal static ValheimKnowledgeDatabase LoadEmbedded()
         {
             var database = new ValheimKnowledgeDatabase();
+
+            // Capture the identity of the runtime that is actually installed
+            // independently of whether the embedded certified knowledge still
+            // matches it. CODY uses these CURRENT fingerprints as its cache
+            // namespace and therefore remains available after a mod-set change.
+            string installedGameAssembly = Path.Combine(
+                Paths.GameRootPath,
+                "valheim_Data",
+                "Managed",
+                "assembly_valheim.dll");
+
+            try
+            {
+                database.CurrentGameBuildFingerprint =
+                    HashFile(installedGameAssembly);
+
+                database.CurrentModFingerprint =
+                    ComputeModSetFingerprint(Paths.PluginPath);
+            }
+            catch (Exception ex)
+            {
+                PhysicalWaterPlugin.Log?.LogWarning(
+                    "LiquidCore could not fingerprint the current runtime; " +
+                    "certified knowledge and CODY persistent cache identity " +
+                    "will remain fail-closed: " + ex.Message);
+            }
+
             try
             {
                 Assembly assembly = typeof(ValheimKnowledgeDatabase).Assembly;
                 using (Stream stream = assembly.GetManifestResourceStream(ResourceName))
                 {
-                    if (stream == null) throw new InvalidOperationException("missing embedded resource " + ResourceName);
+                    if (stream == null)
+                        throw new InvalidOperationException(
+                            "missing embedded resource " + ResourceName);
+
                     using (var reader = new StreamReader(stream))
                     {
-                        database.Data = DeserializeDocument(reader.ReadToEnd());
+                        database.Data =
+                            DeserializeDocument(reader.ReadToEnd());
                     }
                 }
 
-                if (database.Data == null || database.Data.schemaVersion != SupportedSchemaVersion)
-                    throw new InvalidOperationException("unsupported schema version");
+                if (database.Data == null ||
+                    database.Data.schemaVersion != SupportedSchemaVersion)
+                    throw new InvalidOperationException(
+                        "unsupported schema version");
 
-                // Key persistent knowledge to the installed game artifact, not the
-                // assembly image already loaded through BepInEx. A preloader may
-                // rewrite/load an image whose bytes are no longer the immutable
-                // Steam installation fingerprint used to build this database.
-                string installedGameAssembly = Path.Combine(
-                    Paths.GameRootPath,
-                    "valheim_Data",
-                    "Managed",
-                    "assembly_valheim.dll");
-                string gameAssemblyHash = HashFile(installedGameAssembly);
-                if (database.Data.valheim == null ||
-                    !string.Equals(gameAssemblyHash, database.Data.valheim.assemblySha256, StringComparison.OrdinalIgnoreCase))
+                database.EmbeddedDocumentValid = true;
+
+                if (database.Data.valheim == null)
+                    throw new InvalidOperationException(
+                        "embedded database is missing its Valheim identity");
+
+                if (database.Data.modSet == null)
+                    throw new InvalidOperationException(
+                        "embedded database is missing its mod-set identity");
+
+                database.GameFingerprintMatched =
+                    !string.IsNullOrWhiteSpace(
+                        database.CurrentGameBuildFingerprint) &&
+                    string.Equals(
+                        database.CurrentGameBuildFingerprint,
+                        database.Data.valheim.assemblySha256,
+                        StringComparison.OrdinalIgnoreCase);
+
+                database.ModSetFingerprintMatched =
+                    !string.IsNullOrWhiteSpace(
+                        database.CurrentModFingerprint) &&
+                    string.Equals(
+                        database.CurrentModFingerprint,
+                        database.Data.modSet.fingerprint,
+                        StringComparison.OrdinalIgnoreCase);
+
+                if (!database.GameFingerprintMatched)
                     throw new InvalidOperationException(
                         "installed Valheim assembly fingerprint does not match the database" +
                         "; path=" + installedGameAssembly +
-                        "; actual=" + gameAssemblyHash +
-                        "; expected=" + (database.Data.valheim != null ? database.Data.valheim.assemblySha256 : "<missing>"));
+                        "; actual=" +
+                        (database.CurrentGameBuildFingerprint ?? "<unavailable>") +
+                        "; expected=" +
+                        database.Data.valheim.assemblySha256);
 
-                string modSetFingerprint = ComputeModSetFingerprint(Paths.PluginPath);
-                if (database.Data.modSet == null ||
-                    !string.Equals(modSetFingerprint, database.Data.modSet.fingerprint, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException("installed mod-set fingerprint does not match the database");
+                if (!database.ModSetFingerprintMatched)
+                    throw new InvalidOperationException(
+                        "installed mod-set fingerprint does not match the database" +
+                        "; certified mod-dependent prefab knowledge is disabled" +
+                        "; current=" +
+                        (database.CurrentModFingerprint ?? "<unavailable>") +
+                        "; expected=" +
+                        database.Data.modSet.fingerprint);
 
                 database.Index();
                 database.LoadLearnedAssets();
@@ -185,11 +250,14 @@ namespace PhysicalWater
             }
             catch (Exception ex)
             {
-                PhysicalWaterPlugin.Log?.LogWarning("LiquidCore Valheim knowledge database unavailable; safe runtime inspection fallback remains active: " + ex.Message);
+                PhysicalWaterPlugin.Log?.LogWarning(
+                    "LiquidCore Valheim knowledge database unavailable; " +
+                    "safe runtime inspection fallback remains active: " +
+                    ex.Message);
             }
+
             return database;
         }
-
         private void Index()
         {
             if (Data.typeRules != null)
@@ -348,8 +416,12 @@ namespace PhysicalWater
 
         internal string Summary()
         {
-            return !Loaded || Data == null
-                ? "loaded=False"
+            return Data == null
+                ? "loaded=False, embeddedValid=False" :
+                !Loaded
+                ? "loaded=False, embeddedValid=" + EmbeddedDocumentValid +
+                  ", gameFingerprintMatch=" + GameFingerprintMatched +
+                  ", modSetFingerprintMatch=" + ModSetFingerprintMatched
                 : "loaded=True, schema=" + Data.schemaVersion +
                   ", steamBuild=" + (Data.valheim != null ? Data.valheim.steamBuildId : "unknown") +
                   ", types=" + _types.Count + ", signals=" + _signals.Count + ", assets=" + _assets.Count +

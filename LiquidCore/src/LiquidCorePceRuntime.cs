@@ -2178,24 +2178,64 @@ namespace PhysicalWater
 
         private void InitializeCody()
         {
-            ValheimKnowledgeDatabase knowledge = PhysicalWaterPlugin.ValheimKnowledge;
-            if (knowledge == null || !knowledge.Loaded || knowledge.Data == null ||
-                knowledge.Data.valheim == null || knowledge.Data.modSet == null)
+            ValheimKnowledgeDatabase knowledge =
+                PhysicalWaterPlugin.ValheimKnowledge;
+
+            // CODY persistence is keyed to the CURRENT runtime, not to whether
+            // an embedded certified prefab database happens to match the
+            // installed mod set. A mismatch invalidates stale prefab serving;
+            // it does not amputate CODY.
+            string gameFingerprint =
+                knowledge?.CurrentGameBuildFingerprint;
+
+            string modFingerprint =
+                knowledge?.CurrentModFingerprint;
+
+            if (string.IsNullOrWhiteSpace(gameFingerprint) ||
+                string.IsNullOrWhiteSpace(modFingerprint))
             {
-                PhysicalWaterPlugin.Log.LogWarning("LiquidCore CODY catchment cache disabled because the Valheim knowledge fingerprint is unavailable.");
+                PhysicalWaterPlugin.Log.LogWarning(
+                    "LiquidCore CODY catchment cache disabled because the " +
+                    "current runtime fingerprint is unavailable.");
                 return;
             }
-            string gameFingerprint = knowledge.Data.valheim.assemblySha256;
-            string modFingerprint = knowledge.Data.modSet.fingerprint;
-            int schemaVersion = CodyCatchmentSchemaVersion;
-            _codyL1 = new CodyCatchmentCache(gameFingerprint, modFingerprint, schemaVersion, CodyRegionWorldSize);
-            _codyL2 = new CodyCatchmentCache(gameFingerprint, modFingerprint, schemaVersion, CodyRegionWorldSize);
-            _codyRebuilds = new CodyCatchmentRebuildCoordinator(_codyL2);
-            _codyRebuilds.Published += OnCodyCatchmentRebuilt;
-            _codyL2Path = Path.Combine(Paths.ConfigPath, "LiquidCore",
-                "cody-catchments-v" + schemaVersion + ".bin");
-        }
 
+            int schemaVersion = CodyCatchmentSchemaVersion;
+
+            _codyL1 = new CodyCatchmentCache(
+                gameFingerprint,
+                modFingerprint,
+                schemaVersion,
+                CodyRegionWorldSize);
+
+            _codyL2 = new CodyCatchmentCache(
+                gameFingerprint,
+                modFingerprint,
+                schemaVersion,
+                CodyRegionWorldSize);
+
+            _codyRebuilds =
+                new CodyCatchmentRebuildCoordinator(_codyL2);
+
+            _codyRebuilds.Published += OnCodyCatchmentRebuilt;
+
+            _codyL2Path = Path.Combine(
+                Paths.ConfigPath,
+                "LiquidCore",
+                "cody-catchments-v" + schemaVersion + ".bin");
+
+            PhysicalWaterPlugin.Log.LogInfo(
+                "LiquidCore CODY runtime initialized from current runtime " +
+                "fingerprints: game=" + gameFingerprint +
+                ", modSet=" + modFingerprint +
+                ", certifiedKnowledge=" +
+                (knowledge != null && knowledge.Loaded) +
+                ", gameCertified=" +
+                (knowledge != null && knowledge.GameFingerprintMatched) +
+                ", modSetCertified=" +
+                (knowledge != null && knowledge.ModSetFingerprintMatched) +
+                ".");
+        }
         private void LoadWorldCodyCache(string worldKey)
         {
             if (_codyL2 == null || string.IsNullOrWhiteSpace(worldKey) ||
