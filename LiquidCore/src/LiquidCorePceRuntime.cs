@@ -554,17 +554,18 @@ namespace PhysicalWater
         }
 
         private void PersistResolvedSourceRelation(
-            BaseWorldPceBootstrapJob job, ulong[] sourceCatchmentIds)
+            BaseWorldPceBootstrapJob job, ulong[] sourceCatchmentIds,
+            string policyId = "ExplicitCatchmentOverride")
         {
             if (job == null || sourceCatchmentIds == null || sourceCatchmentIds.Length == 0 ||
                 _codyL2 == null || string.IsNullOrEmpty(_codyInitialWorldSourceRelationPath)) return;
             PersistResolvedSourceRelation(job.WorldKey, job.GeometryRevision,
-                job.DependencyRevisionHash, sourceCatchmentIds);
+                job.DependencyRevisionHash, sourceCatchmentIds, policyId);
         }
 
         private void PersistResolvedSourceRelation(
             string worldKey, long geometryRevision, string dependencyRevisionHash,
-            ulong[] sourceCatchmentIds)
+            ulong[] sourceCatchmentIds, string policyId)
         {
             if (string.IsNullOrWhiteSpace(worldKey) || geometryRevision < 0 ||
                 string.IsNullOrWhiteSpace(dependencyRevisionHash) ||
@@ -573,6 +574,7 @@ namespace PhysicalWater
             var relation = new CodyInitialWorldSourceRelation
             {
                 WorldKey = worldKey,
+                PolicyId = policyId,
                 GeometryRevision = geometryRevision,
                 DependencyRevisionHash = dependencyRevisionHash,
                 RelationRevision = geometryRevision,
@@ -978,7 +980,8 @@ namespace PhysicalWater
             domain.SourceCatchmentIds = new[] { globalSourceCatchmentId };
             PersistResolvedSourceRelation(
                 _baseWorldBootstrapWorldKey, domain.GeometryRevision,
-                domain.DependencyRevisionHash, domain.SourceCatchmentIds);
+                domain.DependencyRevisionHash, domain.SourceCatchmentIds,
+                "ExplicitCatchmentOverride");
             CompleteInitialWorldDomainPublished?.Invoke(domain.Clone());
             PhysicalWaterPlugin.Log.LogInfo(
                 "LiquidCore attached the explicit CODY initial-water source catchment to the published PCE domain: catchment=" +
@@ -1504,16 +1507,38 @@ namespace PhysicalWater
             {
                 domain.SourceCatchmentId = globalSourceCatchmentId;
                 domain.SourceCatchmentIds = new[] { globalSourceCatchmentId };
-                PersistResolvedSourceRelation(job, domain.SourceCatchmentIds);
+                PersistResolvedSourceRelation(job, domain.SourceCatchmentIds,
+                    "ExplicitCatchmentOverride");
             }
             else
             {
-                domain.SourceCatchmentId = 0UL;
-                domain.SourceCatchmentIds = Array.Empty<ulong>();
-                if (string.IsNullOrEmpty(sourceError)) sourceError = persistedSourceError;
-                if (string.IsNullOrEmpty(sourceError))
-                    sourceError = "No explicit CODY initial-water source relation is available.";
-                LogUnselectedClosedPceCatchments(closed, sourceError);
+                float referenceHead = PhysicalWaterPlugin.Settings == null ? float.NaN :
+                    PhysicalWaterPlugin.Settings.InitialWorldPceReferenceHead.Value;
+                if (VolumetricPceInitialSourceRelation.TryResolve(
+                        job.SourceBounds, closed, referenceHead,
+                        out ulong[] policySourceIds, out string policyError))
+                {
+                    domain.SourceCatchmentIds = policySourceIds;
+                    domain.SourceCatchmentId = policySourceIds.Length == 1 ? policySourceIds[0] : 0UL;
+                    PersistResolvedSourceRelation(job, policySourceIds,
+                        "ExteriorHydraulicSourceAtInitialHead");
+                    sourceError = string.Empty;
+                    PhysicalWaterPlugin.Log.LogInfo(
+                        "LiquidCore applied default CODY initial-source policy " +
+                        "ExteriorHydraulicSourceAtInitialHead at referenceHead=" +
+                        referenceHead.ToString("R", System.Globalization.CultureInfo.InvariantCulture) +
+                        ": catchments=" + string.Join(",", Array.ConvertAll(policySourceIds, id => id.ToString())) + ".");
+                }
+                else
+                {
+                    domain.SourceCatchmentId = 0UL;
+                    domain.SourceCatchmentIds = Array.Empty<ulong>();
+                    if (string.IsNullOrEmpty(sourceError)) sourceError = persistedSourceError;
+                    if (string.IsNullOrEmpty(sourceError)) sourceError = policyError;
+                    if (string.IsNullOrEmpty(sourceError))
+                        sourceError = "No explicit CODY initial-water source relation is available.";
+                    LogUnselectedClosedPceCatchments(closed, sourceError);
+                }
             }
             if (!CanPublishCompleteBaseWorldPceDomain(domain, closed, out string preflightError))
             {
