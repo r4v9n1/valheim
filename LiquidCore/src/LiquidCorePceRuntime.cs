@@ -584,23 +584,6 @@ namespace PhysicalWater
             }
         }
 
-        private static bool TryResolveClosedPceInitialSourceSet(
-            Bounds sourceBounds,
-            IReadOnlyList<VolumetricPceCapacityStorageDescriptor> closed,
-            out ulong[] sourceCatchmentIds, out string error)
-        {
-            sourceCatchmentIds = Array.Empty<ulong>();
-            error = string.Empty;
-            if (PhysicalWaterPlugin.Settings == null)
-            {
-                error = "Initial-world source settings are unavailable.";
-                return false;
-            }
-            return VolumetricPceInitialSourceRelation.TryResolve(
-                sourceBounds, closed, PhysicalWaterPlugin.Settings.SeaLevel.Value,
-                out sourceCatchmentIds, out error);
-        }
-
         private static bool TryResolveClosedPceCatchment(
             CodyCatchmentDescriptor sourceSeed,
             IReadOnlyList<VolumetricPceCapacityStorageDescriptor> closed,
@@ -1502,27 +1485,13 @@ namespace PhysicalWater
                 domain.SourceCatchmentIds = new[] { globalSourceCatchmentId };
                 PersistResolvedSourceRelation(job, domain.SourceCatchmentIds);
             }
-            else if (TryResolveClosedPceInitialSourceSet(
-                         job.SourceBounds, closed, out ulong[] resolvedSourceIds,
-                         out string resolvedSourceError))
-            {
-                // CODY records the post-closure world-exterior relation; it
-                // does not own water. SeaLevel is consumed only here as the
-                // explicit one-time initial reference head.
-                domain.SourceCatchmentIds = resolvedSourceIds;
-                domain.SourceCatchmentId = resolvedSourceIds.Length == 1 ? resolvedSourceIds[0] : 0UL;
-                PersistResolvedSourceRelation(job, resolvedSourceIds);
-                sourceError = string.Empty;
-                PhysicalWaterPlugin.Log.LogInfo(
-                    "LiquidCore CODY recorded the post-closure initial-world source relation: catchments=" +
-                    string.Join(",", Array.ConvertAll(resolvedSourceIds, id => id.ToString())) + ".");
-            }
             else
             {
                 domain.SourceCatchmentId = 0UL;
                 domain.SourceCatchmentIds = Array.Empty<ulong>();
                 if (string.IsNullOrEmpty(sourceError)) sourceError = persistedSourceError;
-                if (string.IsNullOrEmpty(sourceError)) sourceError = resolvedSourceError;
+                if (string.IsNullOrEmpty(sourceError))
+                    sourceError = "No explicit CODY initial-water source relation is available.";
                 LogUnselectedClosedPceCatchments(closed, sourceError);
             }
             if (!CanPublishCompleteBaseWorldPceDomain(domain, closed, out string preflightError))
