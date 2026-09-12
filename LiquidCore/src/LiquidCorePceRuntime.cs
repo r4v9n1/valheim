@@ -555,7 +555,7 @@ namespace PhysicalWater
 
         private void PersistResolvedSourceRelation(
             BaseWorldPceBootstrapJob job, ulong[] sourceCatchmentIds,
-            string policyId = "ExplicitCatchmentOverride")
+            string policyId = CodyInitialWorldSourcePolicies.ExplicitCatchmentOverride)
         {
             if (job == null || sourceCatchmentIds == null || sourceCatchmentIds.Length == 0 ||
                 _codyL2 == null || string.IsNullOrEmpty(_codyInitialWorldSourceRelationPath)) return;
@@ -981,7 +981,7 @@ namespace PhysicalWater
             PersistResolvedSourceRelation(
                 _baseWorldBootstrapWorldKey, domain.GeometryRevision,
                 domain.DependencyRevisionHash, domain.SourceCatchmentIds,
-                "ExplicitCatchmentOverride");
+                CodyInitialWorldSourcePolicies.ExplicitCatchmentOverride);
             CompleteInitialWorldDomainPublished?.Invoke(domain.Clone());
             PhysicalWaterPlugin.Log.LogInfo(
                 "LiquidCore attached the explicit CODY initial-water source catchment to the published PCE domain: catchment=" +
@@ -1508,7 +1508,7 @@ namespace PhysicalWater
                 domain.SourceCatchmentId = globalSourceCatchmentId;
                 domain.SourceCatchmentIds = new[] { globalSourceCatchmentId };
                 PersistResolvedSourceRelation(job, domain.SourceCatchmentIds,
-                    "ExplicitCatchmentOverride");
+                    CodyInitialWorldSourcePolicies.ExplicitCatchmentOverride);
             }
             else
             {
@@ -1521,11 +1521,12 @@ namespace PhysicalWater
                     domain.SourceCatchmentIds = policySourceIds;
                     domain.SourceCatchmentId = policySourceIds.Length == 1 ? policySourceIds[0] : 0UL;
                     PersistResolvedSourceRelation(job, policySourceIds,
-                        "ExteriorHydraulicSourceAtInitialHead");
+                        CodyInitialWorldSourcePolicies.ExteriorHydraulicSourceAtInitialHead);
                     sourceError = string.Empty;
                     PhysicalWaterPlugin.Log.LogInfo(
                         "LiquidCore applied default CODY initial-source policy " +
-                        "ExteriorHydraulicSourceAtInitialHead at referenceHead=" +
+                        CodyInitialWorldSourcePolicies.ExteriorHydraulicSourceAtInitialHead +
+                        " at referenceHead=" +
                         referenceHead.ToString("R", System.Globalization.CultureInfo.InvariantCulture) +
                         ": catchments=" + string.Join(",", Array.ConvertAll(policySourceIds, id => id.ToString())) + ".");
                 }
