@@ -89,7 +89,9 @@ namespace PhysicalWater
                 _systemObject.AddComponent<PhysicalWaterSystem>();
             }
 
-            bool geometryAdapterRequired = Settings.ValheimGeometryDiagnosticsEnabled.Value || Settings.StageE1Enabled.Value;
+            bool geometryAdapterRequired = Settings.ValheimGeometryDiagnosticsEnabled.Value ||
+                                           Settings.StageE1Enabled.Value ||
+                                           Settings.InitialWorldPceEnabled.Value;
             bool globalPceBootstrapEnabled = geometryAdapterRequired;
             if (geometryAdapterRequired)
             {
@@ -324,6 +326,7 @@ namespace PhysicalWater
         internal readonly ConfigEntry<float> InitialWorldPcePartitionSize;
         internal readonly ConfigEntry<float> InitialWorldPceCellSize;
         internal readonly ConfigEntry<float> InitialWorldPceReferenceHead;
+        internal readonly ConfigEntry<bool> InitialWorldPceEnabled;
         internal readonly ConfigEntry<string> InitialWorldPceSourceCatchmentId;
 
         internal PhysicalWaterSettings(ConfigFile config)
@@ -508,6 +511,8 @@ namespace PhysicalWater
                 "Deterministic PCE storage-cell size for the complete base-world provider.");
             InitialWorldPceReferenceHead = config.Bind("InitialWorldPce", "ReferenceHead", 30f,
                 "One-time initial-condition reference head for the default CODY exterior-source policy. This is not recurring fill or water ownership.");
+            InitialWorldPceEnabled = config.Bind("InitialWorldPce", "Enabled", true,
+                "Run the host-only complete global PCE geometry/topology provider on ordinary world startup. This does not enable E3 or create water by itself.");
             InitialWorldPceSourceCatchmentId = config.Bind("InitialWorldPce", "SourceCatchmentId", string.Empty,
                 "Optional explicit hexadecimal/decimal CODY catchment identity for the one-time initial source. Empty keeps bootstrap fail-closed.");
         }
