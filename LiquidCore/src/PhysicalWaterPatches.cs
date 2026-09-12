@@ -826,6 +826,16 @@ namespace PhysicalWater
                         Vector3 finitePosition = __instance.transform.position;
                         bool hasFiniteAuthority = finite.TryGetLatestPlayerWaterSample(finitePosition,
                             out R4V9N1.PhysicalOcean.Volumetric.VolumetricWaterSample sample);
+                        if (!hasFiniteAuthority && finite.HasCommittedInitialWorldWaterSource)
+                        {
+                            // Once LiquidCore owns finite water, an uncovered or
+                            // stale E3 sample is authoritative dry/unknown. A
+                            // vanilla fallback here would let gameplay report
+                            // wetness that has no corresponding LiquidCore
+                            // volume or rendered surface.
+                            __instance.SetLiquidLevel(-10000f, LiquidType.Water, finite);
+                            return;
+                        }
                         float finiteSurface = hasFiniteAuthority ? sample.SurfaceHeight : float.NegativeInfinity;
                         // The host query is a fallback for positions without an
                         // accepted LC column, never a second height evaluated
