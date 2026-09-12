@@ -323,6 +323,7 @@ namespace PhysicalWater
         internal readonly ConfigEntry<float> InitialWorldPceVerticalMax;
         internal readonly ConfigEntry<float> InitialWorldPcePartitionSize;
         internal readonly ConfigEntry<float> InitialWorldPceCellSize;
+        internal readonly ConfigEntry<float> InitialWorldPceReferenceHead;
         internal readonly ConfigEntry<string> InitialWorldPceSourceCatchmentId;
 
         internal PhysicalWaterSettings(ConfigFile config)
@@ -505,6 +506,8 @@ namespace PhysicalWater
                 "Deterministic horizontal partition size for the complete base-world PCE provider.");
             InitialWorldPceCellSize = config.Bind("InitialWorldPce", "CellSize", 8f,
                 "Deterministic PCE storage-cell size for the complete base-world provider.");
+            InitialWorldPceReferenceHead = config.Bind("InitialWorldPce", "ReferenceHead", 30f,
+                "One-time initial-condition reference head for the default CODY exterior-source policy. This is not recurring fill or water ownership.");
             InitialWorldPceSourceCatchmentId = config.Bind("InitialWorldPce", "SourceCatchmentId", string.Empty,
                 "Optional explicit hexadecimal/decimal CODY catchment identity for the one-time initial source. Empty keeps bootstrap fail-closed.");
         }
