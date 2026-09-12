@@ -15,7 +15,7 @@ namespace HereComesTheVein
     {
         public const string PluginGuid = "com.r4v9n1.herecomesthevein";
         public const string PluginName = "HereComesTheVein";
-        public const string PluginVersion = "0.1.9";
+        public const string PluginVersion = "0.1.10";
 
         internal const int IronOreSharePercent = 40;
 
@@ -618,6 +618,21 @@ namespace HereComesTheVein
             }
 
             ZoneSystem.instance?.SetGlobalKey("defeated_gd_king");
+        }
+    }
+
+    [HarmonyPatch(typeof(Player), nameof(Player.ActivateGuardianPower))]
+    internal static class ElderGuardianPowerActivationPatch
+    {
+        private static void Postfix(Player __instance)
+        {
+            if (__instance == null || !string.Equals(__instance.GetGuardianPowerName(), "GP_TheElder", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            ZoneSystem.instance?.SetGlobalKey("defeated_gd_king");
+            HereComesTheVeinPlugin.ModLog?.LogInfo("Elder guardian power activated; IronOre drops are now unlocked world-wide.");
         }
     }
 

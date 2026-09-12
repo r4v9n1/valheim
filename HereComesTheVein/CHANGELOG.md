@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.10
+
+- Added a server-authoritative hook for Elder guardian-power activation so one player unlocks IronOre drops for the whole world.
+
 ## 0.1.9
 
 - Promotes Elder guardian-power activation to the server-wide Elder defeat progression key.
