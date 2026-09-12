@@ -31,3 +31,15 @@ Write-Host 'INITIAL SOURCE RECEIPTS SURVIVE LOAD: PASS'
 Write-Host 'DORMANT INITIAL SOURCE SURVIVES LOAD: PASS'
 Write-Host 'ACTIVE LEDGER AUTHORITY SURVIVES LOAD: PASS'
 Write-Host 'CONTAINER/LIFECYCLE AUTHORITY SURVIVES LOAD: PASS'
+
+$runtime = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'src/PhysicalWaterDevE1Runtime.cs') -Raw
+if (!$runtime.Contains('origin = PhysicalWaterPersistenceRuntime.ResolveRestoreOrigin(origin);') -or
+    !$text.Contains('return snapshot.WorldOrigin;')) {
+    throw 'FAIL: domain creation does not retain the saved coordinate frame before restore.'
+}
+if (!$runtime.Contains('HasCommittedInitialWorldWaterSourceIdentity(initialSourceId)') -or
+    $runtime.Contains('string.Equals(receipt.SourceId, initialSourceId, StringComparison.Ordinal)')) {
+    throw 'FAIL: aggregate replay detection still compares partition receipt IDs.'
+}
+Write-Host 'SAVED WINDOW ORIGIN SELECTED BEFORE RESTORE: PASS'
+Write-Host 'AGGREGATE SOURCE REPLAY IDENTITY: PASS'

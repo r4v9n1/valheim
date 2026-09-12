@@ -47,6 +47,19 @@ namespace PhysicalWater
             Instance.TryLoadWorldState();
         }
 
+        internal static Vector3 ResolveRestoreOrigin(Vector3 requestedOrigin)
+        {
+            if (Instance == null) return requestedOrigin;
+            Instance.TryLoadWorldState();
+            VolumetricFluidStateSnapshot snapshot = Instance._pending;
+            if (!SnapshotHasAuthoritativeState(snapshot)) return requestedOrigin;
+            // Local coordinates belong to the saved window. Restore there;
+            // subsequent streaming uses the existing conservative rebase path.
+            PhysicalWaterPlugin.Log.LogInfo("LiquidCore persistence selected saved window origin=" +
+                snapshot.WorldOrigin + ", requested=" + requestedOrigin + ".");
+            return snapshot.WorldOrigin;
+        }
+
         internal static void TryRestore(VolumetricStreamingDomainController streaming)
         {
             if (Instance == null || streaming == null || Instance._pending == null) return;
@@ -85,7 +98,11 @@ namespace PhysicalWater
                 }
                 PhysicalWaterPlugin.Log.LogInfo(
                     "LiquidCore Phase 5 world state restored: world=" + Instance._pendingWorldKey +
-                    ", particles=" + Instance._pending.Particles.Length + ".");
+                    ", particles=" + Instance._pending.Particles.Length +
+                    ", initialSourceId=" + Instance._pending.InitialWorldSourceId +
+                    ", sourceReceipts=" + Instance._pending.InitialWorldSourceReceipts.Length +
+                    ", dormantSourcePartitions=" + Instance._pending.DormantInitialWorldSourcePartitions.Length +
+                    ", sourceAtoms=" + Instance._pending.InitialWorldSourceAtoms + ".");
                 // A successful restore consumes this world's on-disk snapshot
                 // for the current session. Without a completed-world marker,
                 // Update reloads the same file on the next frame and restores

@@ -499,6 +499,7 @@ namespace PhysicalWater
                 Snap(playerPosition.x - worldSize.x * 0.5f, dx),
                 Snap(playerPosition.y - 3f, dx),
                 Snap(playerPosition.z - worldSize.z * 0.5f, dx));
+            origin = PhysicalWaterPersistenceRuntime.ResolveRestoreOrigin(origin);
 
             _domainObject = new GameObject("R4V9N1_PhysicalWaterDevE3StreamingDomain");
             DontDestroyOnLoad(_domainObject);
@@ -1285,10 +1286,10 @@ namespace PhysicalWater
                 pce.DiscardCausalGeometrySignalsThrough(appliedGeneration);
                 adapter.ReleaseCausalGeometryCoverage();
                 _nextCausalGeometryApplyTime = 0f;
-                PublishAppliedCapacityStorage(pce, appliedGeometryRevision);
+                bool appliedStoragePublished = PublishAppliedCapacityStorage(pce, appliedGeometryRevision);
                 pce.QueueCodyCatchmentCoverage(_domain, _geometryCoverageBounds);
 
-                if (_streaming.HasCommittedInitialWorldWaterSource &&
+                if (appliedStoragePublished && _streaming.HasCommittedInitialWorldWaterSource &&
                     !_streaming.HasActiveInitialWorldWaterRepresentation)
                 {
                     if (_streaming.TryMaterializeInitialWorldWaterForActiveWindow(
@@ -1427,24 +1428,21 @@ namespace PhysicalWater
                 (_preparedGeometryIsInitial ? ". Fill remains gated until atomic application." : ". Simulation continues against the preceding causal solid generation."));
         }
 
-        private void PublishAppliedCapacityStorage(LiquidCorePceRuntime pce, long geometryRevision)
+        private bool PublishAppliedCapacityStorage(LiquidCorePceRuntime pce, long geometryRevision)
         {
-            if (pce == null || _domain == null || pce.CodyL1 == null) return;
-            if (!pce.CodyL1.TryLookup(_domain.WorldBounds.center, out CodyCatchmentDescriptor catchment))
+            if (pce == null || _domain == null || pce.CodyL1 == null) return false;
+            if (!pce.CodyL1.TryGetCoverage(_domain.WorldBounds, out CodyCatchmentDescriptor[] catchments))
             {
                 PhysicalWaterPlugin.Log.LogWarning(
-                    "LiquidCore PCE could not publish applied storage because no CODY catchment covers the active domain center.");
-                return;
+                    "LiquidCore PCE deferred applied storage until valid bounded CODY catchments cover the complete active grid.");
+                return false;
             }
-            if (catchment.Validity != CodyCatchmentValidity.Valid ||
-                !ContainsBounds(catchment.DependencyBounds, _domain.WorldBounds))
+            if (!pce.PublishAppliedDomainCapacityStorage(_domain.MacDomain, catchments, geometryRevision, out string error))
             {
-                PhysicalWaterPlugin.Log.LogWarning(
-                    "LiquidCore PCE deferred applied storage because the valid CODY catchment does not fully cover the active E3 grid.");
-                return;
-            }
-            if (!pce.PublishAppliedDomainCapacityStorage(_domain.MacDomain, catchment, geometryRevision, out string error))
                 PhysicalWaterPlugin.Log.LogWarning("LiquidCore PCE applied storage publication deferred: " + error + ".");
+                return false;
+            }
+            return true;
         }
 
         private static bool ContainsBounds(Bounds outer, Bounds inner) =>
@@ -1719,23 +1717,13 @@ namespace PhysicalWater
                     "LiquidCore complete initial-water geometry is published but has no explicit CODY source catchment; source commit remains deferred.");
                 return;
             }
-            VolumetricFluidStateSnapshot persisted = _streaming.CapturePersistedState();
             const string initialSourceId = "valheim-ocean-initial-v1";
-            if (persisted.InitialWorldSourceReceipts != null)
+            if (_streaming.HasCommittedInitialWorldWaterSourceIdentity(initialSourceId))
             {
-                for (int i = 0; i < persisted.InitialWorldSourceReceipts.Length; i++)
-                {
-                    VolumetricInitialWorldSourceReceiptSnapshot receipt =
-                        persisted.InitialWorldSourceReceipts[i];
-                    if (receipt != null &&
-                        string.Equals(receipt.SourceId, initialSourceId, StringComparison.Ordinal))
-                    {
-                        PhysicalWaterPlugin.Log.LogInfo(
-                            "LiquidCore complete initial-water domain already has a persisted source receipt; " +
-                            "geometry refresh remains reconciliation-only.");
-                        return;
-                    }
-                }
+                PhysicalWaterPlugin.Log.LogInfo(
+                    "LiquidCore complete initial-water aggregate already has persisted source authority; " +
+                    "geometry refresh remains reconciliation-only.");
+                return;
             }
             try
             {
@@ -1813,7 +1801,6 @@ namespace PhysicalWater
                 _domain == null ||
                 _subscribedCodyRuntime == null ||
                 !_streaming.HasCommittedInitialWorldWaterSource ||
-                _streaming.HasActiveInitialWorldWaterRepresentation ||
                 _appliedGeometryStateRevision == int.MinValue)
             {
                 return;
@@ -1822,15 +1809,15 @@ namespace PhysicalWater
             // Only the rebuilt descriptor that actually proves coverage of the
             // active E3 grid may reopen this startup gate.
             if (descriptor.Validity != CodyCatchmentValidity.Valid ||
-                !descriptor.DependencyBounds.Contains(_domain.WorldBounds.center) ||
-                !ContainsBounds(descriptor.DependencyBounds, _domain.WorldBounds))
+                !descriptor.DependencyBounds.Intersects(_domain.WorldBounds))
             {
                 return;
             }
 
-            PublishAppliedCapacityStorage(
+            if (!PublishAppliedCapacityStorage(
                 _subscribedCodyRuntime,
-                _appliedGeometryStateRevision);
+                _appliedGeometryStateRevision)) return;
+            if (_streaming.HasActiveInitialWorldWaterRepresentation) return;
 
             if (_streaming.TryMaterializeInitialWorldWaterForActiveWindow(
                     out LiquidCoreInitialWaterMaterializationResult materialization,

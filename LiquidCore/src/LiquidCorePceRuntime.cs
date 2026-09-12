@@ -694,17 +694,22 @@ namespace PhysicalWater
 
         internal bool PublishAppliedDomainCapacityStorage(
             VolumetricWaterDomain domain,
-            CodyCatchmentDescriptor catchment,
+            CodyCatchmentDescriptor[] catchments,
             long geometryRevision,
             out string error)
         {
             error = string.Empty;
-            if (domain == null || catchment == null)
+            if (domain == null || catchments == null || catchments.Length == 0)
             {
                 error = "PCE capacity publication requires an applied domain and CODY catchment.";
                 return false;
             }
             VolumetricWaterSettings settings = domain.Settings;
+            CodyCatchmentDescriptor catchment = catchments[0];
+            var dependencyIdentity = new System.Text.StringBuilder();
+            foreach (CodyCatchmentDescriptor member in catchments)
+                dependencyIdentity.Append(member.CatchmentId).Append(':')
+                    .Append(member.DependencyRevisionHash).Append(';');
             int cellCount = settings.ResolutionX * settings.ResolutionY * settings.ResolutionZ;
             float[] cellCapacity = domain.CaptureCutCellCapacitySync();
             Vector2[] storageCurves = domain.CaptureHydraulicStorageSparseSync();
@@ -716,7 +721,24 @@ namespace PhysicalWater
                 settings.ResolutionX, settings.ResolutionY, settings.ResolutionZ,
                 catchment.CatchmentId, domain.WorldOrigin, settings.CellSize,
                 out ulong[] cellCatchmentIds, out int[] cellComponentIds);
-            CodyDrainageExit[] drainageExits = catchment.DrainageExits ?? Array.Empty<CodyDrainageExit>();
+            // Each bounded CODY descriptor supplies its own semantic identity;
+            // the applied PCE graph retains its cross-region component IDs.
+            for (int cell = 0; cell < cellCount; cell++)
+            {
+                if (cellComponentIds[cell] < 0) continue;
+                int x = cell % settings.ResolutionX;
+                int y = (cell / settings.ResolutionX) % settings.ResolutionY;
+                int z = cell / (settings.ResolutionX * settings.ResolutionY);
+                Vector3 position = domain.WorldOrigin +
+                    new Vector3(x + 0.5f, y + 0.5f, z + 0.5f) * settings.CellSize;
+                if (!_codyL1.TryLookup(position, out CodyCatchmentDescriptor member))
+                { error = "Applied CODY coverage changed before publication."; return false; }
+                cellCatchmentIds[cell] = member.CatchmentId;
+            }
+            var allDrainageExits = new List<CodyDrainageExit>();
+            foreach (CodyCatchmentDescriptor member in catchments)
+                if (member.DrainageExits != null) allDrainageExits.AddRange(member.DrainageExits);
+            CodyDrainageExit[] drainageExits = allDrainageExits.ToArray();
             var exits = new VolumetricPceStorageExit[drainageExits.Length];
             for (int i = 0; i < drainageExits.Length; i++)
             {
@@ -737,7 +759,7 @@ namespace PhysicalWater
                     Mathf.RoundToInt(domain.WorldOrigin.z / settings.CellSize),
                 CompleteSourceDomain = false,
                 GeometryRevision = geometryRevision,
-                DependencyRevisionHash = catchment.DependencyRevisionHash,
+                DependencyRevisionHash = dependencyIdentity.ToString(),
                 WorldBounds = new Bounds(domain.WorldOrigin + new Vector3(
                     settings.ResolutionX * settings.CellSize,
                     settings.ResolutionY * settings.CellSize,

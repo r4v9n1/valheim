@@ -45,7 +45,8 @@ if ($mvcEarlyReturnIndex -lt 0 -or
 
 foreach ($required in @(
     'descriptor.Validity != CodyCatchmentValidity.Valid',
-    'ContainsBounds(descriptor.DependencyBounds, _domain.WorldBounds)',
+    'descriptor.DependencyBounds.Intersects(_domain.WorldBounds)',
+    'pce.CodyL1.TryGetCoverage(_domain.WorldBounds',
     'PublishAppliedCapacityStorage(',
     'TryMaterializeInitialWorldWaterForActiveWindow(',
     'PW_E3_INITIAL_SOURCE_MATERIALIZED trigger=CODY-rebuild'
