@@ -15,7 +15,7 @@ namespace HereComesTheVein
     {
         public const string PluginGuid = "com.r4v9n1.herecomesthevein";
         public const string PluginName = "HereComesTheVein";
-        public const string PluginVersion = "0.1.10";
+        public const string PluginVersion = "0.1.11";
 
         internal const int IronOreSharePercent = 40;
 
@@ -607,26 +607,14 @@ namespace HereComesTheVein
         }
     }
 
-    [HarmonyPatch(typeof(Player), nameof(Player.SetGuardianPower))]
-    internal static class ElderGuardianPowerProgressionPatch
-    {
-        private static void Postfix(string name)
-        {
-            if (!string.Equals(name, "GP_TheElder", StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            ZoneSystem.instance?.SetGlobalKey("defeated_gd_king");
-        }
-    }
-
     [HarmonyPatch(typeof(Player), nameof(Player.ActivateGuardianPower))]
     internal static class ElderGuardianPowerActivationPatch
     {
-        private static void Postfix(Player __instance)
+        private static void Prefix(Player __instance)
         {
-            if (__instance == null || !string.Equals(__instance.GetGuardianPowerName(), "GP_TheElder", StringComparison.OrdinalIgnoreCase))
+            if (__instance == null ||
+                !string.Equals(__instance.GetGuardianPowerName(), "GP_TheElder", StringComparison.OrdinalIgnoreCase) ||
+                __instance.m_guardianPowerCooldown > 0f)
             {
                 return;
             }

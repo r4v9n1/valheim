@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.11
+
+- Unlocks IronOre only when the Elder power activation path is ready, avoiding false unlocks from merely selecting the power or attempting it during cooldown.
+
 ## 0.1.10
 
 - Added a server-authoritative hook for Elder guardian-power activation so one player unlocks IronOre drops for the whole world.
