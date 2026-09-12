@@ -20,7 +20,7 @@ $PluginDir = Join-Path $PluginRoot "LiquidCore"
 $PluginDllPath = Join-Path $PluginDir "LiquidCore.dll"
 $PluginBundlePath = Join-Path $PluginDir "physicalwater_assets"
 $LegacyPluginDir = Join-Path $PluginRoot "PhysicalWater"
-$EnableFiniteStreaming = $EnableStageE1.IsPresent -or $EnableStageE3.IsPresent
+$EnableFiniteStreaming = $true
 $EnableGeometryDiagnostics = (-not $EnableFiniteStreaming).ToString().ToLowerInvariant()
 
 New-Item -ItemType Directory -Force -Path $PluginDir | Out-Null
