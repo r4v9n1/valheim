@@ -52,7 +52,7 @@ namespace PhysicalWater
             if (Instance == null || streaming == null || Instance._pending == null) return;
             try
             {
-                if (Instance._pending.Particles.Length == 0)
+                if (!SnapshotHasAuthoritativeState(Instance._pending))
                 {
                     // Geometry is reconstructable PCE/cache state, while the
                     // persisted authority is finite liquid. Uploading an old
@@ -60,7 +60,7 @@ namespace PhysicalWater
                     // work and immediately superseded by causal geometry.
                     Instance._restoredSnapshotWorldKey = Instance._pendingWorldKey;
                     PhysicalWaterPlugin.Log.LogInfo(
-                        "LiquidCore Phase 5 empty world state consumed without geometry restore: world=" +
+                        "LiquidCore Phase 5 semantically empty world state consumed without restore: world=" +
                         Instance._pendingWorldKey + ".");
                     Instance._pending = null;
                     Instance._pendingWorldKey = null;
@@ -107,6 +107,105 @@ namespace PhysicalWater
             }
         }
 
+        /// <summary>
+        /// A zero-particle snapshot is not necessarily empty. LiquidCore can
+        /// own water entirely through the persistent cell ledger, dormant
+        /// regions, containers, or the global initial-world source receipts.
+        ///
+        /// Source receipts are lifecycle authority even if the current amount
+        /// of water later reaches zero: discarding them would permit the
+        /// initial source to be created a second time on the next load.
+        /// </summary>
+        internal static bool SnapshotHasAuthoritativeState(
+            VolumetricFluidStateSnapshot snapshot)
+        {
+            if (snapshot == null) return false;
+
+            if (!string.IsNullOrEmpty(snapshot.InitialWorldSourceId) ||
+                snapshot.InitialWorldSourceAtoms != 0UL ||
+                snapshot.InitialWorldSourceVolume != 0.0)
+            {
+                return true;
+            }
+
+            if (snapshot.InitialWorldSourceReceipts != null &&
+                snapshot.InitialWorldSourceReceipts.Length != 0)
+            {
+                return true;
+            }
+
+            if (snapshot.DormantInitialWorldSourcePartitions != null &&
+                snapshot.DormantInitialWorldSourcePartitions.Length != 0)
+            {
+                return true;
+            }
+
+            if (snapshot.Particles != null &&
+                snapshot.Particles.Length != 0)
+            {
+                return true;
+            }
+
+            // Even an explicitly authoritative zero ledger is meaningful
+            // lifecycle state and must not be silently replaced by bootstrap.
+            if (snapshot.CellVolumeAuthoritative)
+                return true;
+
+            if (HasNonZero(snapshot.CellVolumeAtomic))
+                return true;
+
+            if (snapshot.DormantRegions != null &&
+                snapshot.DormantRegions.Length != 0)
+            {
+                return true;
+            }
+
+            if (snapshot.ContainerBalances != null &&
+                snapshot.ContainerBalances.Length != 0)
+            {
+                return true;
+            }
+
+            if (snapshot.ContainerTransactions != null &&
+                snapshot.ContainerTransactions.Length != 0)
+            {
+                return true;
+            }
+
+            if (snapshot.MicroSpillConnections != null &&
+                snapshot.MicroSpillConnections.Length != 0)
+            {
+                return true;
+            }
+
+            if (snapshot.PersistentColumnHydrostaticsActive)
+                return true;
+
+            if (HasNonZero(snapshot.PersistentVerticalDisplacementOverflow))
+                return true;
+
+            return false;
+        }
+
+        private static bool HasNonZero(uint[] values)
+        {
+            if (values == null) return false;
+
+            for (int i = 0; i < values.Length; i++)
+                if (values[i] != 0U) return true;
+
+            return false;
+        }
+
+        private static bool HasNonZero(ulong[] values)
+        {
+            if (values == null) return false;
+
+            for (int i = 0; i < values.Length; i++)
+                if (values[i] != 0UL) return true;
+
+            return false;
+        }
         private void SaveWorldState()
         {
             try
