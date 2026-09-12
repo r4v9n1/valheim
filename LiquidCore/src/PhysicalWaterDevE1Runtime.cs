@@ -1660,12 +1660,12 @@ namespace PhysicalWater
             }
             try
             {
-                // SeaLevel is used only as the named initial reference head.
-                // PCE owns geometry/capacity; LiquidCore computes volume and
-                // exact atoms; E3 receives only those supplied transactions.
+                // The policy and the source calculator must use the same
+                // explicit one-time initial-condition head. SeaLevel is not
+                // recurring ownership logic.
                 var rule = new LiquidCoreInitialWorldWaterSourceRule
                 {
-                    ReferenceHead = PhysicalWaterPlugin.Settings.SeaLevel.Value,
+                    ReferenceHead = PhysicalWaterPlugin.Settings.InitialWorldPceReferenceHead.Value,
                     SourceCatchmentId = domain.SourceCatchmentId,
                     SourceCatchmentIds = domain.SourceCatchmentIds == null
                         ? null : (ulong[])domain.SourceCatchmentIds.Clone()
