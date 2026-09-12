@@ -577,7 +577,7 @@ namespace PhysicalWater
                 PolicyId = policyId,
                 GeometryRevision = geometryRevision,
                 DependencyRevisionHash = dependencyRevisionHash,
-                RelationRevision = geometryRevision,
+                RelationRevision = Math.Max(1L, geometryRevision),
                 SourceCatchmentIds = (ulong[])sourceCatchmentIds.Clone()
             };
             if (!_codyL2.TryPublishInitialWorldSourceRelation(relation, out string publishError))
