@@ -15,7 +15,9 @@ namespace HereComesTheVein
     {
         public const string PluginGuid = "com.r4v9n1.herecomesthevein";
         public const string PluginName = "HereComesTheVein";
-        public const string PluginVersion = "0.1.7";
+        public const string PluginVersion = "0.1.12";
+        private const string ElderActivatedRpc = "HereComesTheVein_ElderActivated";
+        private static bool _elderRpcRegistered;
 
         internal const int IronOreSharePercent = 40;
 
@@ -35,6 +37,28 @@ namespace HereComesTheVein
                 PluginName + " " + PluginVersion +
                 " loaded. Copper veins now use weighted CopperOre/IronOre drops " +
                 "(60/40); runtime=" + (Application.isBatchMode ? "dedicated-server" : "client") + ".");
+        }
+
+        private void Update()
+        {
+            if (_elderRpcRegistered || ZRoutedRpc.instance == null)
+            {
+                return;
+            }
+
+            ZRoutedRpc.instance.Register(ElderActivatedRpc, OnElderActivatedRpc);
+            _elderRpcRegistered = true;
+        }
+
+        private static void OnElderActivatedRpc(long sender)
+        {
+            if (ZNet.instance != null && !ZNet.instance.IsServer())
+            {
+                return;
+            }
+
+            ZoneSystem.instance?.SetGlobalKey("defeated_gd_king");
+            ModLog?.LogInfo("Received Elder activation from a client; IronOre drops are unlocked world-wide.");
         }
 
         private void OnDestroy()
@@ -427,6 +451,30 @@ namespace HereComesTheVein
             texture.Apply(true, false);
             _ironTexture = texture;
             return _ironTexture;
+        }
+    }
+
+    [HarmonyPatch(typeof(Player), nameof(Player.ActivateGuardianPower))]
+    internal static class ElderGuardianPowerActivationPatch
+    {
+        private static void Prefix(Player __instance)
+        {
+            if (__instance == null ||
+                !string.Equals(__instance.GetGuardianPowerName(), "GP_TheElder", StringComparison.OrdinalIgnoreCase) ||
+                __instance.m_guardianPowerCooldown > 0f)
+            {
+                return;
+            }
+
+            if (ZoneSystem.instance != null)
+            {
+                ZoneSystem.instance.SetGlobalKey("defeated_gd_king");
+            }
+
+            if (ZRoutedRpc.instance != null && ZNet.instance != null && !ZNet.instance.IsServer())
+            {
+                ZRoutedRpc.instance.InvokeRoutedRPC("HereComesTheVein_ElderActivated");
+            }
         }
     }
 

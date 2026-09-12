@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.12
+
+- Relays Elder guardian-power activation from clients to the dedicated server so the world-wide IronOre unlock works in multiplayer.
+
 ## 0.1.7
 
 - Added an activated Elder OfferingBowl trophy fallback for restored worlds missing the global Elder defeat key.
