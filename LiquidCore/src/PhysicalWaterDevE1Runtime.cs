@@ -139,6 +139,7 @@ namespace PhysicalWater
         private readonly List<ulong> _retiredMicroSpillScratch = new List<ulong>();
         private LiquidCorePceRuntime _subscribedCodyRuntime;
         private string _activationGateState;
+        private bool _vanillaWaterPresentationHandoffComplete;
 
         internal PhysicalWaterOneHitTerrainTruth OneHitTerrainTruth => _oneHitTerrainTruth;
 
@@ -221,6 +222,9 @@ namespace PhysicalWater
             if (TestChordDown(KeyCode.J)) ApplyTerrainTestDelta(-1f, "lower");
             if (TestChordDown(KeyCode.K)) ApplyTerrainTestDelta(1f, "raise");
             if (_streaming == null || _domain == null || !_domain.Initialized) return;
+
+            TryCommitVanillaWaterPresentationHandoff();
+
             RequestPlayerWaterSample();
 
             float fixedDt = 1f / 30f;
@@ -264,6 +268,29 @@ namespace PhysicalWater
 
         }
 
+        private void TryCommitVanillaWaterPresentationHandoff()
+        {
+            if (_vanillaWaterPresentationHandoffComplete ||
+                _streaming == null ||
+                _domain == null ||
+                !_domain.Initialized ||
+                !_streaming.HasActiveInitialWorldWaterRepresentation ||
+                _appliedGeometryStateRevision == int.MinValue ||
+                _completedSimulationSteps <= 0 ||
+                _domain.Surface == null ||
+                !_domain.Surface.Ready)
+            {
+                return;
+            }
+
+            VanillaWaterSuppression.HideExistingWaterRenderers();
+            _vanillaWaterPresentationHandoffComplete = true;
+
+            PhysicalWaterPlugin.Log.LogInfo(
+                "LiquidCore finite presentation handoff complete: active initial-world water=True, " +
+                "geometryReady=True, completedSimulationSteps=" + _completedSimulationSteps +
+                ", surfaceReady=True. Vanilla water renderers are now suppressed.");
+        }
         private void ReportActivationGate(string state)
         {
             if (string.Equals(_activationGateState, state, StringComparison.Ordinal)) return;
@@ -1685,7 +1712,10 @@ namespace PhysicalWater
                     ", partitions=" + domain.Partitions.Length + ", volume=" +
                     totalSourceVolume.ToString("R", CultureInfo.InvariantCulture) +
                     ", atoms=" + totalSourceAtoms + ".");
-                VanillaWaterSuppression.HideExistingWaterRenderers();
+                PhysicalWaterPlugin.Log.LogInfo(
+                    "LiquidCore initial-water ownership is committed, but vanilla water remains visible until " +
+                    "the local active LiquidCore representation has applied geometry, completed simulation, " +
+                    "and produced a ready presentation surface.");
             }
             catch (Exception ex)
             {
