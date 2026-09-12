@@ -556,12 +556,24 @@ namespace PhysicalWater
         {
             if (job == null || sourceCatchmentIds == null || sourceCatchmentIds.Length == 0 ||
                 _codyL2 == null || string.IsNullOrEmpty(_codyInitialWorldSourceRelationPath)) return;
+            PersistResolvedSourceRelation(job.WorldKey, job.GeometryRevision,
+                job.DependencyRevisionHash, sourceCatchmentIds);
+        }
+
+        private void PersistResolvedSourceRelation(
+            string worldKey, long geometryRevision, string dependencyRevisionHash,
+            ulong[] sourceCatchmentIds)
+        {
+            if (string.IsNullOrWhiteSpace(worldKey) || geometryRevision < 0 ||
+                string.IsNullOrWhiteSpace(dependencyRevisionHash) ||
+                sourceCatchmentIds == null || sourceCatchmentIds.Length == 0 ||
+                _codyL2 == null || string.IsNullOrEmpty(_codyInitialWorldSourceRelationPath)) return;
             var relation = new CodyInitialWorldSourceRelation
             {
-                WorldKey = job.WorldKey,
-                GeometryRevision = job.GeometryRevision,
-                DependencyRevisionHash = job.DependencyRevisionHash,
-                RelationRevision = job.GeometryRevision,
+                WorldKey = worldKey,
+                GeometryRevision = geometryRevision,
+                DependencyRevisionHash = dependencyRevisionHash,
+                RelationRevision = geometryRevision,
                 SourceCatchmentIds = (ulong[])sourceCatchmentIds.Clone()
             };
             if (!_codyL2.TryPublishInitialWorldSourceRelation(relation, out string publishError))
@@ -962,6 +974,9 @@ namespace PhysicalWater
                     out sourceError)) return;
             domain.SourceCatchmentId = globalSourceCatchmentId;
             domain.SourceCatchmentIds = new[] { globalSourceCatchmentId };
+            PersistResolvedSourceRelation(
+                _baseWorldBootstrapWorldKey, domain.GeometryRevision,
+                domain.DependencyRevisionHash, domain.SourceCatchmentIds);
             CompleteInitialWorldDomainPublished?.Invoke(domain.Clone());
             PhysicalWaterPlugin.Log.LogInfo(
                 "LiquidCore attached the explicit CODY initial-water source catchment to the published PCE domain: catchment=" +
